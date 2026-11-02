@@ -1,0 +1,266 @@
+# Price filter config. Edit, then run:  python build_filter.py
+
+# "auto" = current challenge league from poe.ninja (softcore, trade)
+league = "auto"
+
+# Filter file name (without .filter) and where to write it
+output_name = "pricefilter"
+output_dirs = ["~/Documents/My Games/Path of Exile"]
+
+# Re-download prices if cache older than this many minutes
+cache_minutes = 60
+
+# Per-tier switches. List tier names (top, high, mid, low, brown, dust, variable, unknown).
+# hide_tiers:  priced but hidden. Remove one to start showing it
+#              (e.g. drop "brown" early league when 0.25c stuff is worth picking up).
+# quiet_tiers: unintrusive brown instead of the tier's own style: brown text, grey beam,
+#              grey icon, no sound (keeps the tier's font size). Style in [style.quiet].
+#              e.g. late league: quiet_tiers = ["low"], later ["low", "mid"].
+hide_tiers = ["brown", "dust"]
+quiet_tiers = ["low"]
+
+# Text colour for normal/magic/rare gear, so rarity (yellow/blue) never grabs the eye.
+# White now; when rich switch to brown "210 178 134 255" (less clicking, less distraction).
+# Price tier styles still win (a 125c base keeps its red tink text).
+gear_text_color = "255 255 255 255"
+
+# JACKPOT: ANY item worth >= this many divines is never hidden. Where the filter can only
+# see a group (a unique base, a Foulborn base, a 5L unique base, a crafting base ilvl range)
+# and the cheap stuff in that group is junk, the group goes blue "variable" instead.
+# Single priced stackables >= this are already top tier. Change freely.
+jackpot_divine = 10
+
+# ---------------------------------------------------------------------------
+# Price tiers, in chaos. Highest first, x5 steps. Anything below the lowest tier is hidden.
+# Name -> chaos threshold. Style for each tier is in [style.<name>] below.
+# ---------------------------------------------------------------------------
+[tiers]
+top   = 125
+high  = 25
+mid   = 5
+low   = 1
+brown = 0.25
+dust  = 0.05
+
+# ---------------------------------------------------------------------------
+# Stackable stuff priced from the Currency Exchange (currency, cards, scarabs,
+# essences, fossils, oils, omens, tattoos, fragments, ...)
+# ---------------------------------------------------------------------------
+[exchange]
+# Ignore prices with less daily trade volume than this (chaos). 0 = trust all.
+min_volume = 5
+# Also show stacks: 10x a 0.5c item = 5c -> shown at 'mid'. Stack checks up to:
+max_stack = 40
+# Low-volume prices are still used to SHOW an item, never to hide it.
+# What to do with stackables poe.ninja has no price for: a tier name, "hide" or "unknown"
+unpriced_currency = "unknown"
+# Cards: poe.ninja only prices exchange-traded cards (~130 of ~450). "reference" = use the
+# NeverSink card tier from reference/league.filter (mapping below), else "unknown".
+unpriced_cards = "reference"
+
+[exchange.reference_card_tiers]
+t1 = "top"
+t2 = "high"
+t3 = "mid"
+tnew = "unknown"
+t4c = "low"
+t4 = "low"
+t5c = "hide"
+t5 = "hide"
+
+# ---------------------------------------------------------------------------
+# Uniques: a base is tiered by its CHEAPEST unique. Heavy Belt with
+# 1c Belt of the Deceiver = 1c tier, no matter what else rolls on it.
+# Exception: variable bases (cheap, but some unique on it >= top-level jackpot_divine, e.g.
+# Heavy Belt -> Mageblood) get the blue "variable, worth identifying" style.
+# Safety: a base is NEVER hidden if any unique on it (any listing count) is worth
+# >= never_hide_chaos; it goes variable instead (Leather Belt -> Headhunter).
+# ---------------------------------------------------------------------------
+[uniques]
+never_hide_chaos = 125
+min_listings = 10
+include_replicas = true
+# Hide unique bases whose cheapest unique is below this tier (variable bases always shown)
+min_tier = "mid"
+# Base with no priced uniques (new / unknown): tier name, "hide" or "unknown"
+unpriced = "unknown"
+
+# Uniques that can't drop in a normal endgame map (pinnacle/uber bosses, Breachlords, Atziri,
+# Syndicate, Delve, Heist + all Replicas, Incursion temple, Lab, vendor recipes, upgrades,
+# no longer drops) are left out of unique pricing, so Cane of Kulemak doesn't make
+# Serpentine Staff (Sire of Shards 1c) blue. Boss loot: toggle the filter off in game.
+# Source: poewiki "drop restricted" flag + drop source (cache/wiki_uniques.json, weekly).
+skip_non_map_drops = true
+wiki_cache_days = 7
+# A drop-restricted unique still counts if its wiki drop source contains any of these
+# (case-insensitive): map content where it can drop.
+map_sources = [
+  "Map Boss", "Rare enem", "Ritual", "Blight", "Ultimatum", "Runic monsters", "mercenary",
+  "AbyssTwoLeague", "ReligiousTemplar", "LeagueAzmeri", "LeagueBestiary", "LegionLeague",
+  "LeagueAffliction", "AfflictionTown", "MavenHub", "Monsters/Wb", "DemonBosses",
+  "LunarisSolaris", "Statue", "UnholyTrio", "Viking",
+]
+
+# Fix the wiki guess per unique name: true = drops in maps (count it), false = skip it
+[uniques.map_drop]
+# "Dread Captain's Cutlass" = true
+
+# ---------------------------------------------------------------------------
+# Foulborn uniques: priced on their own, never mixed into the normal unique tiers.
+# One Foulborn unique has many mutated-mod variants (Doomsower 120c .. 263k c) and the
+# filter can't see which mods dropped, only "Foulborn True" + BaseType. So per base:
+#   tier     = cheapest variant of any Foulborn unique on it (Goldwyrm 3.5c -> low)
+#   variable = best variant >= jackpot_divine (worth checking the mods)
+#   hidden   = below min_tier (and below [small_loot] when that's on), unless some
+#              variant >= uniques.never_hide_chaos (then variable)
+# min_listings counts all variants of one unique together (variants are thin).
+# ---------------------------------------------------------------------------
+[foulborn]
+min_listings = 5
+min_tier = "low"
+# Foulborn base with no confident price: tier name, "hide" or "unknown"
+unpriced = "unknown"
+
+# ---------------------------------------------------------------------------
+# Wrist saver: loot that doesn't stack (takes its own inventory slot) worth less than
+# min_chaos is hidden, to cut clicking and inventory management. Applies to uniques,
+# Foulborn uniques and the poe.ninja types in `types`. Jackpots and never_hide_chaos still
+# show. enabled = false -> only each section's own min_tier applies.
+# ---------------------------------------------------------------------------
+[small_loot]
+enabled = true
+min_chaos = 5
+types = ["Invitation", "Wombgift"]
+
+# out/report.html: "Hidden, worth a look" lists hidden items priced >= this (chaos)
+[report]
+review_chaos = 5
+
+# ---------------------------------------------------------------------------
+# Crafting bases (normal/magic/rare, ilvl 82+, optionally influenced) priced
+# from poe.ninja. These prices are noisy, so confidence filters are strict.
+# ---------------------------------------------------------------------------
+[bases]
+enabled = true
+min_tier = "top"       # only show bases worth at least this tier
+min_listings = 10
+min_samples = 3
+include_dual_influence = false
+
+# ---------------------------------------------------------------------------
+# Manual overrides by exact BaseType. Win over prices.
+# ---------------------------------------------------------------------------
+[overrides]
+# name = tier name | "hide" | "variable" | "unknown"
+"Mirror of Kalandra" = "top"
+"Scroll of Wisdom" = "hide"
+"Portal Scroll" = "hide"
+
+# Uniques with a corrupted implicit (CorruptedMods >= 1): shown even when their base
+# is priced below min_tier. Listed classes OR base types match. Change per league.
+# Better tiers (e.g. a tink base) keep their own style; this only rescues hidden ones.
+# Old filter list: Daggers, Rune Daggers, Wands, Boots, Gloves, Helmets, Shields,
+#                  Amulets, Belts, Quivers, Rings, Jewels
+[corrupted_implicits]
+style = "variable"   # tier style to use
+classes = ["Daggers", "Rune Daggers", "Wands", "Boots", "Gloves", "Helmets", "Shields",
+           "Amulets", "Belts", "Quivers", "Rings", "Jewels"]
+bases = []           # exact BaseType, e.g. "Prismatic Jewel"
+
+# Unique bases you always want at a tier regardless of price
+[unique_overrides]
+# "Heavy Belt" = "variable"
+
+# ---------------------------------------------------------------------------
+# Styles. Raw filter lines. Taken from your FilterBlade filter.
+# Minimap icons: size 1 (medium) everywhere, colour = text colour. Only tink gets size 0 (big).
+# Icon SHAPE is set by build_filter.py per category (shape in styles below is replaced):
+#   Star = uniques + tink, Circle = currency/cards, Hexagon = fragments/scarabs,
+#   Diamond = bases / recipes / unknown, Moon = league mechanic stackables.
+# Rule: no SetBorderColor / SetBackgroundColor except top (tink). Borders are
+# cleared for everything by a default block, so only add them on purpose.
+#   top     = TINK. Only for items KNOWN to be >= 125c. White bg, red text, tink sound.
+#   high    = red text, >= 25c
+#   mid     = yellow text, >= 5c
+#   low     = white text, >= 1c
+#   brown   = brown text, >= 0.25c   dust = brown text, >= 0.05c
+#   variable/unknown = blue beam, game's own text colour: value unknown or variable,
+#                      worth picking up / identifying
+# ---------------------------------------------------------------------------
+[style.top]
+lines = [
+  "SetFontSize 45",
+  "SetTextColor 255 0 0 255",
+  "SetBorderColor 255 0 0 255",
+  "SetBackgroundColor 255 255 255 255",
+  "PlayAlertSound 6 300",
+  "PlayEffect Red",
+  "MinimapIcon 0 Red Star",
+]
+
+[style.high]
+lines = [
+  "SetFontSize 45",
+  "SetTextColor 255 0 0 255",
+  "PlayAlertSound 1 300",
+  "PlayEffect Red",
+  "MinimapIcon 1 Red Circle",
+]
+
+[style.mid]
+lines = [
+  "SetFontSize 45",
+  "SetTextColor 255 190 0",
+  "PlayAlertSound 2 300",
+  "PlayEffect Yellow",
+  "MinimapIcon 1 Yellow Circle",
+]
+
+[style.low]
+lines = [
+  "SetFontSize 45",
+  "SetTextColor 255 255 255 255",
+  "PlayEffect Grey",
+  "MinimapIcon 1 White Circle",
+]
+
+# Used instead of a tier's own style when the tier is in quiet_tiers.
+# SetFontSize comes from the tier itself.
+[style.quiet]
+lines = [
+  "SetTextColor 210 178 134 255",
+  "PlayEffect Grey",
+  "MinimapIcon 2 Grey Circle",
+  "DisableDropSound True",
+]
+
+# Below 1c: brown text, no beam/icon/sound
+[style.brown]
+lines = [
+  "SetFontSize 40",
+  "SetTextColor 210 178 134 255",
+  "DisableDropSound True",
+]
+
+[style.dust]
+lines = [
+  "SetFontSize 35",
+  "SetTextColor 210 178 134 255",
+  "DisableDropSound True",
+]
+
+[style.variable]
+lines = [
+  "SetFontSize 45",
+  "PlayAlertSound 2 300",
+  "PlayEffect Blue",
+  "MinimapIcon 1 Blue Star",
+]
+
+[style.unknown]
+lines = [
+  "SetFontSize 45",
+  "PlayAlertSound 2 300",
+  "PlayEffect Blue",
+  "MinimapIcon 1 Blue Star",
+]

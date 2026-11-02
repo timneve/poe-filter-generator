@@ -1,0 +1,42 @@
+# ===== rules/top.filter : hand-written rules, checked BEFORE price rules =====
+# Edit freely. Standard PoE filter syntax.
+
+# Quest / lab / heist targets
+Show
+	Class == "Quest Items" "Labyrinth Items" "Labyrinth Trinkets" "Incursion Items" "Heist Targets" "Pantheon Souls"
+	SetFontSize 45
+	PlayAlertSound 3 300
+	PlayEffect Green
+	MinimapIcon 1 Green Pentagon
+
+# Big gold stacks only
+Show
+	BaseType == "Gold"
+	StackSize >= 3001
+	SetFontSize 45
+	SetTextColor 255 212 87
+	PlayEffect Yellow
+	MinimapIcon 1 Yellow Cross
+
+Hide
+	BaseType == "Gold"
+	SetFontSize 18
+
+# 6-links
+Show
+	LinkedSockets 6
+	SetFontSize 45
+	SetTextColor 255 0 0 255
+	SetBorderColor 255 0 0 255
+	SetBackgroundColor 255 255 255 255
+	PlayAlertSound 6 300
+	PlayEffect Red
+	MinimapIcon 0 Red Star
+
+# Mirrored / fractured-6 etc: anything mirrored is worth a look
+Show
+	Mirrored True
+	SetFontSize 45
+	PlayAlertSound 6 300
+	PlayEffect Red
+	MinimapIcon 0 Red Star

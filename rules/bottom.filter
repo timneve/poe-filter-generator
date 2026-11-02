@@ -1,0 +1,41 @@
+# ===== rules/bottom.filter : hand-written rules, checked AFTER price rules =====
+
+# Maps: hidden (your FilterBlade filter hides them too). Change Hide -> Show to see them.
+Hide
+	Class == "Maps"
+	SetFontSize 45
+
+# Gems: show 20% quality and the expensive exceptional supports, hide rest
+Show
+	Class == "Skill Gems" "Support Gems"
+	BaseType "Awakened" "Enlighten" "Empower" "Enhance"
+	SetFontSize 45
+	SetTextColor 255 0 0 255
+	PlayAlertSound 1 300
+	PlayEffect Red
+	MinimapIcon 1 Red Diamond
+
+Show
+	Class == "Skill Gems" "Support Gems"
+	Quality >= 20
+	SetFontSize 45
+	SetTextColor 20 240 240
+	PlayEffect Grey
+	MinimapIcon 1 Cyan Diamond
+
+Hide
+	Class == "Skill Gems" "Support Gems"
+	SetFontSize 18
+
+# Hide all regular gear / flasks / jewels that no price rule picked up
+Hide
+	Class "Abyss Jewels" "Amulets" "Belts" "Body Armours" "Boots" "Bows" "Claws" "Daggers" "Gloves" "Heist Brooches" "Heist Cloaks" "Heist Gear" "Heist Tools" "Helmets" "Hybrid Flasks" "Idols" "Jewels" "Life Flasks" "Mana Flasks" "One Hand Axes" "One Hand Maces" "One Hand Swords" "Quivers" "Rings" "Rune Daggers" "Sceptres" "Shields" "Staves" "Thrusting One Hand Swords" "Tinctures" "Two Hand Axes" "Two Hand Maces" "Two Hand Swords" "Utility Flasks" "Wands" "Warstaves" "Corpses" "Relics" "Trinkets" "Fishing Rods"
+	SetFontSize 18
+	DisableDropSound True
+
+# Safety net: anything not handled above is unknown -> blue, like your old filter
+Show
+	SetFontSize 45
+	PlayAlertSound 2 300
+	PlayEffect Blue
+	MinimapIcon 1 Blue Diamond
