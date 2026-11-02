@@ -1,5 +1,40 @@
 # Price filter config. Edit, then run:  python build_filter.py
 
+# ===========================================================================
+# PRICE TIERS. Everything else in this file points at these by name
+# (min_tier = "mid", never_hide_tier = "top", ...), so they all move together.
+# Style for each tier is in [style.<name>] at the bottom.
+# ===========================================================================
+# true  = a tier with `div` is that fraction of 1 divine (poe.ninja rate, moves with the economy).
+# false = every tier uses its fixed `chaos` value (also the fallback when there's no divine price).
+tiers_follow_divine = true
+
+# Item worth >= threshold gets that tier. Anything below the lowest tier is hidden.
+tiers.top   = { div = 1,      chaos = 125 }   # TINK: 1 div
+tiers.high  = { div = 0.25,   chaos = 25 }    # 1/4 div
+tiers.mid   = { div = 0.0625, chaos = 5 }     # 1/4 of high (1/16 div)
+tiers.minor = { div = 0.015625, chaos = 2 }   # 1/4 of mid (1/64 div, ~5c at 300c div)
+tiers.low   = {               chaos = 1 }
+tiers.brown = {               chaos = 0.25 }
+tiers.dust  = {               chaos = 0.05 }
+
+# Per-tier switches. List tier names (top, high, mid, minor, low, brown, dust, variable, unknown).
+# hide_tiers:  priced but hidden. Remove one to start showing it
+#              (e.g. drop "brown" early league when 0.25c stuff is worth picking up).
+# quiet_tiers: unintrusive brown instead of the tier's own style: brown text, grey beam,
+#              grey icon, no sound (keeps the tier's font size). Style in [style.quiet].
+#              e.g. late league: quiet_tiers = ["low"], later ["low", "mid"].
+hide_tiers = ["brown", "dust"]
+quiet_tiers = ["low"]
+
+# JACKPOT: ANY item worth >= this many divines is never hidden. Where the filter can only
+# see a group (a unique base, a Foulborn base, a 5L unique base, a crafting base ilvl range)
+# and the cheap stuff in that group is junk, the group goes blue "variable" instead.
+# Single priced stackables >= this are already top tier. Change freely.
+jackpot_divine = 13
+
+# ===========================================================================
+
 # "auto" = current challenge league from poe.ninja (softcore, trade)
 league = "auto"
 
@@ -10,37 +45,31 @@ output_dirs = ["~/Documents/My Games/Path of Exile"]
 # Re-download prices if cache older than this many minutes
 cache_minutes = 60
 
-# Per-tier switches. List tier names (top, high, mid, low, brown, dust, variable, unknown).
-# hide_tiers:  priced but hidden. Remove one to start showing it
-#              (e.g. drop "brown" early league when 0.25c stuff is worth picking up).
-# quiet_tiers: unintrusive brown instead of the tier's own style: brown text, grey beam,
-#              grey icon, no sound (keeps the tier's font size). Style in [style.quiet].
-#              e.g. late league: quiet_tiers = ["low"], later ["low", "mid"].
-hide_tiers = ["brown", "dust"]
-quiet_tiers = ["low"]
+# LEAGUE START: true = show (almost) everything while prices are thin and you're poor.
+# Overrides the settings below without editing them, so flipping back is one line:
+#   hide_tiers -> none (brown, dust shown)      small_loot -> off
+#   uniques / foulborn / bases min_tier -> lowest tier    uniques.hide_maps -> false
+#   "hide" overrides, unpriced settings and card tiers -> lowest tier
+#   all [content.*] modules on, [leveling] on
+#   rules/*.filter blocks tagged "Hide # league_start" -> Show (maps, gems, small gold)
+#   white crafting bases the [leveling] build never uses stay hidden (league_start_hide_unused)
+# Only things priced below the lowest tier (dust) and plain gear in maps stay hidden.
+# Set back to false after a few days, when you have currency and prices settle.
+league_start = false
 
 # Text colour for normal/magic/rare gear, so rarity (yellow/blue) never grabs the eye.
 # White now; when rich switch to brown "210 178 134 255" (less clicking, less distraction).
-# Price tier styles still win (a 125c base keeps its red tink text).
+# Price tier styles still win (a 1 div base keeps its red tink text).
+# Maps only: in the campaign ([leveling] on, AreaLevel <= area_level_max) gear keeps rarity colour.
 gear_text_color = "255 255 255 255"
+# Campaign only: white (normal) gear text, a bit grey so it reads below magic / rare.
+campaign_white_text_color = "170 170 170 255"
 
-# JACKPOT: ANY item worth >= this many divines is never hidden. Where the filter can only
-# see a group (a unique base, a Foulborn base, a 5L unique base, a crafting base ilvl range)
-# and the cheap stuff in that group is junk, the group goes blue "variable" instead.
-# Single priced stackables >= this are already top tier. Change freely.
-jackpot_divine = 10
-
-# ---------------------------------------------------------------------------
-# Price tiers, in chaos. Highest first, x5 steps. Anything below the lowest tier is hidden.
-# Name -> chaos threshold. Style for each tier is in [style.<name>] below.
-# ---------------------------------------------------------------------------
-[tiers]
-top   = 125
-high  = 25
-mid   = 5
-low   = 1
-brown = 0.25
-dust  = 0.05
+# Unknown value -> blue. A unique base only gets a price tier when EVERY unique that can
+# drop on it (poewiki list, boss-only ones too) has a confident poe.ninja price. One
+# unique with thin / no listings makes the whole base blue "variable": worth a look,
+# value not known. false = tier by the priced uniques only.
+unknown_as_variable = true
 
 # ---------------------------------------------------------------------------
 # Stackable stuff priced from the Currency Exchange (currency, cards, scarabs,
@@ -49,14 +78,45 @@ dust  = 0.05
 [exchange]
 # Ignore prices with less daily trade volume than this (chaos). 0 = trust all.
 min_volume = 5
-# Also show stacks: 10x a 0.5c item = 5c -> shown at 'mid'. Stack checks up to:
+# Also show stacks: 10x a 0.5c item = 5c, tiered as 5c. Stack checks up to:
 max_stack = 40
 # Low-volume prices are still used to SHOW an item, never to hide it.
 # What to do with stackables poe.ninja has no price for: a tier name, "hide" or "unknown"
-unpriced_currency = "unknown"
+# "reference" = NeverSink currency tier from reference/league.filter (mapping below), so
+# league start (no poe.ninja prices yet) still has sane tiers; not in reference -> "unknown".
+unpriced_currency = "reference"
 # Cards: poe.ninja only prices exchange-traded cards (~130 of ~450). "reference" = use the
 # NeverSink card tier from reference/league.filter (mapping below), else "unknown".
 unpriced_cards = "reference"
+
+# Splinters that combine into one item: price = finished item / count (poe.ninja splinter
+# prices are thin and wrong). Stack checks go up to count, so 72x a 0.07c splinter shows.
+# Skipped when the finished item has no price. name = ["finished item", count]
+[exchange.splinters]
+"Timeless Karui Splinter" = ["Timeless Karui Emblem", 100]
+"Timeless Maraketh Splinter" = ["Timeless Maraketh Emblem", 100]
+"Timeless Templar Splinter" = ["Timeless Templar Emblem", 100]
+"Timeless Eternal Empire Splinter" = ["Timeless Eternal Emblem", 100]
+"Timeless Vaal Splinter" = ["Timeless Vaal Emblem", 100]
+"Splinter of Xoph" = ["Xoph's Breachstone", 100]
+"Splinter of Tul" = ["Tul's Breachstone", 100]
+"Splinter of Esh" = ["Esh's Breachstone", 100]
+"Splinter of Uul-Netol" = ["Uul-Netol's Breachstone", 100]
+"Splinter of Chayula" = ["Chayula's Breachstone", 100]
+"Simulacrum Splinter" = ["Simulacrum", 300]
+"Ritual Splinter" = ["Ritual Vessel", 100]
+
+# NeverSink currency tier number (t1exalted, t4chaos, t8trans, fossil t2, ...) -> our tier
+[exchange.reference_currency_tiers]
+1 = "top"
+2 = "high"
+3 = "mid"
+4 = "low"
+5 = "brown"
+6 = "dust"
+7 = "dust"
+8 = "dust"
+9 = "dust"
 
 [exchange.reference_card_tiers]
 t1 = "top"
@@ -69,21 +129,52 @@ t5c = "hide"
 t5 = "hide"
 
 # ---------------------------------------------------------------------------
+# Uniques, [uniques.ev] on (default): a base is tiered by the EXPECTED VALUE of one
+# unidentified drop = drop chance of each unique on it x its price. Below min_tier: hidden,
+# jackpots too (Leather Belt: Headhunter ~1 in 3900 unique Leather Belts -> ~1.4c per belt).
+# Shown, but its cheapest unique is below min_tier: blue "variable" (Heavy Belt: Mageblood
+# ~1 in 3400, ~8c per belt). always_show_bases: shown no matter what.
+# Bases without drop-anywhere uniques (league content only) and [uniques.ev] off use the
+# rules below:
+# Bases whose enabled uniques are all boss/encounter-only are always shown as variable;
+# these bases do not drop unique items in normal maps.
+#
 # Uniques: a base is tiered by its CHEAPEST unique. Heavy Belt with
 # 1c Belt of the Deceiver = 1c tier, no matter what else rolls on it.
 # Exception: variable bases (cheap, but some unique on it >= top-level jackpot_divine, e.g.
 # Heavy Belt -> Mageblood) get the blue "variable, worth identifying" style.
 # Safety: a base is NEVER hidden if any unique on it (any listing count) is worth
-# >= never_hide_chaos; it goes variable instead (Leather Belt -> Headhunter).
+# >= never_hide_tier (tier name, default top = 1 div); it goes variable instead
+# (Leather Belt -> Headhunter).
 # ---------------------------------------------------------------------------
 [uniques]
-never_hide_chaos = 125
+never_hide_tier = "top"
+# Late league wrist saver: true = never_hide_tier rescue off, a cheap base goes blue
+# "variable" only when some unique on it is >= jackpot_divine (Moonstone Ring: 1c Heartbound
+# Loop / Timeclasp mostly, 200c Anathema -> hidden). Foulborn too. league_start forces false.
+variable_jackpot_only = true
 min_listings = 10
-include_replicas = true
+include_replicas = false
 # Hide unique bases whose cheapest unique is below this tier (variable bases always shown)
 min_tier = "mid"
 # Base with no priced uniques (new / unknown): tier name, "hide" or "unknown"
 unpriced = "unknown"
+# Hide ALL unique maps (Foulborn and jackpots too). Shown ones get a Square minimap icon.
+hide_maps = true
+# Hand list: unique bases always shown (blue "variable" when their EV would hide them).
+# Start: NeverSink "High Variety - Top Multi-Bases" ($tier->multispecialhigh, regular filter).
+
+# Late league
+always_show_bases = [
+  "Heavy Belt"
+]
+
+# always_show_bases = [
+#   "Cloth Belt", "Elegant Round Shield", "Heavy Belt", "Hellion's Paw", "Hypnotic Eye Jewel",
+#   "Imperial Bow", "Imperial Skean", "Imperial Staff", "Leather Belt", "Magistrate Crown",
+#   "Paua Amulet", "Searching Eye Jewel", "Small Cluster Jewel", "Spine Bow", "Topaz Flask",
+#   "Vaal Blade", "Vaal Claw",
+# ]
 
 # Uniques that can't drop in a normal endgame map (pinnacle/uber bosses, Breachlords, Atziri,
 # Syndicate, Delve, Heist + all Replicas, Incursion temple, Lab, vendor recipes, upgrades,
@@ -101,9 +192,33 @@ map_sources = [
   "LunarisSolaris", "Statue", "UnholyTrio", "Viking",
 ]
 
+# Expected value per unique base. A unique drop picks a tier by tier_weights, then any
+# drop-anywhere unique in that tier evenly, so one unique's chance = its tier weight /
+# uniques in its tier. Tiers: unique_tiers.toml (poewiki). A unique's price = average of its
+# poe.ninja variants weighted by listings (Mageblood 2-4 flasks). Unlisted = worth 0, but an
+# unlisted unique of tier <= unknown_chase_tier makes the base blue (unknown_as_variable).
+[uniques.ev]
+enabled = true
+# % per tier, poewiki pre-3.19 RegularValue estimate (natural drops). T0 is the shakiest number.
+tier_weights = { "0" = 0.005, "1" = 0.036, "2" = 0.8, "3" = 10.9, "4" = 34.0, "5" = 54.3 }
+default_tier = 3   # drop-anywhere unique missing from unique_tiers.toml
+unknown_chase_tier = 2
+
 # Fix the wiki guess per unique name: true = drops in maps (count it), false = skip it
 [uniques.map_drop]
 # "Dread Captain's Cutlass" = true
+"Angler's Plait" = false   # only drops with a Corrupted Slitherpinch equipped
+
+# ---------------------------------------------------------------------------
+# Content modules: turn one on while farming that content. Its drop-restricted uniques
+# (poewiki drop source contains any of `sources`) show small and silent ([style.content]):
+# no beam, icon or sound, just a label to grab after the fight. Off in normal mapping so
+# junk bases (Gold Ring) stay hidden. Matched by base, so any unique on such a base shows.
+# Module uniques (on or off) never make a base "unknown value" blue (unknown_as_variable).
+# ---------------------------------------------------------------------------
+[content.ultimatum]
+enabled = true
+sources = ["Ultimatum"]   # Trialmaster boss drops + Ultimatum rewards
 
 # ---------------------------------------------------------------------------
 # Foulborn uniques: priced on their own, never mixed into the normal unique tiers.
@@ -112,7 +227,7 @@ map_sources = [
 #   tier     = cheapest variant of any Foulborn unique on it (Goldwyrm 3.5c -> low)
 #   variable = best variant >= jackpot_divine (worth checking the mods)
 #   hidden   = below min_tier (and below [small_loot] when that's on), unless some
-#              variant >= uniques.never_hide_chaos (then variable)
+#              variant >= uniques.never_hide_tier (then variable)
 # min_listings counts all variants of one unique together (variants are thin).
 # ---------------------------------------------------------------------------
 [foulborn]
@@ -123,18 +238,65 @@ unpriced = "unknown"
 
 # ---------------------------------------------------------------------------
 # Wrist saver: loot that doesn't stack (takes its own inventory slot) worth less than
-# min_chaos is hidden, to cut clicking and inventory management. Applies to uniques,
-# Foulborn uniques and the poe.ninja types in `types`. Jackpots and never_hide_chaos still
+# tier min_tier is hidden, to cut clicking and inventory management. Applies to uniques,
+# Foulborn uniques and the poe.ninja types in `types`. Jackpots and never_hide_tier still
 # show. enabled = false -> only each section's own min_tier applies.
 # ---------------------------------------------------------------------------
 [small_loot]
 enabled = true
-min_chaos = 5
+min_tier = "mid"
 types = ["Invitation", "Wombgift"]
 
-# out/report.html: "Hidden, worth a look" lists hidden items priced >= this (chaos)
+# ---------------------------------------------------------------------------
+# Campaign / leveling: NeverSink's leveling rules, taken from reference/league.filter
+# (sections [2802] jewels, [[5000]]-[[5400]] flasks + gear) every build. Campaign currency:
+# price tiers / NeverSink reference tiers, never hidden (show_all_stackables).
+# Every block gets "AreaLevel <= area_level_max" (and "Rarity <= Rare" on gear), so they
+# do nothing in maps and never touch uniques. Placed right after rules/top.filter.
+# strictness = NeverSink levels: 0 soft (everything), 1 regular, 2 semi-strict,
+#              3 strict (+ hides large magic items), 4 very strict
+# build = build module rules/leveling/<build>.filter, checked first ("" = none).
+#         New build: copy rf.filter, edit, set the name here.
+# hide_normal_after: last area level where white (normal) gear shows. With a build: only the
+#         types in its "Show # whites" block, other white gear is always hidden. No build: all
+#         white gear. Flasks not included. Other build module Shows still win (rf: Iron Ring, 4-links).
+# hide_magic_after: last area level where magic (blue) gear shows, same classes as white
+#         (flasks / tinctures stay, jewellery stays with show_jewellery). Beats the build
+#         module and show_magic_rare_cells (= rares only after it). Leave out = off.
+# keep_build_weapons_magic: true = magic weapons the build module Shows (rf: 2H axes / maces
+#         until the RF swap) still show after hide_magic_after. false = hidden too.
+# show_jewellery: amulets, rings, belts of any rarity (white too) always shown in the
+#         campaign, before the build module (its Hides don't apply to them).
+# show_gems: all skill + support gems shown in the campaign (maps: only the bottom.filter gem rules).
+# show_magic_rare_cells: magic + rare items of every class this many inventory cells or
+#         smaller always shown in the campaign (class size = its biggest base: Shields 2x4 = 8),
+#         before the build module (its Hides don't apply: vendored for currency). 4 = jewellery, jewels,
+#         flasks, tinctures, wands, daggers, claws, rapiers, helmets, boots, gloves. 0 = off.
+# league_start_hide_unused: with league_start, white crafting bases in maps that the build
+#         module hides (rf: pure ES, unused weapons, jewels, ...) stay hidden, unless worth
+#         bases.min_tier. Other white bases show at league start.
+# show_all_stackables: in the campaign no currency / card / fragment / ... is hidden.
+#         Price tier styles stay; what maps would hide shows in the lowest tier's style.
+# ---------------------------------------------------------------------------
+[leveling]
+enabled = true
+strictness = 2
+area_level_max = 67
+build = "rf"
+hide_normal_after = 2
+hide_magic_after = 7
+keep_build_weapons_magic = true
+show_jewellery = true
+show_gems = true
+show_magic_rare_cells = 4
+league_start_hide_unused = true
+show_all_stackables = true
+# Campaign blocks with a minimap icon but no sound get this (Orb of Chance etc. = NeverSink single chaos sound; 4 = maps only)
+icon_sound = "PlayAlertSound 2 300"
+
+# out/report.html: "Hidden, worth a look" lists hidden items priced >= this tier
 [report]
-review_chaos = 5
+review_tier = "mid"
 
 # ---------------------------------------------------------------------------
 # Crafting bases (normal/magic/rare, ilvl 82+, optionally influenced) priced
@@ -144,7 +306,7 @@ review_chaos = 5
 enabled = true
 min_tier = "top"       # only show bases worth at least this tier
 min_listings = 10
-min_samples = 3
+min_samples = 10
 include_dual_influence = false
 
 # ---------------------------------------------------------------------------
@@ -175,14 +337,15 @@ bases = []           # exact BaseType, e.g. "Prismatic Jewel"
 # Styles. Raw filter lines. Taken from your FilterBlade filter.
 # Minimap icons: size 1 (medium) everywhere, colour = text colour. Only tink gets size 0 (big).
 # Icon SHAPE is set by build_filter.py per category (shape in styles below is replaced):
-#   Star = uniques + tink, Circle = currency/cards, Hexagon = fragments/scarabs,
+#   Star = uniques + tink, Square = unique maps, Circle = currency/cards, Hexagon = fragments/scarabs,
 #   Diamond = bases / recipes / unknown, Moon = league mechanic stackables.
 # Rule: no SetBorderColor / SetBackgroundColor except top (tink). Borders are
 # cleared for everything by a default block, so only add them on purpose.
-#   top     = TINK. Only for items KNOWN to be >= 125c. White bg, red text, tink sound.
-#   high    = red text, >= 25c
-#   mid     = yellow text, >= 5c
-#   low     = white text, >= 1c
+#   top     = TINK. Only for items KNOWN to be >= 1 div. White bg, red text, tink sound.
+#   high    = red text, >= 1/4 div
+#   mid     = yellow text, >= 1/16 div
+#   minor   = white text, >= 1/64 div
+#   low     = white text, >= 1c (late league: quiet_tiers -> brown)
 #   brown   = brown text, >= 0.25c   dust = brown text, >= 0.05c
 #   variable/unknown = blue beam, game's own text colour: value unknown or variable,
 #                      worth picking up / identifying
@@ -216,11 +379,21 @@ lines = [
   "MinimapIcon 1 Yellow Circle",
 ]
 
+[style.minor]
+lines = [
+  "SetFontSize 45",
+  "SetTextColor 255 255 255 255",
+  "PlayAlertSound 2 300",
+  "PlayEffect White",
+  "MinimapIcon 1 White Circle",
+]
+
 [style.low]
 lines = [
   "SetFontSize 45",
   "SetTextColor 255 255 255 255",
-  "PlayEffect Grey",
+  "PlayAlertSound 2 300",
+  "PlayEffect White",
   "MinimapIcon 1 White Circle",
 ]
 
@@ -238,6 +411,14 @@ lines = [
 [style.brown]
 lines = [
   "SetFontSize 40",
+  "SetTextColor 210 178 134 255",
+  "DisableDropSound True",
+]
+
+# Content modules: small, no beam / icon / sound
+[style.content]
+lines = [
+  "SetFontSize 32",
   "SetTextColor 210 178 134 255",
   "DisableDropSound True",
 ]

@@ -11,7 +11,11 @@ ACTIONS = ("Set", "Play", "MinimapIcon", "DisableDropSound", "EnableDropSound",
            "CustomAlertSound", "Continue")
 OPS = ("==", "!=", "<=", ">=", "=", "!", "<", ">")
 NUMERIC = {"StackSize": "stack", "ItemLevel": "ilvl", "Quality": "quality",
-           "LinkedSockets": "links", "CorruptedMods": "corrupted_mods"}
+           "LinkedSockets": "links", "CorruptedMods": "corrupted_mods", "Sockets": "sockets",
+           "DropLevel": "drop_level", "Width": "width", "Height": "height", "AreaLevel": "area_level",
+           "BaseArmour": "armour", "BaseEvasion": "evasion", "BaseEnergyShield": "es"}
+# Missing item values. area_level: items are dropped in a map unless a test says otherwise.
+DEFAULTS = {"area_level": 83}
 BOOL = {"Corrupted": "corrupted", "Mirrored": "mirrored", "Identified": "identified",
         "Foulborn": "foulborn"}
 
@@ -69,7 +73,11 @@ def _match(item, key, op, vals, no):
             return all(r != RARITY[v] for v in vals)
         return _cmp(r, op, RARITY[vals[0]])
     if key in NUMERIC:
-        return _cmp(item.get(NUMERIC[key], 0), op, int(vals[0]))
+        return _cmp(item.get(NUMERIC[key], DEFAULTS.get(NUMERIC[key], 0)), op, int(vals[0]))
+    if key == "SocketGroup":
+        return any(v in item.get("socket_group", "") for v in vals)
+    if key == "HasExplicitMod" and op in ("=", "=="):
+        return any(v in m for v in vals for m in item.get("mods", []))
     if key in BOOL:
         return bool(item.get(BOOL[key], False)) == (vals[0] == "True")
     if key == "HasInfluence":

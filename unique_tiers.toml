@@ -1,0 +1,198 @@
+# Drop tier per drop-anywhere unique (0 = rarest .. 5 = most common), for the unique EV
+# ([uniques.ev] in config.toml). Source: poewiki Guide:Analysis_of_unique_item_tiers
+# (Prohibited Library estimates), latest column per unique, 2026-09-26 edit. poewiki blocks
+# scripts, so this is hand-copied: update it from the page when a league moves tiers.
+# Unlisted uniques get [uniques.ev] default_tier (the build prints them).
+# Mixed "2u-3d" entries use the dust (d) value.
+
+0 = [
+  "Soul Taker", "Marohi Erqi", "Rakiata's Dance", "Ephemeral Edge", "Varunastra",
+  "Jiquani's Potential", "Bino's Kitchen Knife", "Divinarius", "Bloodseeker", "Essentia Sanguis",
+  "Lioneye's Glare", "Voltaxic Rift", "The Squire", "Headhunter", "Mageblood",
+  "Defiance of Destiny", "Kalandra's Touch", "Reefbane",
+]
+
+1 = [
+  "Kitava's Feast", "Tidebreaker", "Martyr of Innocence", "Arakaali's Fang", "Shade of Solaris",
+  "Eclipse Solaris", "Light of Lunaris", "Tukohama's Fortress", "The Brine Crown",
+  "Abberath's Hooves", "Garukhan's Flight", "Ralakesh's Impatience", "Dialla's Malefaction",
+  "Gruthkul's Pelt", "Ryslatha's Coil", "Sin's Rebirth", "Zerphi's Last Breath",
+]
+
+2 = [
+  "Kaom's Primacy", "Maata's Teaching", "Mjölner", "Cospri's Malice", "The Poet's Pen", "Void Battery",
+  "Darkscorn", "Windripper", "Rathpith Globe", "Aegis Aurora", "Emperor's Vigilance",
+  "Prism Guardian", "The Immortal Will", "Maloney's Mechanism", "Rigwald's Quills",
+  "Asenath's Mark", "Heretic's Veil", "The Gull", "Doryani's Fist", "Gravebind", "Hand of Heresy",
+  "Machina Mitts", "Thunderfist", "Corpsewalker", "Seven-League Step", "Skyforth",
+  "Cloak of Defiance", "Doedre's Skin", "Doryani's Prototype", "Fleshcrafter", "Hyrri's Ire",
+  "Inpulsa's Broken Heart", "Kaom's Heart", "Kintsugi", "Rigwald's Hunt", "Shavronne's Wrappings",
+  "The Brass Dome", "The Covenant", "The Fourth Vow", "The Iron Fortress", "Utula's Hunger",
+  "Binds of Bloody Vengeance", "Sunblast", "The Magnate", "Astramentis", "Atziri's Foible",
+  "Badge of the Brotherhood", "Eyes of the Greatwolf", "Voll's Devotion", "Anathema",
+  "Astral Projector", "Death Rush", "Shavronne's Revelation", "Warrior's Legacy", "Taste of Hate",
+  "Song of the Sirens",
+  # jewels (own tier system per the wiki)
+  "Ancestral Vision", "Bloodnotch", "Dead Reckoning", "Firesong", "Immutable Force",
+  "Inspired Learning", "Intuitive Leap", "Lioneye's Fall", "Might of the Meek", "Pure Talent",
+  "Stormshroud", "Unending Hunger", "Unnatural Instinct", "Witchbane",
+]
+
+3 = [
+  # weapons
+  "Hezmana's Bloodlust", "Ngamahu's Flame", "Jack, the Axe", "Brain Rattler", "Trypanon",
+  "The Yielding Mortality", "Augyre", "Bitterdream", "Brutus' Lead Sprinkler", "Doon Cuebiyari",
+  "Mon'tregul's Grasp", "Nycta's Lantern", "The Supreme Truth", "Doomsower", "Beltimber Blade",
+  "Dreamfeather", "Grelwood Shank", "Razor of the Seventh Sun", "Rebuke of the Vaal",
+  "The Surging Thoughts", "Hegemony's Era", "Taryn's Shiver", "The Grey Spire", "The Searing Touch",
+  "The Whispering Ice", "Tremor Rod", "Cold Iron Point", "Vulconus", "The Scourge", "Apep's Rage",
+  "Reverberation Rod", "Mystic Refractor", "Death's Harp", "Doomfletch", "Null's Inclination",
+  "Reach of the Council", "Widowhail",
+  # shields, quivers
+  "Mistwall", "Daresso's Courage", "Saffell's Frame", "Cowards' Wail", "Lioneye's Remorse",
+  "Lycosidae", "The Shattered Divinity",
+  # helmets
+  "Abyssus", "Akoya's Gaze", "Alpha's Howl", "Assailum", "Blood Price", "Chitus' Apex",
+  "Crown of Eyes", "Deidbell", "Fairgraves' Tricorne", "Flamesight", "Fractal Thoughts", "Galesight",
+  "Heatshiver", "Howlcrack", "Maw of Conquest", "Memory Vault", "Mind of the Council", "Rime Gaze",
+  "Scold's Bridle", "The Bringer of Rain", "Thundersight", "Usurper's Penance", "Voll's Vision",
+  "Wilma's Requital", "Ylfeban's Trickery",
+  # gloves
+  "Allelopathy", "Asenath's Gentle Touch", "Aurseize", "Grip of the Council", "Haemophilia",
+  "Kaom's Spirit", "Maligaro's Virtuosity", "Meginord's Vise", "Mercenary's Lot", "Repentance",
+  "Storm's Gift", "The Hand of Phrecia", "Vaal Caress", "Vixen's Entrapment", "Volkuur's Guidance",
+  # boots
+  "Beacon of Madness", "Inya's Epiphany", "Kaom's Roots", "March of the Legion", "Rainbowstride",
+  "The Blood Dance", "Windscream",
+  # body armours
+  "Belly of the Beast", "Blunderbore", "Carcass Jack", "Chains of Command", "Cloak of Flame",
+  "Cospri's Will", "Daresso's Defiance", "Death's Oath", "Incandescent Heart", "Infernal Mantle",
+  "Lightning Coil", "Perfidy", "Queen of the Forest", "Tabula Rasa", "The Ivory Tower",
+  "The Rat Cage", "Thousand Ribbons", "Tinkerskin", "Voll's Protector", "Yriel's Fostering",
+  # belts
+  "Auxium", "Bisco's Leash", "Bound Fate", "Dyadian Dawn", "Kaom's Binding", "Leash of Oblation",
+  "Mother's Embrace", "Nevalius Inheritance", "Soul Tether", "Soulthirst",
+  "The Torrent's Reclamation", "Umbilicus Immortalis",
+  # amulets
+  "Doedre's Tongue", "Eye of Chayula", "Fury Valve", "Gloomfang", "Hinekora's Sight",
+  "Marylene's Fallacy", "Rashkaldor's Patience", "Replica Dragonfang's Flight", "Rigwald's Curse",
+  "Tainted Pact", "Tavukai", "The Jinxed Juju", "Ungil's Harmony",
+  # rings
+  "Andvarius", "Berek's Respite", "Call of the Brotherhood", "Dream Fragments", "Emberwake",
+  "Ming's Heart", "Perandus Signet", "Profane Proxy", "Pyre", "Rigwald's Crest", "Snakepit",
+  "Squirming Terror", "The Hungry Loop", "Winterweave",
+  # flasks, tinctures, maps
+  "Divination Distillate", "Lion's Roar", "Rumi's Concoction", "The Wise Oak", "Witchfire Brew",
+  "Grasping Nightshade", "Mightblood Ire", "Sap of the Seasons", "The Battle Within",
+  "Wildfire Phloem", "The Twilight Temple", "The Putrid Cloister", "The Coward's Trial",
+  "Vaults of Atziri",
+]
+
+4 = [
+  # weapons
+  "The Harvest", "Dyadus", "Moonbender's Wing", "Rigwald's Savagery", "Jorrhast's Blacksteel",
+  "Kongor's Undying Rage", "Voidhome", "Breath of the Council", "Singularity", "The Black Cane",
+  "Frostbreath", "The Monastery Bell", "Edge of Madness", "Hiltless", "The Dancing Dervish",
+  "Ichimonji", "Ahn's Might", "Hyaon's Fury", "Innsbury Edge", "Rigwald's Command", "Scaeva",
+  "The Goddess Bound", "Agnerod East", "Agnerod North", "Agnerod South", "Agnerod West",
+  "Cane of Unravelling", "Sire of Shards", "Soulwrest", "The Consuming Dark", "Al Dhih",
+  "Touch of Anguish", "Ashcaller", "Midnight Bargain", "Piscator's Vigil", "Unlight Extant",
+  "Iron Commander", "Quill Rain", "Slivertongue",
+  # shields, quivers
+  "Azadi Crest", "Chalice of Horrors", "Great Old One's Ward", "Kiloava's Bluster",
+  "Kongming's Stratagem", "Malachai's Loop", "Matua Tupuna", "Sentari's Answer",
+  "Rise of the Phoenix", "The Ghastly Theatre", "Ahn's Heritage", "Trolltimber Spire",
+  "Ahuana's Bite", "Drillneck", "Rearguard", "Scorpion's Call", "Soul Strike", "The Poised Prism",
+  # helmets
+  "Ahn's Contempt", "Ancient Skull", "Crown of the Pale King", "Curtain Call", "Doedre's Scorn",
+  "Eber's Unification", "Eye of Malice", "Geofri's Crest", "Goldrim", "Kitava's Thirst",
+  "Malachai's Simula", "Obscurantis", "Speaker's Wreath", "Starkonja's Head", "The Baron",
+  "The Trickster's Smile", "Veil of the Night", "Wreath of Phrecia",
+  # gloves
+  "Algor Mortis", "Aukuna's Will", "Demon Stitcher", "Facebreaker", "Flesh and Spirit",
+  "Great Old One's Tentacles", "Null and Void", "Oskarm", "Sadima's Touch",
+  "Shackles of the Wretched", "Shadows and Dust", "Snakebite", "Stormseeker", "Tanu Ahi",
+  "Voidbringer", "Wyrmsign",
+  # boots
+  "Alberon's Warpath", "Darkray Vectors", "Goldwyrm", "Kahuturoa's Certainty", "Lioneye's Paws",
+  "Scornflux", "Veruso's Ambition", "Victario's Flight",
+  # body armours
+  "Ambu's Charge", "Ashrend", "Bloodbond", "Bramblejack", "Bronn's Lithe",
+  "Cherrubim's Maleficence", "Dendrobate", "Geofri's Sanctuary", "Ghostwrithe", "Greed's Embrace",
+  "Lioneye's Vision", "Solaris Lorica", "Soul Mantle", "The Beast Fur Shawl", "The Coming Calamity",
+  "Victario's Influence", "Vis Mortis",
+  # belts
+  "Ascent From Flesh", "Belt of the Deceiver", "Ceinture of Benevolence", "Gluttony",
+  "Maligaro's Restraint", "Meginord's Girdle", "Perseverance", "Pyroshock Clasp",
+  # amulets
+  "Blightwell", "Bloodsoaked Medallion", "Hyrri's Truth", "Maligaro's Cruelty", "Natural Hierarchy",
+  "Night's Hold", "Perquil's Toe", "The Aylardex", "The Primordial Chain", "Warped Timepiece",
+  "Willowgift",
+  # rings
+  "Berek's Grip", "Berek's Pass", "Doedre's Damning", "Essence Worm", "Gifts from Above",
+  "Grattus Signet", "Heartbound Loop", "Icefang Orbit", "Kaom's Sign", "Kikazaru", "Le Heup of All",
+  "Lori's Lantern", "Malachai's Artifice", "Mokou's Embrace", "Ngamahu's Sign",
+  "Prospero's Protection", "Romira's Banquet", "Soulbound", "Storm Secret", "Stormfire",
+  "Tasalio's Sign", "Thief's Torment", "Timeclasp", "Valako's Sign", "Venopuncture",
+  "Ventor's Gamble", "Voideye",
+  # flasks
+  "Blood of the Karui", "Coralito's Signature", "Forbidden Taste", "Lavianga's Spirit",
+  "The Overflowing Chalice", "The Sorrow of the Divine", "The Writhing Jar",
+]
+
+5 = [
+  # weapons
+  "Debeon's Dirge", "Limbsplit", "Reaper's Pursuit", "Sinvicta's Mettle", "The Blood Reaper",
+  "Wideswing", "Wings of Entropy", "Dreadarc", "Relentless Fury", "The Screaming Eagle",
+  "Chober Chaber", "Geofri's Baptism", "Hrimnor's Hymn", "Quecholli", "Axiom Perpetuum", "Balefire",
+  "Death's Hand", "Earendel's Embrace", "Sign of the Sin Eater", "Brightbeak", "Callinellus Malleus",
+  "Cameria's Maul", "Clayshaper", "Flesh-Eater", "Lavianga's Wisdom", "Gorebreaker", "Kondo's Pride",
+  "Oro's Sacrifice", "Queen's Decree", "Rigwald's Charge", "Shiversting", "Terminus Est", "Redbeak",
+  "The Princess", "Lakishu's Blade", "Prismatic Eclipse", "The Tempestuous Steel", "Aurumvorax",
+  "Daresso's Passion", "Ewar's Mirage", "Fidelitas' Spike", "Dying Breath", "Femurs of the Saints",
+  "Pillar of the Caged God", "Realmshaper", "The Stormheart", "Fencoil", "The Blood Thorn",
+  "Bloodplay", "Goblinedge", "Goredrill", "Heartbreaker", "Mark of the Doubting Knight", "Mightflay",
+  "Taproot", "Ungil's Gauche", "White Wind", "Widowmaker", "Advancing Fortress", "Allure",
+  "Cybil's Paw", "Last Resort", "Mortem Morsu", "Ornament of the East", "Rive", "The Wasp Nest",
+  "Wildslash", "Abberath's Horn", "Lifesprig", "Moonsorrow", "Obliteration", "Storm Prison",
+  "Twyzel", "Chin Sol", "Infractem", "Nuro's Harp", "Roth's Reach", "Silverbranch", "Storm Cloud",
+  # shields, quivers
+  "Crest of Perandus", "Jaws of Agony", "Kaltenhalt", "Leper's Alms", "Maligaro's Lens",
+  "The Eternal Apple", "Thousand Teeth Temu", "Zeel's Amplifier", "Springleaf",
+  "The Deep One's Hide", "The Oppressor", "Victario's Charity", "Wheel of the Stormsail",
+  "Chernobog's Pillar", "Titucius' Span", "Asphyxia's Wrath", "Blackgleam", "Craghead",
+  "Hyrri's Bite", "Maloney's Nightfall", "Saemus' Gift", "Skirmish",
+  # helmets
+  "Black Sun Crest", "Crown of Thorns", "Devoto's Devotion", "Elevore", "Ezomyte Peak",
+  "Honourhome", "Hrimnor's Resolve", "Leer Cast", "Mark of the Red Covenant", "Mindspiral",
+  "Rat's Nest", "Skullhead", "The Broken Crown", "The Peregrine", "The Three Dragons", "Thrillsteel",
+  "Willclash",
+  # gloves
+  "Doedre's Tenure", "Empire's Grasp", "Giantsbane", "Hrimsorrow", "Kalisa's Grace",
+  "Lochtonial Caress", "Ondar's Clasp", "Painseeker", "Slitherpinch", "Southbound", "Surgebinders",
+  "The Embalmer", "Triad Grip", "Veruso's Battering Rams",
+  # boots
+  "Bones of Ullr", "Deerstalker", "Dusktoe", "Gang's Momentum", "Nomic's Storm", "Orbala's Stand",
+  "Shavronne's Pace", "Sin Trek", "Stormcharger", "Sundance", "Three-step Assault", "Torchoak Step",
+  "Wake of Destruction", "Wanderlust", "Wondertrap",
+  # body armours
+  "Briskwrap", "Foxshade", "Icetomb", "Kingsguard", "Lightbane Raiment", "The Restless Ward",
+  "Zahndethus' Cassock",
+  # belts
+  "Bated Breath", "Chain of Endurance", "Faminebind", "Feastbind", "Immortal Flesh",
+  "Perandus Blazon", "Prismweave", "Siegebreaker", "The Druggery", "Wurm's Molt",
+  # amulets
+  "Araku Tiki", "Bloodgrip", "Carnage Heart", "Daresso's Salute", "Extractor Mentis",
+  "Eye of Innocence", "Ikiaho's Promise", "Karui Ward", "Retaliation Charm", "Shaper's Seed",
+  "Sidhebreath", "Stone of Lazhwar", "Tear of Purity", "The Anvil", "The Ephemeral Bond",
+  "The Ignomon", "Victario's Acuity", "Winterheart",
+  # rings
+  "Blackheart", "Mark of Submission", "Praxis", "Sibyl's Lament", "Tawhanuku's Timing",
+  "The Highwayman", "The Warden's Brand", "Valyrium",
+  # flasks
+  "Doedre's Elixir", "Kiara's Determination", "Rotgut",
+  # maps
+  "Acton's Nightmare", "Caer Blaidd, Wolfpack's Den", "Death and Taxes", "Hall of Grandmasters",
+  "Hallowed Ground", "Maelström of Chaos", "Mao Kun", "Oba's Cursed Trove", "Olmec's Sanctum",
+  "Pillars of Arun", "Poorjoy's Asylum", "Whakawairua Tuahu",
+]

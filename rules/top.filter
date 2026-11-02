@@ -15,12 +15,22 @@ Show
 	StackSize >= 3001
 	SetFontSize 45
 	SetTextColor 255 212 87
+	SetBackgroundColor 0 0 0 0
 	PlayEffect Yellow
 	MinimapIcon 1 Yellow Cross
 
-Hide
+# Small gold: shown in the campaign (respec, gambling), hidden in maps
+Hide # league_start
 	BaseType == "Gold"
-	SetFontSize 18
+	AreaLevel >= 68
+	SetFontSize 35
+
+Show
+	BaseType == "Gold"
+	SetFontSize 35
+	SetTextColor 255 212 87
+	SetBackgroundColor 0 0 0 0
+	DisableDropSound True
 
 # 6-links
 Show

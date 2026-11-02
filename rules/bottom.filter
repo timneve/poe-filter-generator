@@ -1,7 +1,8 @@
 # ===== rules/bottom.filter : hand-written rules, checked AFTER price rules =====
 
 # Maps: hidden (your FilterBlade filter hides them too). Change Hide -> Show to see them.
-Hide
+# "Hide # league_start" = shown when config league_start = true (applies to any block).
+Hide # league_start
 	Class == "Maps"
 	SetFontSize 45
 
@@ -23,9 +24,9 @@ Show
 	PlayEffect Grey
 	MinimapIcon 1 Cyan Diamond
 
-Hide
+Hide # league_start
 	Class == "Skill Gems" "Support Gems"
-	SetFontSize 18
+	SetFontSize 35
 
 # Hide all regular gear / flasks / jewels that no price rule picked up
 Hide

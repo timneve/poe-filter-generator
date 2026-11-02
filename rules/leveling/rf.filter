@@ -1,0 +1,156 @@
+# ===== rules/leveling/rf.filter : RF leveling (Pohx guide), config [leveling] build = "rf" =====
+# Campaign only: build_filter.py adds "AreaLevel <= area_level_max" to every block that
+# has no AreaLevel <= of its own. Runs before the white-gear hide and NeverSink's rules,
+# so a Show here beats both. "Show # whites" (last block) = white item types the build uses. Plan: lvl 1-32 melee (2H axe Ground Slam / Sunder),
+# then RF + Fire Trap. Gear: armour and/or evasion, hybrid ok, never pure ES.
+
+# Campaign uniques from the guide (base shown, any unique on it)
+Show # rf uniques: Kikazaru, Pyre, Goldrim, Thrillsteel, Springleaf, Wanderlust, Lochtonial Caress, Thousand Ribbons, Perandus Blazon, Seven-League Step, Cloak of Flame, Rise of the Phoenix, Immortal Flesh, Death Rush, Defiance of Destiny
+	Rarity Unique
+	BaseType == "Amethyst Ring" "Barbute Helmet" "Cloth Belt" "Iron Gauntlets" "Leather Belt" "Leather Cap" "Mosaic Kite Shield" "Paua Amulet" "Plank Kite Shield" "Rawhide Boots" "Sapphire Ring" "Scholar's Robe" "Simple Robe" "Topaz Ring" "Wool Shoes"
+	SetFontSize 45
+	PlayAlertSound 3 300
+	PlayEffect Brown
+	MinimapIcon 1 Brown Star
+
+# Currency the guide spends: transmutes (fire res crafts), alts + chance (Library gems),
+# whetstones (rustic sash recipe). Every stack size.
+Show # rf currency
+	Class == "Stackable Currency"
+	BaseType == "Blacksmith's Whetstone" "Orb of Alteration" "Orb of Chance" "Orb of Transmutation"
+	SetFontSize 40
+	SetTextColor 255 255 255 255
+	PlayEffect Grey
+	MinimapIcon 2 White Circle
+
+# Iron Rings (2x for Ruby Ring recipe), Ruby Rings (fire res), any rarity incl. white
+Show # rf rings
+	Rarity <= Rare
+	BaseType == "Iron Ring" "Ruby Ring"
+	SetFontSize 40
+
+# Lapis Amulet early (Pohx filter)
+Show # rf lapis amulet
+	Rarity Magic Rare
+	BaseType == "Lapis Amulet"
+	AreaLevel <= 16
+	SetFontSize 40
+
+# Rustic Sash: early belt, rares for the vendor recipe
+Show # rf rustic sash
+	Rarity <= Rare
+	BaseType == "Rustic Sash"
+	AreaLevel <= 33
+	SetFontSize 40
+
+# Turquoise Amulet: dex for Fire Trap
+Show # rf dex amulet
+	Rarity <= Rare
+	BaseType == "Turquoise Amulet"
+	AreaLevel >= 25
+	SetFontSize 40
+
+# Never pure ES (or ward) armour
+Hide # rf no pure ES
+	Rarity <= Rare
+	Class == "Body Armours" "Boots" "Gloves" "Helmets" "Shields"
+	BaseArmour <= 0
+	BaseEvasion <= 0
+	SetFontSize 18
+	DisableDropSound True
+
+# 2H melee until the RF swap: no shields (uniques like Rise of the Phoenix still show)
+Hide # rf no shields while 2H
+	Rarity <= Rare
+	Class == "Shields"
+	AreaLevel <= 33
+	SetFontSize 18
+	DisableDropSound True
+
+# Links in RF colours (Pohx filter): 4L any rarity incl. white, early 3L magic/rare
+Show # rf 4-link RF colours
+	Rarity <= Rare
+	LinkedSockets >= 4
+	SocketGroup "BBBR" "GGBR" "BBBB"
+	Class == "Body Armours" "Boots" "Gloves" "Helmets"
+	SetFontSize 45
+	PlayAlertSound 2 300
+	PlayEffect Grey
+	MinimapIcon 1 Grey Diamond
+
+Show # rf 4-link armour
+	Rarity <= Rare
+	LinkedSockets >= 4
+	Class == "Body Armours" "Boots" "Gloves" "Helmets" "Shields"
+	SetFontSize 45
+	PlayEffect Grey
+	MinimapIcon 2 Grey Diamond
+
+Show # rf early 3-link
+	Rarity Magic Rare
+	LinkedSockets >= 3
+	SocketGroup "BBB" "RRG"
+	Class == "Body Armours" "Boots" "Gloves" "Helmets" "Shields"
+	ItemLevel <= 24
+	SetFontSize 45
+	PlayEffect Grey
+
+# Rare pure armour bases: what Pohx gambles / wants for RF (Pohx filter)
+Show # rf rare pure armour
+	Rarity Rare
+	Class == "Body Armours" "Boots" "Gloves" "Helmets" "Shields"
+	BaseEvasion <= 0
+	BaseEnergyShield <= 0
+	BaseArmour >= 1
+	SetFontSize 45
+	PlayEffect Brown
+	MinimapIcon 1 Brown Diamond
+
+# Mana flasks only for the melee start
+Hide # rf no mana flasks after RF swap
+	Rarity <= Rare
+	Class == "Mana Flasks" "Hybrid Flasks"
+	AreaLevel >= 34
+	SetFontSize 18
+	DisableDropSound True
+
+# Never looted: jewels, tinctures, chromatic recipe after act 1
+Hide # rf no jewels / tinctures
+	Rarity Normal Magic
+	Class == "Abyss Jewels" "Jewels" "Tinctures"
+	SetFontSize 18
+	DisableDropSound True
+
+Hide # rf no chromatic recipe
+	Rarity Normal Magic
+	SocketGroup "RGB"
+	AreaLevel >= 17
+	SetFontSize 18
+	DisableDropSound True
+
+# Weapons: only 2H axes / maces for the melee start, nothing after the RF swap
+Hide # rf weapons not used
+	Rarity <= Rare
+	Class == "Bows" "Claws" "Daggers" "One Hand Axes" "One Hand Maces" "One Hand Swords" "Quivers" "Rune Daggers" "Sceptres" "Staves" "Thrusting One Hand Swords" "Two Hand Swords" "Wands" "Warstaves"
+	SetFontSize 18
+	DisableDropSound True
+
+Show # rf 2H axes / maces before RF
+	Rarity Magic Rare
+	Class == "Two Hand Axes" "Two Hand Maces"
+	AreaLevel <= 33
+	SetFontSize 40
+
+Hide # rf 2H after RF swap
+	Rarity <= Rare
+	Class == "Two Hand Axes" "Two Hand Maces"
+	AreaLevel >= 34
+	SetFontSize 18
+	DisableDropSound True
+
+# White item types the build uses. build_filter.py adds "AreaLevel <= hide_normal_after"
+# (config [leveling]); after it every other white gear piece is hidden in the campaign.
+# Hides above still win (no pure ES, no shields while 2H).
+Show # whites
+	Rarity Normal
+	Class == "Two Hand Axes" "Two Hand Maces" "Body Armours" "Boots" "Gloves" "Helmets"

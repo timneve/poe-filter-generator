@@ -91,12 +91,14 @@ def collect(cfg, data, blocks, r):
             label = name + (f" [{line['variant']}]" if line.get("variant") else "")
             if line.get("links"):
                 label += f" ({line['links']}L)"
-            tier, cheapest, best, best_name = (r["fbases"] if foul else r["ubases"]).get(base, ("unpriced", None, 0, ""))
+            tier, cheapest, best, best_name, *ev = (r["fbases"] if foul else r["ubases"]).get(base, ("unpriced", None, 0, ""))
             note = f"base tier {tier}"
             if nomap:
                 note = f"not priced, can't drop in maps ({nomap[:80]}); " + note
             if cheapest is not None:
                 note += f": cheapest {cheapest:.0f}c, best {best:.0f}c {best_name}"
+            if ev and ev[0] is not None:
+                note += f", EV per drop {ev[0]:.1f}c"
             add(cat, label, base, line["chaosValue"], line.get("listingCount"),
                 {"rarity": "Unique", "basetype": base, "class": unique_class(line, t), "ilvl": 84,
                  "foulborn": foul, "links": line.get("links") or 0}, note)
@@ -123,8 +125,8 @@ def collect(cfg, data, blocks, r):
 def write(cfg, data, text, r, league, path):
     rows = collect(cfg, data, fs.parse(text), r)
     meta = {"league": league, "divine": r["divine"], "when": f"{datetime.now():%Y-%m-%d %H:%M}",
-            "safety": cfg["uniques"]["never_hide_chaos"], "jackpot": cfg["jackpot_divine"],
-            "review": cfg.get("report", {}).get("review_chaos", 5)}
+            "safety": cfg["tiers"][cfg["uniques"]["never_hide_tier"]], "jackpot": cfg["jackpot_divine"],
+            "review": cfg["tiers"][cfg.get("report", {}).get("review_tier", "mid")]}
     payload = json.dumps({"meta": meta, "rows": rows}, separators=(",", ":")).replace("</", "<\\/")
     path.parent.mkdir(exist_ok=True)
     path.write_text(PAGE.replace("__DATA__", payload).replace("__LEAGUE__", html.escape(league)), encoding="utf-8")
@@ -172,12 +174,19 @@ details{border-top:1px solid var(--line);padding-top:12px}
 summary{cursor:pointer;font-weight:600;margin-bottom:10px}
 details .bar{position:sticky;top:0;z-index:2;background:var(--bg);padding:8px 0}
 .empty{color:var(--ok);padding:10px 6px}
+#lk{list-style:none;margin:8px 0 0;padding:0;display:grid;gap:8px}
+#lk li{background:var(--panel);border:1px solid var(--line);border-left:3px solid var(--warn);border-radius:6px;padding:8px 12px}
+#lk li.bad{border-left-color:#e33}#lk li.ok{border-left-color:var(--ok)}
+#lk .t{font-weight:600}#lk .t b{color:var(--warn)}
+#lk .ex{display:flex;flex-wrap:wrap;gap:4px 14px;margin-top:6px;font-size:12px}
 .jp{display:inline-block;margin-left:6px;padding:0 5px;border-radius:4px;background:#5a3fd0;color:#fff;font-size:10px;font-weight:700;letter-spacing:.04em;vertical-align:middle}
 </style></head><body>
 <header>
 <h1>Filter report <small>__LEAGUE__ · <span id="meta"></span></small></h1>
 </header>
 <main>
+<h2>Look at these first <small>· hidden and worth ≥ safety, grouped by why</small></h2>
+<ul id="lk"></ul>
 <h2>Hidden, worth a look <small id="revsub"></small></h2>
 <p class="note">Items the filter hides even though poe.ninja prices them at or above the review line. Each one is either intended
 (e.g. a base tiered by its cheapest unique) or something to fix in config.toml.</p>
@@ -234,10 +243,25 @@ document.querySelectorAll("th").forEach(th=>th.onclick=()=>{const k=th.dataset.k
 ["q","cat","min"].forEach(id=>$(id).addEventListener("input",render));
 render();
 const rev=R.filter(r=>!r.nomap&&!r.shown&&(r.c||0)>=M.review);
-$("revsub").textContent=`· ${rev.length} hidden items ≥ ${M.review}c (config [report] review_chaos)`;
+$("revsub").textContent=`· ${rev.length} hidden items ≥ ${M.review}c (config [report] review_tier)`;
 $("rb").innerHTML=rev.length?rev.map(r=>`<tr class="${r.risk?"risk":""}"><td>${label(r)}</td><td>${esc(r.cat)}</td><td>${esc(r.base)}</td>
 <td class="num">${fmt(r.c)}</td><td class="num">${M.divine?fmt(r.c/M.divine):"–"}</td><td class="num">${r.n??"–"}</td>
 <td><div class="rule">${esc(r.rule)} <span>:${r.line}</span></div>${r.note?`<div class="note">${esc(r.note)}</div>`:""}</td></tr>`).join("")
  :`<tr><td colspan="7" class="empty">Nothing priced ≥ ${M.review}c is hidden.</td></tr>`;
+const unq=r=>["Unique","Foulborn","Replica"].includes(r.cat),lnk=r=>/\(\dL\)$/.test(r.name);
+const checks=[
+ {sev:"bad",t:`Hidden worth ≥ ${M.jackpot} div`,rows:R.filter(r=>!r.nomap&&!r.shown&&r.jp),
+  why:"The jackpot rule should never let these hide: bug in rules or config.",ok:`Nothing worth ≥ ${M.jackpot} div is hidden.`},
+ {t:"Linked uniques hidden",rows:R.filter(r=>r.risk&&unq(r)&&lnk(r)),
+  why:`The price comes from the links, but the linked rule only fires at ≥ ${M.jackpot} div. Lower jackpot_divine to catch them, or accept.`},
+ {t:"Chase uniques on hidden bases",rows:R.filter(r=>r.risk&&unq(r)&&!lnk(r)),
+  why:"Unidentified, the filter only sees the base, and the cheapest unique on it is junk. Worth farming? Add the base to [unique_overrides] as \"variable\", or set uniques.variable_jackpot_only = false."},
+ {t:"Crafting bases hidden with real volume",rows:R.filter(r=>r.risk&&r.cat==="Crafting base"&&(r.n||0)>=50),
+  why:"Hidden because a higher ilvl of the same base sells for less (outlier floor). With 50+ listings the price is probably real: check poe.ninja."},
+];
+$("lk").innerHTML=checks.filter(k=>k.rows.length||k.ok).map(k=>!k.rows.length?`<li class="ok"><span class="t">✓ ${esc(k.ok)}</span></li>`:
+ `<li class="${k.sev||""}"><div class="t"><b>${k.rows.length}</b> ${esc(k.t)}</div><div class="note">${esc(k.why)}</div><div class="ex">`+
+ k.rows.slice(0,6).map(r=>`<span>${label(r)} ${fmt(r.c)}c${r.base&&r.cat==="Crafting base"?` · ${esc(r.base)}`:""}${r.n?` · ${r.n} listed`:""}</span>`).join("")+
+ (k.rows.length>6?`<span class="note">+${k.rows.length-6} more below</span>`:"")+`</div></li>`).join("");
 </script></body></html>
 """
