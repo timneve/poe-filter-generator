@@ -454,24 +454,32 @@ class Synthetic(unittest.TestCase):
         self.assertTrue(fs.visible(
             blocks, {"class": "Misc Map Items", "basetype": "Cheap Invitation"}))
 
-    def test_ancient_wombgift_always_shows_with_lavish_sound(self):
-        self.data["stash"]["Wombgift"]["lines"].extend([
-            {"name": "Ancient Wombgift", "baseType": "Ancient Wombgift",
-             "chaosValue": 1, "listingCount": 100},
-            {"name": "Lavish Wombgift", "baseType": "Lavish Wombgift",
-             "chaosValue": 10, "listingCount": 100},
-        ])
-        self.cfg["overrides"]["Ancient Wombgift"] = "hide"
+    def test_ancient_wombgift_has_minor_price_floor_and_keeps_higher_tier(self):
+        item = {"class": "Wombgifts", "basetype": "Ancient Wombgift"}
 
-        blocks, _ = self.build()
-        ancient, ancient_style = fs.evaluate(
-            blocks, {"class": "Wombgifts", "basetype": "Ancient Wombgift"})
-        lavish, lavish_style = fs.evaluate(
-            blocks, {"class": "Wombgifts", "basetype": "Lavish Wombgift"})
+        for price, expected_tier, expected_effect in [
+                (None, "minor", "PlayEffect White"),
+                (1, "minor", "PlayEffect White"),
+                (3, "minor", "PlayEffect White"),
+                (10, "mid", "PlayEffect Yellow"),
+                (30, "high", "PlayEffect Red"),
+                (100, "high", "PlayEffect Red")]:
+            with self.subTest(price=price):
+                self.data["stash"]["Wombgift"]["lines"] = []
+                if price is not None:
+                    self.data["stash"]["Wombgift"]["lines"].append(
+                        {"name": "Ancient Wombgift", "baseType": "Ancient Wombgift",
+                         "chaosValue": price, "listingCount": 100})
 
-        self.assertEqual(ancient.action, "Show")
-        self.assertIn("PlayAlertSound 2 300", ancient_style)
-        self.assertIn("PlayAlertSound 2 300", lavish_style)
+                blocks, result = self.build()
+                self.assertEqual(result["prices"]["Ancient Wombgift"][0],
+                                 max(price or 0, self.cfg["tiers"]["minor"]))
+                self.assertEqual(result["tiers"].of(result["prices"]["Ancient Wombgift"][0]),
+                                 expected_tier)
+                block, style = fs.evaluate(blocks, item)
+                self.assertEqual(block.action, "Show")
+                self.assertIn(expected_effect, style)
+                self.assertTrue(any(line.startswith("PlayAlertSound") for line in style))
 
     def test_boss_only_cheap_unique_keeps_tier_honest(self):
         # Titan Greaves: Kaom's Roots 26c drops in maps, Infinite Pursuit 1c is Breach-only.
@@ -698,6 +706,35 @@ class Synthetic(unittest.TestCase):
         karui = {"class": "Map Fragments", "basetype": "Timeless Karui Splinter"}
         self.assertFalse(fs.visible(blocks, dict(karui, stack=1)))
         self.assertTrue(fs.visible(blocks, dict(karui, stack=72)))  # 5.04c, above max_stack 40
+
+    def test_currency_shards_use_orb_conversion_not_exchange_quotes(self):
+        shards = {
+            "Alchemy Shard": "Orb of Alchemy",
+            "Alteration Shard": "Orb of Alteration",
+            "Fracturing Shard": "Fracturing Orb",
+            "Mirror Shard": "Mirror of Kalandra",
+            "Transmutation Shard": "Orb of Transmutation",
+        }
+        for shard, orb in shards.items():
+            add_exchange(self.data, "Currency", orb, 100)
+            add_exchange(self.data, "Currency", shard, 1, volume=0.5)
+
+        blocks, result = self.build()
+
+        for shard, orb in shards.items():
+            with self.subTest(shard=shard):
+                self.assertEqual(result["prices"][shard][0], result["prices"][orb][0] / 20)
+                item = {"class": "Stackable Currency", "basetype": shard, "stack": 15}
+                block, style = fs.evaluate(blocks, item)
+                self.assertEqual(block.action, "Show")
+                self.assertIn("PlayEffect Red", style)
+                self.assertNotIn("PlayEffect White", style)
+                for candidate in blocks:
+                    if any(key == "BaseType" and shard in values
+                           for key, _, values, _ in candidate.conds):
+                        stack_condition = next((int(values[0]) for key, _, values, _
+                                                in candidate.conds if key == "StackSize"), None)
+                        self.assertTrue(stack_condition is None or stack_condition <= 20)
 
     def test_splinter_exchange_price_is_ignored_when_finished_item_is_unpriced(self):
         add_exchange(self.data, "Fragment", "Timeless Templar Emblem", 0.01, volume=1)
@@ -975,11 +1012,28 @@ class Synthetic(unittest.TestCase):
             {"class": "Stackable Currency", "basetype": "Mirror of Kalandra"},
             {"class": "Stackable Currency", "basetype": "Divine Orb"},
             {"class": "Body Armours", "basetype": "Astral Plate", "rarity": "Rare", "links": 6},
-            {"class": "Rings", "basetype": "Iron Ring", "rarity": "Rare", "mirrored": True},
             {"class": "Quest Items", "basetype": "Some Quest Thing"},
             {"class": "Some Future Class", "basetype": "Thing"},
         ]:
             self.assertTrue(fs.visible(blocks, item), item)
+
+    def test_mirrored_item_rule_config_toggle(self):
+        item = {"class": "Rings", "basetype": "Iron Ring", "rarity": "Rare", "mirrored": True}
+        blocks, _ = self.build()
+        mirrored_rules = [
+            block for block in blocks
+            if any(key == "Mirrored" and op in ("=", "==") and values == ["True"]
+                   for key, op, values, _ in block.conds)
+        ]
+        self.assertEqual(mirrored_rules, [])
+
+        self.cfg["show_mirrored"] = True
+        blocks, _ = self.build()
+        block, style = fs.evaluate(blocks, item)
+        self.assertEqual(block.comment, "mirrored items (variable value)")
+        self.assertIn("PlayAlertSound 2 300", style)
+        self.assertIn("PlayEffect Blue", style)
+        self.assertFalse(any(line in ("PlayAlertSound 6 300", "PlayEffect Red") for line in style))
 
 
 # ------------------------------------------------------------------ live cache

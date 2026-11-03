@@ -49,6 +49,7 @@ hide_forbidden_tome = true
 # Show generic 5-link / 6-link items.
 show_5_links = false
 show_6_links = false
+show_mirrored = false
 
 # Re-download prices if cache older than this many minutes
 cache_minutes = 60
@@ -104,10 +105,15 @@ unpriced_currency = "reference"
 # divination-card groups as a fallback; unmatched cards stay unknown (blue beam, no sound).
 # NeverSink groups are not treated as market prices.
 
-# Splinters that combine into one item: price = finished item / count (poe.ninja splinter
-# prices are thin and wrong). Stack checks go up to count, so 72x a 0.07c splinter shows.
+# Shards / splinters that combine into one item: price = finished item / count. Stack checks
+# go up to the conversion count (a full currency-shard stack is 20).
 # Skipped when the finished item has no price. name = ["finished item", count]
 [exchange.splinters]
+"Alchemy Shard" = ["Orb of Alchemy", 20]
+"Alteration Shard" = ["Orb of Alteration", 20]
+"Fracturing Shard" = ["Fracturing Orb", 20]
+"Mirror Shard" = ["Mirror of Kalandra", 20]
+"Transmutation Shard" = ["Orb of Transmutation", 20]
 "Timeless Karui Splinter" = ["Timeless Karui Emblem", 100]
 "Timeless Maraketh Splinter" = ["Timeless Maraketh Emblem", 100]
 "Timeless Templar Splinter" = ["Timeless Templar Emblem", 100]

@@ -813,8 +813,7 @@ def emit_stackables(cfg, tiers, prices, ref_currency, ref_cards, card_volumes):
         if t == "DivinationCard":
             max_stack = ex["card_rewards"][name][2]
         else:
-            max_stack = max(ex["max_stack"],
-                            ex.get("splinters", {}).get(name, [None, 0])[1])
+            max_stack = ex.get("splinters", {}).get(name, [None, ex["max_stack"]])[1]
         for tname, thr in tiers.list:
             if tiers.rank(tname) >= tiers.rank(own):
                 continue
@@ -1260,7 +1259,7 @@ def hand_rules(cfg, name):
     """rules/<name>.filter; league_start turns "Hide # league_start" blocks into Show."""
     text = (ROOT / "rules" / f"{name}.filter").read_text(encoding="utf-8")
     if name == "top":
-        for key in ("show_5_links", "show_6_links"):
+        for key in ("show_5_links", "show_6_links", "show_mirrored"):
             pattern = rf"(?ms)^# BEGIN {key}\r?\n(.*?)^# END {key}\r?\n?"
             replacement = r"\1" if cfg.get(key, key == "show_6_links") else ""
             text, count = re.subn(pattern, replacement, text)
@@ -1277,6 +1276,8 @@ def build_text(cfg, data, league):
     card_volumes = card_trade_volumes(data)
     apply_divine_tiers(cfg, divine)
     tiers = Tiers(cfg)
+    ancient_wombgift, item_type = prices.get("Ancient Wombgift", (0, "Wombgift"))
+    prices["Ancient Wombgift"] = (max(ancient_wombgift, cfg["tiers"]["minor"]), item_type)
     ubases = price_unique_bases(data, cfg, tiers, divine)
     fbases = price_foulborn_bases(data, cfg, tiers, divine)
     linked = price_linked_jackpots(data, cfg, divine)

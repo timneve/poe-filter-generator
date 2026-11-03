@@ -9,16 +9,6 @@ Show
 	PlayEffect Green
 	MinimapIcon 1 Green Pentagon
 
-# Ancient Wombgift: always show, with the same alert sound as Lavish Wombgift
-Show
-	Class == "Wombgifts"
-	BaseType == "Ancient Wombgift"
-	SetFontSize 45
-	SetTextColor 255 190 0
-	PlayAlertSound 2 300
-	PlayEffect Yellow
-	MinimapIcon 1 Yellow Moon
-
 # Big gold stacks only
 Show
 	BaseType == "Gold"
@@ -67,10 +57,12 @@ Show
 	MinimapIcon 0 Red Star
 # END show_5_links
 
-# Mirrored / fractured-6 etc: anything mirrored is worth a look
-Show
+# BEGIN show_mirrored
+# Mirrored items have unknown / variable value: blue, not a top-tier tink
+Show # mirrored items (variable value)
 	Mirrored True
 	SetFontSize 45
-	PlayAlertSound 6 300
-	PlayEffect Red
-	MinimapIcon 0 Red Star
+	PlayAlertSound 2 300
+	PlayEffect Blue
+	MinimapIcon 1 Blue Star
+# END show_mirrored

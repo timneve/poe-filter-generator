@@ -24,6 +24,8 @@ You can run the Python scripts directly instead of the batch files:
   `false` to show it normally.
 - `show_5_links` and `show_6_links` in `config.toml` independently control generic 5-link and
   6-link item alerts.
+- `show_mirrored` in `config.toml` controls the optional blue, non-tink mirrored-item rule
+  (disabled by default).
 - `[overquality]` - quality thresholds for non-mirrored, non-corrupted gear (30% on by default;
   27% and 21% are optional)
 
@@ -82,6 +84,8 @@ other bases in the Shields class are larger. Vendor Shows take priority over cam
 ## Price sources
 - Stackables (currency, cards, scarabs, essences, fossils, oils, omens, tattoos, fragments, ...):
   poe.ninja Currency Exchange data. Stack sizes count (10x 0.5c = 5c tier).
+- Currency shards use one twentieth of the finished currency's price rather than sparse shard
+  quotes; configured splinters use the finished item price divided by the completion count.
 - Divination-card quotes are not used because the available poe.ninja exchange data does not
   distinguish buy orders from sell quotes. Configured deterministic rewards use the exact
   reward item's price (currency-exchange items, including fragments/scarabs, named unique
@@ -118,7 +122,7 @@ other bases in the Shields class are larger. Vendor Shows take priority over cam
 - Foulborn uniques: own tiers per base (cheapest variant = tier, best variant >= jackpot_divine = blue), hidden below `foulborn.min_tier`.
 - Unknown value (`unknown_as_variable`, toggle): a unique base is only tiered when every unique the
   wiki says can drop on it has a confident poe.ninja price; otherwise blue variable.
-- Wrist saver (`[small_loot]`, toggle): non-stackable loot (uniques, Foulborn, invitations, wombgifts) below tier `min_tier` (default minor = 1/64 div) is hidden. Jackpots still show. Ancient Wombgift is always shown with the same alert sound as Lavish Wombgift.
+- Wrist saver (`[small_loot]`, toggle): non-stackable loot (uniques, Foulborn, invitations, wombgifts) below tier `min_tier` (default minor = 1/64 div) is hidden. Jackpots still show. Ancient Wombgift is guaranteed at least the minor (white) tier; higher prices use their normal price tier.
 - Crafting bases: poe.ninja base prices by ilvl + influence, only at `bases.min_tier` and up.
   `[bases]` requires both `min_listings` and `min_samples`; raise these thresholds to ignore
   prices with too little supporting market data. A confident listing prices only its own ilvl
