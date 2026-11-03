@@ -9,6 +9,16 @@ Show
 	PlayEffect Green
 	MinimapIcon 1 Green Pentagon
 
+# Ancient Wombgift: always show, with the same alert sound as Lavish Wombgift
+Show
+	Class == "Wombgifts"
+	BaseType == "Ancient Wombgift"
+	SetFontSize 45
+	SetTextColor 255 190 0
+	PlayAlertSound 2 300
+	PlayEffect Yellow
+	MinimapIcon 1 Yellow Moon
+
 # Big gold stacks only
 Show
 	BaseType == "Gold"

@@ -118,7 +118,7 @@ other bases in the Shields class are larger. Vendor Shows take priority over cam
 - Foulborn uniques: own tiers per base (cheapest variant = tier, best variant >= jackpot_divine = blue), hidden below `foulborn.min_tier`.
 - Unknown value (`unknown_as_variable`, toggle): a unique base is only tiered when every unique the
   wiki says can drop on it has a confident poe.ninja price; otherwise blue variable.
-- Wrist saver (`[small_loot]`, toggle): non-stackable loot (uniques, Foulborn, invitations, wombgifts) below tier `min_tier` (default mid = 1/16 div) is hidden. Jackpots still show.
+- Wrist saver (`[small_loot]`, toggle): non-stackable loot (uniques, Foulborn, invitations, wombgifts) below tier `min_tier` (default minor = 1/64 div) is hidden. Jackpots still show. Ancient Wombgift is always shown with the same alert sound as Lavish Wombgift.
 - Crafting bases: poe.ninja base prices by ilvl + influence, only at `bases.min_tier` and up.
   `[bases]` requires both `min_listings` and `min_samples`; raise these thresholds to ignore
   prices with too little supporting market data. A confident listing prices only its own ilvl

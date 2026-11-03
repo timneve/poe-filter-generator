@@ -428,6 +428,7 @@ class Synthetic(unittest.TestCase):
     def test_small_loot_toggle(self):
         # 4c Foulborn (Goldwyrm-like) and a 3c invitation: hidden with the wrist saver on,
         # shown (Foulborn quiet at its own tier) with it off
+        self.cfg["small_loot"]["min_tier"] = "mid"
         add_foulborn(self.data, "Nubuck Boots", "Goldwyrm", "Gold", 4, listings=300, item_type="Boots", t="UniqueArmour")
         self.data["stash"]["Invitation"]["lines"].append(
             {"name": "Cheap Invitation", "chaosValue": 3, "listingCount": 100})
@@ -443,6 +444,34 @@ class Synthetic(unittest.TestCase):
         self.assertEqual(r["fbases"]["Nubuck Boots"][0], "minor")
         self.assertTrue(fs.visible(blocks, boots))
         self.assertTrue(fs.visible(blocks, inv))
+
+    def test_small_loot_default_shows_minor_tier_items(self):
+        self.assertEqual(self.cfg["small_loot"]["min_tier"], "minor")
+        self.data["stash"]["Invitation"]["lines"].append(
+            {"name": "Cheap Invitation", "chaosValue": 3, "listingCount": 100})
+
+        blocks, _ = self.build()
+        self.assertTrue(fs.visible(
+            blocks, {"class": "Misc Map Items", "basetype": "Cheap Invitation"}))
+
+    def test_ancient_wombgift_always_shows_with_lavish_sound(self):
+        self.data["stash"]["Wombgift"]["lines"].extend([
+            {"name": "Ancient Wombgift", "baseType": "Ancient Wombgift",
+             "chaosValue": 1, "listingCount": 100},
+            {"name": "Lavish Wombgift", "baseType": "Lavish Wombgift",
+             "chaosValue": 10, "listingCount": 100},
+        ])
+        self.cfg["overrides"]["Ancient Wombgift"] = "hide"
+
+        blocks, _ = self.build()
+        ancient, ancient_style = fs.evaluate(
+            blocks, {"class": "Wombgifts", "basetype": "Ancient Wombgift"})
+        lavish, lavish_style = fs.evaluate(
+            blocks, {"class": "Wombgifts", "basetype": "Lavish Wombgift"})
+
+        self.assertEqual(ancient.action, "Show")
+        self.assertIn("PlayAlertSound 2 300", ancient_style)
+        self.assertIn("PlayAlertSound 2 300", lavish_style)
 
     def test_boss_only_cheap_unique_keeps_tier_honest(self):
         # Titan Greaves: Kaom's Roots 26c drops in maps, Infinite Pursuit 1c is Breach-only.
@@ -482,6 +511,7 @@ class Synthetic(unittest.TestCase):
 
     def test_small_loot_keeps_valuable_variant(self):
         # cheapest variant 2c, another 300c: never_hide_chaos keeps it visible (variable)
+        self.cfg["small_loot"]["min_tier"] = "mid"
         self.cfg["uniques"]["variable_jackpot_only"] = False
         add_foulborn(self.data, "Titan Greaves", "Red Trail", "Junk", 2, item_type="Boots", t="UniqueArmour")
         add_foulborn(self.data, "Titan Greaves", "Red Trail", "Bleed Power", 300, listings=3, item_type="Boots", t="UniqueArmour")
