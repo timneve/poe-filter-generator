@@ -699,6 +699,12 @@ class Synthetic(unittest.TestCase):
         self.assertFalse(fs.visible(blocks, dict(karui, stack=1)))
         self.assertTrue(fs.visible(blocks, dict(karui, stack=72)))  # 5.04c, above max_stack 40
 
+    def test_splinter_exchange_price_is_ignored_when_finished_item_is_unpriced(self):
+        add_exchange(self.data, "Fragment", "Timeless Templar Emblem", 0.01, volume=1)
+        add_exchange(self.data, "Fragment", "Timeless Templar Splinter", 20)
+        _, r = self.build()
+        self.assertNotIn("Timeless Templar Splinter", r["prices"])
+
     def test_exact_currency_reward_ignores_divination_card_quote(self):
         add_exchange(self.data, "Currency", "Exalted Orb", 100)
         add_exchange(self.data, "DivinationCard", "Abandoned Wealth", 50, volume=100)

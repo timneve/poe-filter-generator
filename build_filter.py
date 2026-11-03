@@ -308,6 +308,7 @@ def price_stackables(data, cfg, tiers):
             if line.get("listingCount", 0) >= cfg["uniques"]["min_listings"]:
                 prices.setdefault(line.get("baseType") or line["name"], (line["chaosValue"], t))
     for name, (whole, count) in ex.get("splinters", {}).items():
+        prices.pop(name, None)
         if whole in prices:
             prices[name] = (prices[whole][0] / count, prices[whole][1])
     exact_item_prices = {}
