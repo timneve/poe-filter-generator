@@ -16,7 +16,7 @@ Tier-name values accept: `top high mid minor low brown dust` + often `variable`,
 | `league`, `output_name`, `output_dirs`, `cache_minutes` | IO | `detect_league`, `main`, `fetch_all` |
 | `hide_forbidden_tome` | hide it regardless | `emit_forbidden_tome` |
 | `show_5_links`, `show_6_links`, `show_mirrored`, `show_gold` | toggle `# BEGIN/END` sections in `rules/top.filter` (off: `TOGGLE_OFF` text, gold -> Hide block) | `hand_rules` |
-| `league_start` | show almost everything | `apply_league_start`, `hand_rules`, `league_start_unused_whites` |
+| `league_start` | show almost everything | `apply_league_start`, `hand_rules`, `league_start_unused_whites`, `emit_flasks` / `emit_exotics` / `emit_special_maps` (commented-out league.filter blocks on), `[maps] progression` none -> all |
 | `gear_text_color`, `campaign_white_text_color` | gear text colour | `emit_defaults` |
 | `unknown_as_variable` | base with any unpriced wiki unique -> blue | `price_unique_bases` |
 
@@ -29,15 +29,19 @@ Tier-name values accept: `top high mid minor low brown dust` + often `variable`,
 | `[exchange.card_rewards]` | `"Card" = ["Reward", reward_count, set_size]` exact deterministic rewards only | `price_stackables` |
 | `[exchange.reference_currency_tiers]` | NeverSink tier number -> our tier | `reference_currency_tiers` |
 | `[exchange.reference_card_tiers]` | NeverSink card group (t1, t2, ...) -> our tier | `reference_card_tiers` |
-| `[uniques]` | `never_hide_tier`, `variable_jackpot_only` (LS false), `min_listings`, `include_replicas`, `show.<tier>` bool per price tier, off = hidden (LS all on; small_loot still floors), `unpriced`, `hide_maps` (LS false), `variable_classes` (item classes always blue, block after top tier), `always_show_bases`, `skip_non_map_drops`, `wiki_cache_days`, `map_sources` | `shown_unique_tiers`, `price_unique_bases`, `emit_uniques`, `non_map_drops`; `min_listings` also `price_stackables` (stash feeds), `price_clusters`, `price_gems` |
+| `[uniques]` | `never_hide_tier`, `variable_jackpot_only` (LS false), `min_listings`, `include_replicas`, `show.<tier>` bool per price tier, off = hidden (LS all on; small_loot still floors), `unpriced`, `hide_maps` (league.filter [3201]: corrupted unique maps shown, rest hidden; `emit_special_maps`; LS false), `variable_classes` (item classes always blue, block after top tier), `always_show_bases`, `skip_non_map_drops`, `wiki_cache_days`, `map_sources` | `shown_unique_tiers`, `price_unique_bases`, `emit_uniques`, `non_map_drops`; `min_listings` also `price_stackables` (stash feeds), `price_clusters`, `price_gems` |
 | `[uniques.ev]` | `enabled`, `tier_weights {"0".."5"}`, `default_tier`, `unknown_chase_tier` | `unique_drop_weights`, `price_unique_bases` |
 | `[uniques.map_drop]` | `"Unique" = true/false` force map-drop status | `non_map_drops` |
 | `[vendor_recipes.<name>]` | `enabled`, `tier` (price tier name or `variable`, floor by `Tiers.rank`; other -> ValueError), `class` (str or list), `bases` (any rarity, uniques floored per base) or `conds` (raw conditions, all required, any base) + optional `rarity` list, optional `any` (raw filter conditions, one block each; left out = any state), `note` (report text). Floor: `recipe_floor` copies better crafting-base / `[overrides]` blocks with the recipe conds in front | `emit_vendor_recipes`, `report.vendor_recipes` |
 | `[content.<mod>]` (ultimatum, blight, breach) | `enabled` (LS true; on = priced normally + faded show when price hides the base but a content unique is in a shown unique tier (`valuable_content_bases`); off = skipped, also for base cheapest), `sources` (wiki drop-source substrings) | `content_bases`, `content_policy` |
 | `[content.<mod>.drops]` | `"Unique" = "price" (default: price + rescue) / true (priced; faded show before all rules when price hides it) / false (hide)`; base-wide; unknown name -> ValueError | `content_policy`, `emit_content_overrides`, `emit_uniques` |
 | `[foulborn]` | `min_listings`, `min_tier` (LS lowest), `unpriced` | `price_foulborn_bases` |
+| `[gems]` | `min_tier` (LS lowest; missing = minor): confident poe.ninja gem variants below it get no Show (bottom.filter hides them; level / quality 21+ ones an exact Hide before `emit_gem_fallback`'s blue). Thin listings always blue | `price_gems`, `emit_gem_fallback` |
 | `[small_loot]` | wrist saver: `enabled` (LS false), `min_tier`, `types` | `small_loot`, `emit_stackables`, unique emit |
 | `[overquality]` | `quality_30/27/21` | `emit_overquality` |
+| `[flasks]` | `enabled` (default true): NeverSink flask / tincture blocks. LS: + blocks commented out in league.filter | `emit_flasks` |
+| `[maps]` | `progression` "none" (league.filter: normal tiers hidden) / "all" / "auto" (tier shown while `AreaLevel <= 67+tier`); LS none -> all. Special maps always per league.filter | `emit_map_progression`, `emit_special_maps` |
+| `[exotics]` | `enabled` (default true): league.filter memory-strand + fractured gear blocks, own style. LS: + commented-out ones | `emit_exotics` |
 | `[leveling]` | `enabled`, `strictness` 0-4, `area_level_max`, `build`, `hide_normal_after`, `hide_magic_after`, `keep_build_weapons_magic`, `show_jewellery`, `show_gems`, `show_magic_vendor`, `show_rare_vendor`, `show_magic_rare_cells`, `league_start_hide_unused`, `show_all_stackables`, `icon_sound` | `emit_leveling`, `campaign_unhide`, `emit_defaults` |
 | `[report]` | `review_tier` | `report.write` |
 | `[bases]` | `enabled`, `min_tier` (LS lowest), `min_listings`, `min_samples`, `include_dual_influence` | `price_crafting_bases`, `emit_crafting_bases` |

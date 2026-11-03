@@ -110,7 +110,9 @@ cache_minutes = 60
 #   uniques.show -> all tiers    foulborn / bases min_tier -> lowest tier    uniques.hide_maps -> false
 #   "hide" overrides, unpriced settings and card tiers -> lowest tier
 #   all [content.*] modules on, [leveling] on
-#   rules/*.filter blocks tagged "Hide # league_start" -> Show (maps, gems, small gold)
+#   rules/*.filter blocks tagged "Hide # league_start" -> Show (gems, small gold)
+#   [maps] progression "none" -> "all" (every normal map tier shown)
+#   commented-out "#Show" rules of reference/league.filter on (maps, flasks, exotics)
 #   white crafting bases the [leveling] build never uses stay hidden (league_start_hide_unused)
 # Only plain gear in maps (and gold, unless show_gold) stays hidden.
 # Set back to false after a few days, when you have currency and prices settle.
@@ -426,7 +428,8 @@ min_listings = 10
 include_replicas = false
 # Base with no priced uniques (new / unknown): tier name, "hide" or "unknown"
 unpriced = "unknown"
-# Hide ALL unique maps (Foulborn and jackpots too). Shown ones get a Square minimap icon.
+# Unique maps as reference/league.filter [3201]: corrupted ones shown (blue star), the rest
+# hidden, before any price rule. false = price unique maps like other uniques (Square icon).
 hide_maps = true
 # Hand list: unique bases always shown (blue "variable" when their EV would hide them).
 # Start: NeverSink "High Variety - Top Multi-Bases" ($tier->multispecialhigh, regular filter).
@@ -615,6 +618,17 @@ min_tier = "minor"
 types = ["Invitation", "Wombgift"]
 
 # ---------------------------------------------------------------------------
+# Gems: a poe.ninja variant price (1, 1/20, 20/20, 21/23c ...) shows the gem in its tier only
+# from min_tier up (level 1 gems list at 5-10c that nobody pays). Cheaper gems: hidden by
+# rules/bottom.filter, except rules/top.filter's Awakened / 20% shows and the gemcutter
+# recipe (like NeverSink, which hides plain level 1 gems). league_start: lowest tier.
+# No exact price -> blue (variable): thin listings (any price), and level 21+ / quality 21+
+# gems with no confident price. A confident price below min_tier still hides that variant.
+# ---------------------------------------------------------------------------
+[gems]
+min_tier = "mid"
+
+# ---------------------------------------------------------------------------
 # Overquality items: non-mirrored, non-corrupted gear at these quality thresholds
 # is shown before price-based rules. 30% matches the active NeverSink tier;
 # enable 27% and 21% as desired.
@@ -623,6 +637,44 @@ types = ["Invitation", "Wombgift"]
 quality_30 = true
 quality_27 = false
 quality_21 = false
+
+# ---------------------------------------------------------------------------
+# Normal / magic flasks + tinctures: NeverSink's rules from reference/league.filter, copied
+# every build (borders / backgrounds stripped): identified magic flasks / tinctures with good
+# mods ([0803]), fractured utility flasks ([1303]), endgame overquality ([[2500]]: 21%+ any
+# flask, 21% / 26% ilvl 82+ utility flasks + tinctures, corrupted 30% utility). Before vendor
+# recipes, so a 21% white flask shows this way instead of the glassblower style.
+# Flask bases (Iron Flask ilvl 84 ...) are priced by poe.ninja in [bases], not here.
+# league_start: also the flask blocks commented out in reference/league.filter.
+# ---------------------------------------------------------------------------
+[flasks]
+enabled = true
+
+# ---------------------------------------------------------------------------
+# Memory-stranded + fractured gear: reference/league.filter's blocks with its own style
+# (borders / backgrounds stripped): [0902] memory strands (stranded + fractured / veiled,
+# top bases 60+ / 15+ strands), [[1100]] fractured + veiled / incursion / delve mods,
+# [1303] fractured jewels / abyss jewels / heist gear (fractured flasks: [flasks]).
+# league_start: also the blocks commented out there (lower strand tiers, any fractured item).
+# Before vendor recipes / crafting bases / rares. poe.ninja has no price for these.
+# ---------------------------------------------------------------------------
+[exotics]
+enabled = true
+
+# ---------------------------------------------------------------------------
+# Maps: shown / hidden exactly as reference/league.filter, with its own style. Special maps
+# always: Valdo, Nightmare, Shaper guardian, Zana / Elder (T16) / conqueror influenced,
+# blighted + blight-ravaged, T16 Vaal Temple, enchanted, implicit, 8-mod corrupted
+# ([0301], [3202]-[3204]). Unique maps: [uniques] hide_maps.
+# progression = normal maps by tier ([3302]):
+#   "none" = league.filter as is: every tier hidden (late league)
+#   "all"  = every tier shown, league.filter tier style (league start: turning the rules on)
+#   "auto" = a tier shows while AreaLevel <= its own level (campaign: all; in a T5 map: T5+;
+#            in a T16 map: T16 only). Middle ground while climbing the atlas.
+# league_start: "none" -> "all", plus league.filter's commented-out map rules (corrupted implicit).
+# ---------------------------------------------------------------------------
+[maps]
+progression = "none"
 
 # ---------------------------------------------------------------------------
 # Campaign / leveling: NeverSink's leveling rules, taken from reference/league.filter

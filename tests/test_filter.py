@@ -9,6 +9,7 @@ Two kinds of tests:
 """
 import copy
 import json
+import re
 import sys
 import unittest
 from pathlib import Path
@@ -98,6 +99,70 @@ class Synthetic(unittest.TestCase):
         self.assertIn('"Faster Casting Support"', text)
         cyclone = {"class": "Skill Gems", "basetype": "Cyclone", "transfigured": True}
         self.assertTrue(fs.visible(fs.parse(text), cyclone))
+
+    def test_gem_variants_priced_like_neversink(self):
+        # level / quality / corrupted variants each priced (NeverSink: GemLevel / Quality rules);
+        # a priced 20/20 gem keeps its tier over the cyan 20% rule and the gemcutter recipe floor
+        self.cfg["vendor_recipes"]["gemcutter"]["enabled"] = True
+        self.data["stash"]["SkillGem"] = {"lines": [
+            {"name": "Holy Flame Totem", "gemLevel": 1, "chaosValue": 1.5, "listingCount": 50},
+            {"name": "Holy Flame Totem", "gemLevel": 20, "gemQuality": 20, "chaosValue": 200, "listingCount": 50},
+            {"name": "Holy Flame Totem", "gemLevel": 21, "gemQuality": 23, "corrupted": True,
+             "chaosValue": 6, "listingCount": 50},
+            {"name": "Holy Flame Totem", "gemLevel": 20, "chaosValue": 900, "listingCount": 2}]}
+        blocks, _ = self.build()
+        gem = {"class": "Skill Gems", "basetype": "Holy Flame Totem"}
+        # thin 20/0 price: shown blue, not trusted for its tier
+        self.assertIn("gem variable 20 ", fs.evaluate(blocks, dict(gem, gem_level=20))[0].comment)
+        self.assertIn("gem top 20/20", fs.evaluate(blocks, dict(gem, gem_level=20, quality=20))[0].comment)
+        self.assertIn("gem mid 21/23c", fs.evaluate(blocks, dict(gem, gem_level=21, quality=23, corrupted=True))[0].comment)
+        self.assertFalse(fs.visible(blocks, dict(gem, gem_level=1)))  # 1.5c: wrist saver
+        # 20/20 price never reaches a corrupted 20/20
+        self.assertNotIn("gem top", fs.evaluate(blocks, dict(gem, gem_level=20, quality=20, corrupted=True))[0].comment)
+
+    def test_cheap_gem_hidden_by_small_loot(self):
+        # 1.5c Manaforged Arrows (low tier): gems don't stack -> wrist saver (minor 2c) hides it
+        self.data["stash"]["SkillGem"] = {"lines": [
+            {"name": "Manaforged Arrows Support", "gemLevel": 1, "chaosValue": 1.5, "listingCount": 50}]}
+        gem = {"class": "Support Gems", "basetype": "Manaforged Arrows Support"}
+        self.cfg["gems"]["min_tier"] = "low"
+        blocks, _ = self.build()
+        self.assertFalse(fs.visible(blocks, gem))
+        self.cfg["small_loot"]["enabled"] = False
+        blocks, _ = self.build()
+        self.assertTrue(fs.visible(blocks, gem))
+
+    def test_gems_below_min_tier_hidden(self):
+        # 3c level 1 Pulverise (minor) below [gems] min_tier mid: no price block, hidden
+        self.data["stash"]["SkillGem"] = {"lines": [
+            {"name": "Pulverise Support", "gemLevel": 1, "chaosValue": 3, "listingCount": 50}]}
+        gem = {"class": "Support Gems", "basetype": "Pulverise Support", "gem_level": 1}
+        self.cfg["gems"]["min_tier"] = "mid"
+        blocks, _ = self.build()
+        self.assertFalse(fs.visible(blocks, gem))
+        self.cfg["gems"]["min_tier"] = "minor"
+        blocks, _ = self.build()
+        self.assertIn("gem minor 1", fs.evaluate(blocks, gem)[0].comment)
+
+    def test_gem_blue_fallback(self):
+        # probably valuable, no exact price -> blue: thin listings (any price), unlisted 21 /
+        # 23% variants. A confident price in a hidden tier still hides its exact variant.
+        self.cfg["gems"]["min_tier"] = "mid"
+        self.data["stash"]["SkillGem"] = {"lines": [
+            {"name": "Pulverise Support", "gemLevel": 21, "corrupted": True, "chaosValue": 3, "listingCount": 4},
+            {"name": "Arc", "gemLevel": 21, "corrupted": True, "chaosValue": 3, "listingCount": 50}]}
+        blocks, _ = self.build()
+        gem = {"class": "Support Gems", "basetype": "Pulverise Support", "corrupted": True}
+        variable = lambda item: "variable" in fs.evaluate(blocks, item)[0].comment
+        self.assertTrue(variable(dict(gem, gem_level=21)))  # thin 3c: blue, not hidden
+        self.assertTrue(fs.visible(blocks, dict(gem, gem_level=20, quality=23)))  # unlisted 20/23c: top's 20% Show
+        self.assertTrue(variable(dict(gem, basetype="Fireball", gem_level=21)))  # no price at all
+        arc = {"class": "Skill Gems", "basetype": "Arc", "corrupted": True, "gem_level": 21}
+        self.assertFalse(fs.visible(blocks, arc))  # confident 3c < mid: explicit hide
+        self.assertTrue(variable(dict(arc, gem_level=22)))  # other variant: no price -> blue
+        self.cfg["hide_tiers"].append("variable")
+        blocks, _ = self.build()
+        self.assertFalse(fs.visible(blocks, dict(gem, gem_level=21)))
 
     def test_report_vendor_recipes(self):
         for rec in self.cfg["vendor_recipes"].values():
@@ -1254,6 +1319,26 @@ class Synthetic(unittest.TestCase):
         self.assertIn("reference tier", b.comment)
         self.assertTrue(fs.visible(blocks, {"class": "Stackable Currency", "basetype": "Exalted Orb"}))
 
+    def test_maps_follow_league_filter(self):
+        # special maps always shown; normal tiers per [maps] progression; league_start -> all
+        valdo = {"class": "Maps", "basetype": "Valdo Map", "rarity": "Rare", "map_tier": 17}
+        blighted = {"class": "Maps", "basetype": "Map (Tier 3)", "map_tier": 3, "blighted": True}
+        unique = {"class": "Maps", "basetype": "Map (Tier 16)", "map_tier": 16, "rarity": "Unique"}
+        t1 = lambda area: {"class": "Maps", "basetype": "Map (Tier 1)", "map_tier": 1, "area_level": area}
+        for mode, shown in [("none", (False, False)), ("auto", (True, False)), ("all", (True, True))]:
+            self.cfg["maps"] = {"progression": mode}
+            blocks, _ = self.build()
+            self.assertTrue(fs.visible(blocks, valdo))
+            self.assertTrue(fs.visible(blocks, blighted))
+            self.assertFalse(fs.visible(blocks, unique))  # uniques.hide_maps: uncorrupted hidden
+            self.assertTrue(fs.visible(blocks, dict(unique, corrupted=True)))
+            self.assertEqual((fs.visible(blocks, t1(68)), fs.visible(blocks, t1(72))), shown, mode)
+        self.cfg["maps"] = {"progression": "none"}
+        self.cfg["league_start"] = True
+        self.cfg = bf.apply_league_start(self.cfg)
+        blocks, _ = self.build()
+        self.assertTrue(fs.visible(blocks, t1(83)))
+
     def test_league_start_hides_whites_build_never_uses(self):
         for name, chaos, item_type in [("Imbued Wand", 2, "Wand"), ("Glorious Plate", 2, "Body Armour"),
                                        ("Profane Wand", 500, "Wand")]:
@@ -1369,6 +1454,50 @@ class Synthetic(unittest.TestCase):
         b, _ = fs.evaluate(blocks, large(70, 9, "Attack Damage"))
         self.assertIn("cluster", b.comment)
 
+    def test_flasks_neversink_rules(self):
+        blocks, _ = self.build()
+        flask = lambda **kw: {"class": "Utility Flasks", "basetype": "Quicksilver Flask", "rarity": "Magic",
+                              "ilvl": 83, "width": 1, "height": 2, **kw}
+        self.assertTrue(fs.visible(blocks, flask(quality=21)))                      # [2502] any 21%
+        self.assertTrue(fs.visible(blocks, flask(quality=30, corrupted=True)))      # corrupted 30%
+        self.assertTrue(fs.visible(blocks, flask(fractured=True)))                  # [1303] fractured
+        self.assertTrue(fs.visible(blocks, flask(identified=True, mods=["of the Cheetah"])))  # [0803]
+        self.assertTrue(fs.visible(blocks, {"class": "Tinctures", "basetype": "Oakbranch Tincture",
+                                            "rarity": "Magic", "ilvl": 82, "quality": 21}))
+        self.assertFalse(fs.visible(blocks, flask(quality=10)))
+        b, _ = fs.evaluate(blocks, {"class": "Jewels", "basetype": "Cobalt Jewel",
+                                    "rarity": "Magic", "fractured": True})
+        self.assertNotIn("flask", b.comment)                                        # flask classes only
+        b, _ = fs.evaluate(blocks, flask(quality=21, rarity="Normal"))
+        self.assertIn("flask", b.comment)                                           # beats glassblower
+        self.cfg["flasks"]["enabled"] = False
+        blocks, _ = self.build()
+        self.assertFalse(fs.visible(blocks, flask(quality=21)))
+
+    def test_exotics_memory_strands_fractured(self):
+        blocks, _ = self.build()
+        gear = lambda **kw: {"class": "Helmets", "basetype": "Haunted Bascinet", "rarity": "Rare",
+                             "ilvl": 84, "width": 2, "height": 2, **kw}
+        self.assertTrue(fs.visible(blocks, gear(memory_strands=44)))                # [0902] t1 base 15+
+        b, style = fs.evaluate(blocks, gear(memory_strands=44))
+        self.assertIn("exotic", b.comment)
+        self.assertTrue(any(s.startswith("PlayEffect Blue") for s in style))      # league.filter style
+        self.assertTrue(fs.visible(blocks, gear(basetype="Iron Hat", memory_strands=1, fractured=True)))
+        self.assertFalse(fs.visible(blocks, gear(basetype="Iron Hat", memory_strands=30)))  # t3: off
+        self.assertTrue(fs.visible(blocks, gear(basetype="Iron Hat", fractured=True, identified=True,
+                                                mods=["Subterranean"])))          # [1105] delve fractured
+        jewel = {"class": "Jewels", "basetype": "Cobalt Jewel", "rarity": "Magic", "fractured": True}
+        self.assertTrue(fs.visible(blocks, jewel))                                  # [1303] fractspecial
+        self.assertFalse(fs.visible(blocks, gear(basetype="Iron Hat", fractured=True)))     # fractt*: off
+        self.cfg["league_start"] = True
+        blocks, _ = self.build()
+        self.assertTrue(fs.visible(blocks, gear(basetype="Iron Hat", memory_strands=30)))   # off -> on
+        self.assertTrue(fs.visible(blocks, gear(basetype="Iron Hat", fractured=True)))
+        self.cfg["league_start"] = False
+        self.cfg["exotics"]["enabled"] = False
+        blocks, _ = self.build()
+        self.assertFalse(fs.visible(blocks, gear(memory_strands=44)))
+
     def test_mirrored_item_rule_config_toggle(self):
         item = {"class": "Rings", "basetype": "Iron Ring", "rarity": "Rare", "mirrored": True}
         self.cfg["vendor_recipes"]["grasping_mail"]["enabled"] = False
@@ -1409,8 +1538,21 @@ def load_cache(d, cfg):
 
 CACHE = latest_cache()
 
-# Shown in the game's Maps class, which rules/bottom.filter hides on purpose (user choice)
-MAP_TYPES = {"Map", "BlightedMap", "BlightRavagedMap", "ValdoMap", "UniqueMap"}
+CONQUERORS = ("Al-Hezmin", "Baran", "Drox", "Veritania")
+ELDER_GUARDIANS = ("The Enslaver", "The Eradicator", "The Constrictor", "The Purifier")
+
+
+def map_drop(name, base=None, **extra):
+    """poe.ninja map line -> the map as it drops: tier from "(Tier N)" (Vaal Temple / Valdo /
+    special = 16 / 17), influence from the conqueror / Elder guardian name prefix."""
+    m = re.search(r"\(Tier (\d+)\)", name)
+    tier = int(m.group(1)) if m else 17 if base == "Valdo Map" else 16
+    infl = ["Crusader"] if name.startswith(CONQUERORS) else ["Elder"] if name.startswith(ELDER_GUARDIANS) else []
+    if base is None or base.startswith("Map (Tier"):
+        base = next((b for b in ("Vaal Temple Map", "Nightmare Map", "Shaper Guardian Map") if b in name),
+                    f"Map (Tier {tier})")
+    return dict({"class": "Maps", "basetype": base, "rarity": "Rare" if infl else "Normal",
+                 "map_tier": tier, "influence": infl}, **extra)
 
 
 @unittest.skipIf(CACHE is None, "no price cache, run build_filter.py once")
@@ -1568,29 +1710,35 @@ class LiveCache(unittest.TestCase):
                     "area_level": ilvl if ilvl < 68 else 83, "cluster_node": bf.CLUSTER_NODES[name],
                     "cluster_passives": int(line["variant"].split()[0])}
         if t in ("SkillGem", "ImbuedGem"):
-            # ground gems: uncorrupted level 1, at most 20% quality
-            if line.get("corrupted") or line.get("gemLevel", 1) != 1 or line.get("gemQuality", 0) > 20:
-                return None
+            # every variant (level / quality / corrupted) can drop: Vaal side areas, strongboxes, rewards
             # alternate gems: BaseType is the plain gem (Cyclone of Tumult -> Cyclone)
             alt = bf.alt_gem(line)
             basetype = line["tradeFilter"]["query"]["type"]["option"] if alt else name
             return {"class": "Support Gems" if name.endswith(" Support") else "Skill Gems", "basetype": basetype,
-                    "quality": line.get("gemQuality", 0), "transfigured": alt}
+                    "quality": line.get("gemQuality") or 0, "gem_level": line.get("gemLevel", 1),
+                    "corrupted": bool(line.get("corrupted")), "transfigured": alt}
         if t in ("ForbiddenJewel", "ShrineBelt"):
             return unid_unique(base, NINJA_CLASS.get(line.get("itemType")))
         if t == "ScryingOrb":
             return {"basetype": base, "class": "Stackable Currency"}
         if t == "IncursionTemple":
             return {"basetype": base, "class": "Misc Map Items"}
+        if t == "Map":
+            return map_drop(name, base)
+        if t == "BlightedMap":
+            return map_drop(name, blighted=True)
+        if t == "BlightRavagedMap":
+            return map_drop(name, blighted=True, uber_blighted=True)
+        if t == "ValdoMap":
+            return map_drop(name, base, rarity="Rare")
         self.fail(f"poe.ninja feed {t}: no drop model in LiveCache.ninja_drop")
 
     def test_valuable_ninja_items_visible(self):
         # every confident poe.ninja value >= SAFETY_DIVINE of the feeds not priced into the
-        # filter (NeverSink / hand rules decide), as it drops, must be visible. Maps excepted:
-        # rules/bottom.filter hides the Maps class on purpose.
+        # filter (NeverSink / hand rules decide), as it drops, must be visible. Maps too.
         floor = SAFETY_DIVINE * self.r["divine"]
         items = []
-        for t in [t for t in bf.BASE_TYPES + bf.CHECK_TYPES if t not in MAP_TYPES]:
+        for t in bf.BASE_TYPES + bf.CHECK_TYPES:
             for line in self.data["stash"][t]["lines"]:
                 if line["chaosValue"] < floor or line.get("listingCount", 0) < self.cfg["uniques"]["min_listings"]:
                     continue

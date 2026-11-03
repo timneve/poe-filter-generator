@@ -431,7 +431,7 @@ const NUM_FIELDS={
  Width:"width",Height:"height",AreaLevel:"area_level",BaseArmour:"armour",
  BaseEvasion:"evasion",BaseEnergyShield:"es",EnchantmentPassiveNum:"cluster_passives"
 };
-const BOOL_FIELDS={Corrupted:"corrupted",Mirrored:"mirrored",Identified:"identified",Foulborn:"foulborn"};
+const BOOL_FIELDS={Corrupted:"corrupted",Mirrored:"mirrored",Identified:"identified",Foulborn:"foulborn",FracturedItem:"fractured"};
 function parseCopiedItem(raw,areaLevel,corruptedMods,extra){
  const lines=raw.split(/\r?\n/).map(x=>x.trim());
  const classLine=lines.find(x=>/^Item Class:\s*/i.test(x));

@@ -1,10 +1,7 @@
 # ===== rules/bottom.filter : hand-written rules, checked AFTER price rules =====
 
-# Maps: hidden (your FilterBlade filter hides them too). Change Hide -> Show to see them.
+# Maps: generated from reference/league.filter (config.toml [maps]), not here.
 # "Hide # league_start" = shown when config league_start = true (applies to any block).
-Hide # league_start
-	Class == "Maps"
-	SetFontSize 45
 
 # Gems: the rest is hidden (Awakened / 20% shows are in rules/top.filter)
 Hide # league_start

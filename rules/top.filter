@@ -70,8 +70,9 @@ Show # mirrored items (variable value)
 # END show_mirrored
 
 
-# Gems: expensive exceptional supports + 20% quality. Before the price rules so the gem
-# vendor recipe ([vendor_recipes.gemcutter], tier = floor) can't restyle them; rest hidden in bottom.filter
+# Gems: expensive exceptional supports + 20% quality not priced higher (poe.ninja gem prices
+# come first). Before the gem vendor recipe ([vendor_recipes.gemcutter], tier = floor) so it
+# can't restyle them; rest hidden in bottom.filter
 Show
 	Class == "Skill Gems" "Support Gems"
 	BaseType "Awakened" "Enlighten" "Empower" "Enhance"

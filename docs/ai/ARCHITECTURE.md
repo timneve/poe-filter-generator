@@ -36,8 +36,8 @@ Cache files: `cache/<league>/ex_<T>.json`, `st_<T>.json`, `cache/wiki_uniques.js
    - `price_linked_jackpots` -> `{links: {bases}}` (5L/6L unique >= jackpot)
    - `price_crafting_bases` -> `[(tier, ilvl_min, ilvl_max|None, influence|None, base, chaos)]` (feeds `BASE_TYPES`: BaseType + Flask)
    - `price_clusters` -> `{(tier, base, passives, ilvl_lo, ilvl_hi|None, node|None): chaos}` (ClusterJewel, `CLUSTER_ILVL` buckets, `CLUSTER_NODES` enchant -> node; unknown enchant -> variable, no node cond)
-   - `price_gems` -> `{(tier, q20): {names}}` (SkillGem/ImbuedGem, uncorrupted level 1, q0 / q20 variants; `alt_gem` lines skipped)
-   - `reference_card_tiers` / `reference_currency_tiers` -> fallback tiers parsed from `reference/*.filter`
+   - `price_gems` -> `{(tier, level, quality, corrupted): {names}}` (SkillGem/ImbuedGem, every poe.ninja variant, thin listings -> variable whatever the price; `alt_gem` lines skipped; confident below `[gems] min_tier` / `small_loot` / hidden tier dropped, or tier "hide" if `gem_special` (level / quality 21+))
+   - `reference_card_tiers` / `reference_currency_tiers` (currency, corpses, vials) -> fallback tiers parsed from `reference/*.filter`
 5. Emit, concatenated in this order (first non-`Continue` match wins in game):
 
 | # | Emitter | Content |
@@ -47,19 +47,24 @@ Cache files: `cache/<league>/ex_<T>.json`, `st_<T>.json`, `cache/wiki_uniques.js
 | 3 | `emit_content_overrides` | `[content.X.drops]` true/false |
 | 4 | `emit_defaults` | `Continue` blocks: font 45, no border, gear text colour |
 | 5 | `emit_pinned_stackables` | Divine/Mirror/Hinekora tink |
+| 5b | `emit_gems` | `price_gems` Show blocks (tier, then most specific variant: `Corrupted`, `GemLevel >=`, `Quality >=`), then blue `TransfiguredGem True`. Before top's 20% / Awakened Shows and the gemcutter recipe floor |
 | 6 | `hand_rules("top")` | `rules/top.filter` (+ `# BEGIN/END show_5_links/show_6_links/show_mirrored/show_gold` sections toggled; Awakened + 20% gem Shows) |
 | 6b | `emit_overquality` | `[overquality]` (before recipes: keeps its alert) |
+| 6b2 | `emit_flasks` | `[flasks]`: `neversink_blocks` of `FLASK_SECTIONS` ([0803] ID mods, [1303] fractured, [[2500]] quality/ilvl), `Class` narrowed to `FLASK_CLASSES` (LS: + commented-out blocks). Before recipes: 21% white flask beats glassblower |
+| 6b3 | `emit_exotics` | `[exotics]`: `neversink_blocks` of `EXOTIC_SECTIONS` ([0902] memory strands, [[1100]] `FracturedItem` blocks only, [1303] minus `FLASK_CLASSES`), league.filter's own style. LS: + commented-out `#Show` blocks |
 | 6c | `emit_vendor_recipes` | `[vendor_recipes.*]`: per `any` condition: `recipe_floor` blocks (better crafting bases / `[overrides]`, own style, + recipe conds), then the recipe block (`bases`: `Rarity < Unique`; `conds`: + `rarity`), then for `bases` a `Rarity Unique` block minus bases whose ubases/fbases tier ranks better (tier = floor); `BASE_SHAPE` icon. Before leveling / price Hides so cheap ingredients still show |
+| 6c2 | `emit_gem_fallback` | exact-variant Hides (`gem_variant_conds`) for `price_gems` "hide" keys, then blue `GemLevel >= 21` / `Quality >= 21` Shows (unpriced, probably valuable). Off when `variable` hidden. After recipes + top's 20% Show |
 | 6d | `emit_cluster_prices` | `price_clusters` Show blocks (Rarity <= Rare, ilvl bucket, EnchantmentPassiveNum, BaseType, EnchantmentPassiveNode), tier style. Before leveling: beats build-module jewel Hides |
 | 7 | `emit_leveling` | NeverSink campaign rules + build module, all `AreaLevel <= area_level_max` |
 | 8 | `emit_overrides` | `[overrides]` (wrapped by `campaign_unhide`) |
 | 10 | `emit_stackables` | singles + stack-size lift blocks (wrapped by `campaign_unhide`) |
+| 10b | `emit_special_maps` | `neversink_blocks` of `SPECIAL_MAP_SECTIONS` ([0301] influenced, [3202]-[3204] Valdo/Nightmare/Shaper guardian/blighted/Vaal Temple/enchanted/implicit), + `UNIQUE_MAP_SECTION` [3201] first when `uniques.hide_maps`. Before uniques (league.filter order). LS: + `#Show` blocks |
 | 11 | `emit_uniques` | unique/foulborn/linked/maps + `emit_corrupted_uniques`; `variable_classes` Class block right after the top tier; content rescue (faded) block after Foulborn catch-all, before hidden normal tiers |
+| 11b | `emit_map_progression` | `MAP_PROGRESSION_SECTION` [3302] tier Hides; `[maps] progression` "all"/"auto" first emits them as Shows via `neversink_blocks(unhide=)` ("auto": + `AreaLevel <= 67+tier`). After uniques (unique maps priced there) |
 | 12 | `emit_crafting_bases` | ilvl/influence blocks |
 | 13 | `emit_rares` | per `RARE_GROUPS` group (`rares.weapons/armour/jewellery` tier lists): NeverSink `$type->rr*` base-tier blocks from `league.filter`, uncommented, + `Class ==` group classes with `rares.show` true; style = `rares.text_color` only; `"all"` = one class block per group |
-| 13b | `emit_clusters` | enabled blocks of `reference/league.filter` `CLUSTER_SECTIONS` ([2805] eco .. [[2900]]) verbatim, border/bg stripped, Hides -> `HIDDEN_STYLE` |
-| 13c | `emit_gems` | `price_gems` Show blocks (q20 first), then blue `TransfiguredGem True` |
-| 14 | `hand_rules("bottom")` | maps, gem Hide, hide gear, blue safety net |
+| 13b | `emit_clusters` | `neversink_blocks`: enabled blocks of `reference/league.filter` `CLUSTER_SECTIONS` ([2805] eco .. [[2900]]) verbatim, border/bg stripped, Hides -> `HIDDEN_STYLE` |
+| 14 | `hand_rules("bottom")` | gem Hide, hide gear, blue safety net |
 
 6. Post-process whole text: `hidden_game_colours` (hidden blocks keep game rarity colour), `maximize_item_sizes`.
 7. Return `r = {tiers, prices, divine, ubases, fbases, linked, cbases, ref_cards, ref_currency, card_volumes, clusters, gems}`.
@@ -92,17 +97,17 @@ Star = uniques + tink, Square = unique maps, Circle = currency/cards, Hexagon = 
 ## Function index (grep `def name`)
 
 - Fetch: `fetch_json`, `detect_league`, `fetch_all`, `ninja_categories`, `check_ninja_categories`, `fetch_wiki_uniques`, `non_map_drops`, `wiki_unique_bases`, `content_bases`, `content_policy`, `no_map_drop`
-- Price: `Tiers`, `exchange_divine`, `apply_divine_tiers`, `price_stackables`, `card_trade_volumes`, `jackpot_chaos`, `never_hide_floor`, `small_loot`, `min_shown_rank`, `shown_unique_tiers`, `unique_drop_weights`, `price_unique_bases`, `price_foulborn_bases`, `price_linked_jackpots`, `price_crafting_bases`, `price_clusters`, `neversink_cluster_nodes`, `alt_gem`, `price_gems`, `reference_card_tiers`, `reference_currency_tiers`
+- Price: `Tiers`, `exchange_divine`, `apply_divine_tiers`, `price_stackables`, `card_trade_volumes`, `jackpot_chaos`, `never_hide_floor`, `small_loot`, `min_shown_rank`, `shown_unique_tiers`, `unique_drop_weights`, `price_unique_bases`, `price_foulborn_bases`, `price_linked_jackpots`, `price_crafting_bases`, `price_clusters`, `neversink_cluster_nodes`, `alt_gem`, `price_gems`, `gem_special`, `gem_variant_conds`, `reference_card_tiers`, `reference_currency_tiers`
 - Emit helpers: `q(names)` quoted sorted list, `block(action, conds, style, comment)`, `hidden`, `style_for`, `action_for`, `section`
-- Emit: see table above (incl. `emit_rares`, `emit_cluster_prices`, `emit_clusters`, `emit_gems`; `section_heads` = NeverSink section number -> line); leveling helpers `league_start_unused_whites`, `build_magic_weapons`, `campaign_unhide`, `rarities_of`, `hidden_game_colours`, `maximize_item_sizes`, `campaign_only`, `campaign_icon_sound`
+- Emit: see table above (incl. `emit_special_maps`, `emit_map_progression`, `emit_rares`, `emit_cluster_prices`, `emit_clusters`, `emit_flasks`, `emit_exotics`, `emit_gems`, `emit_gem_fallback`; `neversink_blocks` = copy enabled blocks of a NeverSink section range (border/bg stripped, Hide -> `HIDDEN_STYLE`, optional `Class` narrowing / `drop_classes`, `only` = required condition line, `off` = also commented-out `#Show` blocks, `unhide(conds)` = Hide blocks as Shows + extra conds, Shows dropped); `section_heads` = NeverSink section number -> line); leveling helpers `league_start_unused_whites`, `build_magic_weapons`, `campaign_unhide`, `rarities_of`, `hidden_game_colours`, `maximize_item_sizes`, `campaign_only`, `campaign_icon_sound`
 - Main: `load_cfg`, `split_tiers` (config fractions -> `tiers_divine`, `tiers` at `FALLBACK_DIVINE`), `apply_league_start`, `hand_rules`, `build_text`, `main`
-- Constants at top: `FALLBACK_DIVINE`, `TOGGLE_OFF`, `EXCHANGE_TYPES`, `STASH_STACKABLE_TYPES`, `UNIQUE_TYPES`, `BASE_TYPES`, `CHECK_TYPES` (fetched, only tested), `SKIPPED_TYPES` (not fetched, reason), `NINJA_TYPES` (all), `STASH_TYPES`, `CURRENCY_CLASSES`, `GEAR_CLASSES`, `RARE_GROUPS`, `HIDDEN_STYLE`, `SHAPE`, `SPLINTER_SHAPE`, `PINNED_TOP_STACKABLES`; mid-file: `CLUSTER_SECTIONS`, `CLUSTER_ILVL`, `CLUSTER_NODES`, `LEVELING_SECTIONS`, `VENDOR_CLASSES`, `NORMAL_HIDE_CLASSES`, `WEAPON_CLASSES`
+- Constants at top: `FALLBACK_DIVINE`, `TOGGLE_OFF`, `EXCHANGE_TYPES`, `STASH_STACKABLE_TYPES`, `UNIQUE_TYPES`, `BASE_TYPES`, `CHECK_TYPES` (fetched, only tested), `SKIPPED_TYPES` (not fetched, reason), `NINJA_TYPES` (all), `STASH_TYPES`, `CURRENCY_CLASSES`, `GEAR_CLASSES`, `RARE_GROUPS`, `HIDDEN_STYLE`, `SHAPE`, `SPLINTER_SHAPE`, `PINNED_TOP_STACKABLES`; mid-file: `CLUSTER_SECTIONS`, `FLASK_SECTIONS`, `SPECIAL_MAP_SECTIONS`, `UNIQUE_MAP_SECTION`, `MAP_PROGRESSION_SECTION`, `FLASK_CLASSES`, `CLUSTER_ILVL`, `CLUSTER_NODES`, `LEVELING_SECTIONS`, `VENDOR_CLASSES`, `NORMAL_HIDE_CLASSES`, `WEAPON_CLASSES`
 
 ## filtersim.py
 
 - `parse(text) -> [Block(action, comment, line_no, conds, style, cont)]`
 - `evaluate(blocks, item) -> (deciding_block|None, style_lines)`; `visible(blocks, item)`.
-- Item dict keys: `rarity, basetype, class, influence[], mods[], socket_group` + `NUMERIC` values (`stack, ilvl, quality, links, corrupted_mods, sockets, drop_level, width, height, area_level` (default 83), `armour, evasion, es, cluster_passives`) + `BOOL` values (`corrupted, mirrored, identified, foulborn, transfigured`) + `TEXT` names (`class, basetype, cluster_node`). PoE2: `gem_level, waystone_tier, unid_tier` + bools `enchanted, twice_corrupted, vaal_unique, vaal_unique_mod, always_show`. Missing = 0/False.
+- Item dict keys: `rarity, basetype, class, influence[], mods[], socket_group` + `NUMERIC` values (`stack, ilvl, quality, links, corrupted_mods, sockets, drop_level, width, height, area_level` (default 83), `armour, evasion, es, cluster_passives, memory_strands, map_tier`) + `BOOL` values (`corrupted, mirrored, identified, foulborn, transfigured, fractured, blighted, uber_blighted, zana_memory, implicit`) + `TEXT` names (`class, basetype, cluster_node`). PoE2: `gem_level, waystone_tier, unid_tier` + bools `enchanted, twice_corrupted, vaal_unique, vaal_unique_mod, always_show`. Missing = 0/False.
 - Modelled conditions: Class, BaseType, EnchantmentPassiveNode (`TEXT`), Rarity, numeric (`NUMERIC`), bool (`BOOL`), SocketGroup, HasExplicitMod (incl. `>=N` count form), HasInfluence. Anything else -> `NotImplementedError`.
 
 ## report.py

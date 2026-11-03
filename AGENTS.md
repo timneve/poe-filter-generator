@@ -16,7 +16,7 @@ no network in tests. Player-facing behavior: `README.md`. Read only the doc you 
 | `build_filter.py` | ~1800 | PoE1: fetch (every poe.ninja category, `NINJA_TYPES`) -> price -> emit filter text -> write + report. Entry `main()`; `build_text()` = no-network core |
 | `config.toml` | ~690 | PoE1 settings, heavily commented. Source of truth for tiers/styles/toggles |
 | `unique_tiers.toml` | ~200 | unique name -> drop-rarity tier 0..5 (for `[uniques.ev]` drop weights) |
-| `rules/top.filter` / `rules/bottom.filter` | 66 / 42 | Hand-written blocks before / after price rules |
+| `rules/top.filter` / `rules/bottom.filter` | 66 / 22 | Hand-written blocks before / after price rules |
 | `rules/leveling/rf.filter` | 156 | Build module for campaign (`[leveling] build = "rf"`) |
 | `filtersim.py` | ~120 | Mini filter evaluator (tests + report), PoE1 + PoE2 conditions. Unknown condition -> raises |
 | `report.py` | ~480 | Writes `out/report.html` (mostly an embedded HTML/JS `PAGE` string) |
@@ -46,6 +46,9 @@ no network in tests. Player-facing behavior: `README.md`. Read only the doc you 
   tier (uniques, crafting bases, overrides), cheap / hidden ones get the recipe tier. Never hand-write
   recipe blocks in `rules/*.filter` or as plain toggles.
 - Jackpot (`jackpot_divine`) items must never be hidden; group can't tell -> "variable" (blue).
+- Blue "variable" = probably valuable, no exact price (thin volume, unlisted variant), app-wide:
+  unconfident -> blue, never hidden or guessed. Confident price in a config-hidden tier -> hidden
+  (exact Hide before any blue catch-all).
 - Crafting bases priced per exact base + influence + ilvl range; need `min_listings` AND `min_samples`; each confident price covers only its own ilvl range (higher ilvl does not floor lower). Keep separate from unique pricing.
 - Check generated filter visibility (via `filtersim`) in tests, not just intermediate tier dicts.
 - Syntax reference: https://www.pathofexile.com/item-filter/about

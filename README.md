@@ -44,6 +44,14 @@ You can run the Python scripts directly instead of the batch files:
   their own rules), `glassblower` (20% quality white flasks). Normal / magic / rare.
 - `[overquality]` - quality thresholds for non-mirrored, non-corrupted gear (30% on by default;
   27% and 21% are optional)
+- `[flasks]` - NeverSink's normal / magic flask + tincture rules: identified ones with good mods,
+  fractured utility flasks, 21%+ quality (any flask; tinctures and utility flasks need ilvl 82+ in
+  maps, 26% = louder), corrupted 30% utility flasks. A 21%+ white flask uses this look, not the
+  glassblower one. On by default.
+- `[exotics]` - memory-stranded and fractured gear, shown the way `reference/league.filter`
+  (your FilterBlade filter) shows them: stranded + fractured / veiled, top bases with 15+ / 60+
+  strands, fractured + veiled / incursion / delve mods, fractured jewels / abyss jewels / heist gear.
+  On by default.
 
 ## PoE2
 Run `update_poe2.bat` (or `python build_filter_poe2.py --refresh`). This writes
@@ -73,8 +81,9 @@ export a new filter from FilterBlade and replace the file.
 ## League start
 Set `league_start = true` (top of `config.toml`), run `update.bat`. Shows (almost) everything:
 no hidden tiers, wrist saver off, all unique tiers on, other min tiers at the lowest tier, "hide" overrides shown,
-content modules on, and rules-file blocks tagged `Hide # league_start` (maps, gems, small
-gold when `show_gold`) shown. Only plain gear in maps and white crafting
+content modules on, every normal map tier shown (`[maps] progression` "none" -> "all"), rules-file
+blocks tagged `Hide # league_start` (gems, small gold when `show_gold`) shown, plus the map / flask / memory-strand / fractured blocks that are
+commented out in `reference/league.filter` (the ones you'd switch on in FilterBlade). Only plain gear in maps and white crafting
 bases the `[leveling] build` never uses (rf: pure ES, unused weapons; unless worth
 `bases.min_tier`, `league_start_hide_unused`) stay hidden.
 Set it back to `false` after a few days.
@@ -97,7 +106,7 @@ limits them to actual base dimensions (Width x Height), so a small shield can sh
 other bases in the Shields class are larger. Vendor Shows take priority over campaign gear Hides.
 `reference/pohx-campaign.filter` is Pohx's FilterBlade filter, reference only.
 - `rules/top.filter` - hand rules before price rules (quest items, gold, 6L)
-- `rules/bottom.filter` - hand rules after (maps, gems, hide gear, blue safety net)
+- `rules/bottom.filter` - hand rules after (gems, hide gear, blue safety net)
 - `reference/league.filter` cluster sections [2805]-[2806] are copied in as enabled there
 - `reference/league.filter` - old FilterBlade/NeverSink filter, reference only
 - `cache/` - downloaded prices, `out/` - built filter (also copied to My Games/Path of Exile)
@@ -107,7 +116,8 @@ other bases in the Shields class are larger. Vendor Shows take priority over cam
   reads poe.ninja's category list and warns when a new one appears; tests fail on it too.
 - Stackables (currency, cards, scarabs, essences, fossils, oils, omens, tattoos, fragments,
   ducats, enshrouding crystals, corpses, incubators, memories, ...): poe.ninja Currency
-  Exchange / listing data. Stack sizes count (10x 0.5c = 5c tier).
+  Exchange / listing data. Stack sizes count (10x 0.5c = 5c tier). Thin volume / listings
+  may show an item, never hide it; unpriced currency, corpses and vials use NeverSink's tiers.
 - Currency shards use one twentieth of the finished currency's price rather than sparse shard
   quotes; configured splinters use the finished item price divided by the completion count.
 - Divination-card quotes are not used because the available poe.ninja exchange data does not
@@ -154,7 +164,7 @@ other bases in the Shields class are larger. Vendor Shows take priority over cam
 - Foulborn uniques: own tiers per base (cheapest variant = tier, best variant >= jackpot_divine = blue), hidden below `foulborn.min_tier`.
 - Unknown value (`unknown_as_variable`, toggle): a unique base is only tiered when every unique the
   wiki says can drop on it has a confident poe.ninja price; otherwise blue variable.
-- Wrist saver (`[small_loot]`, toggle): non-stackable loot (uniques, Foulborn, invitations, wombgifts) below tier `min_tier` (default minor = 1/64 div) is hidden. Jackpots still show. Ancient Wombgift is guaranteed at least the minor (white) tier; higher prices use their normal price tier.
+- Wrist saver (`[small_loot]`, toggle): non-stackable loot (uniques, Foulborn, gems, invitations, wombgifts) below tier `min_tier` (default minor = 1/64 div) is hidden. Jackpots still show. Ancient Wombgift is guaranteed at least the minor (white) tier; higher prices use their normal price tier.
 - Crafting bases: poe.ninja base prices by ilvl + influence, only at `bases.min_tier` and up.
   `[bases]` requires both `min_listings` and `min_samples`; raise these thresholds to ignore
   prices with too little supporting market data. A confident listing prices only its own ilvl
@@ -164,11 +174,21 @@ other bases in the Shields class are larger. Vendor Shows take priority over cam
   ilvl bucket (1-49, 50-67, 68-74, 75-83, 84+) shows it in its price tier, also in the campaign
   (beats the build module's jewel Hide). The rest uses NeverSink's economy cluster tiers as
   enabled in `reference/league.filter` ([2805]-[2806]); its junk clusters stay hidden.
-- Gems: level 1 uncorrupted poe.ninja price (quality 20 separately) shows valuable gems
-  (Greater Multistrike, Eclipse, transfigured ...) in their tier. Transfigured gems always
-  show (blue, NeverSink does the same); the rest stays hidden by `rules/bottom.filter`.
-- Not used: Beasts (captured, never a ground drop). Maps (incl. Blighted / Valdo foil maps)
-  stay hidden by `rules/bottom.filter` on purpose.
+- Gems: poe.ninja price per level / quality / corrupted variant (1, 1/20, 20/20, 21/23c ...,
+  like NeverSink's leveled and quality gem rules) shows valuable gems in their tier, before the
+  20% / Awakened hand rules and the gemcutter recipe (a priced gem keeps its tier), from
+  `[gems] min_tier` up (default mid: level 1 gems list at 5-10c nobody pays). Fewer than
+  `uniques.min_listings` listings: shown blue, whatever the price (probably valuable, no exact
+  price). Level 21+ / quality 21+ gems without a confident price: blue too; a confident price
+  below `min_tier` hides that exact variant. Transfigured gems always show (blue, NeverSink
+  does the same); the rest stays hidden by `rules/bottom.filter`.
+- Not used: Beasts (captured, never a ground drop).
+- Maps (`[maps]`): shown / hidden as `reference/league.filter`, its own style. Always shown:
+  Valdo, Nightmare, Shaper guardian, Zana / Elder / conqueror influenced, blighted +
+  blight-ravaged, T16 Vaal Temple, enchanted, implicit, 8-mod corrupted. Unique maps:
+  `uniques.hide_maps` = league.filter's rule (corrupted shown, rest hidden). Normal T1-T16:
+  `progression` "none" (hidden, late league) / "all" (league start) / "auto" (a tier shows
+  while you're in maps of that tier or lower: in a T1 map T1+ show, in a T5 map T5+).
 - Endgame rares (`rares.*`, top of `config.toml`): poe.ninja has no rare prices, so ilvl 68+
   rares use NeverSink's FilterBlade base tiers (`t1` best .. `t5`). Separate tier lists for
   `rares.weapons`, `rares.armour` and `rares.jewellery` (amulets, rings, belts); `"all"` = every
@@ -183,7 +203,7 @@ Blue item in game = value unknown or variable. Add it to `[overrides]` or a rule
 check the pricing rules; live tests build the filter from `cache/` and replay every priced
 unique (unidentified, >= 1 div), stackable, card and crafting base through
 `filtersim.py` (a small filter evaluator), plus every other poe.ninja feed (clusters, gems,
-flasks, forbidden jewels, relics, scrying orbs, temples; maps excepted): anything >= 1 div with
+flasks, forbidden jewels, relics, scrying orbs, temples, maps): anything >= 1 div with
 enough listings must be visible as it drops. Run after changing config or rules.
 
 ## Report

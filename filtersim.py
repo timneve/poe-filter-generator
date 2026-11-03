@@ -15,7 +15,8 @@ NUMERIC = {"StackSize": "stack", "ItemLevel": "ilvl", "Quality": "quality",
            "LinkedSockets": "links", "CorruptedMods": "corrupted_mods", "Sockets": "sockets",
            "DropLevel": "drop_level", "Width": "width", "Height": "height", "AreaLevel": "area_level",
            "BaseArmour": "armour", "BaseEvasion": "evasion", "BaseEnergyShield": "es",
-           "EnchantmentPassiveNum": "cluster_passives",
+           "EnchantmentPassiveNum": "cluster_passives", "MemoryStrands": "memory_strands",
+           "MapTier": "map_tier",
            # PoE2
            "GemLevel": "gem_level", "WaystoneTier": "waystone_tier",
            "UnidentifiedItemTier": "unid_tier"}
@@ -24,7 +25,9 @@ TEXT = {"Class": "class", "BaseType": "basetype", "EnchantmentPassiveNode": "clu
 # Missing item values. area_level: items are dropped in a map unless a test says otherwise.
 DEFAULTS = {"area_level": 83}
 BOOL = {"Corrupted": "corrupted", "Mirrored": "mirrored", "Identified": "identified",
-        "Foulborn": "foulborn", "TransfiguredGem": "transfigured",
+        "Foulborn": "foulborn", "TransfiguredGem": "transfigured", "FracturedItem": "fractured",
+        "BlightedMap": "blighted", "UberBlightedMap": "uber_blighted", "ZanaMemory": "zana_memory",
+        "HasImplicitMod": "implicit",
         # PoE2
         "AnyEnchantment": "enchanted", "TwiceCorrupted": "twice_corrupted",
         "IsVaalUnique": "vaal_unique", "HasVaalUniqueMod": "vaal_unique_mod",

@@ -43,7 +43,7 @@ class Synthetic(unittest.TestCase):    # setUp: cfg copy, fixed chaos tiers, EV 
 - `hidden_game_colours` + `maximize_item_sizes` post-process the whole text; font size 45 everywhere except content always-show style (block comment must start `content override show:` to keep its small size).
 - Divination card exchange quotes are NOT trusted (no buy/sell direction). Cards priced only via `[exchange.card_rewards]`, else NeverSink fallback when volume < `card_fallback_min_volume`, else `unknown`.
 - Shards/splinters priced from finished item, never own quotes; skipped if finished item unpriced.
-- Low-volume stackable prices may SHOW an item, never hide it.
+- Low-volume prices may SHOW an item, never hide it (exchange volume, stash-stackable / gem listings; thin gems show blue).
 - Unique base tier = cheapest unique (not best). Linked (5L/6L) lines excluded from unlinked pricing; handled by `price_linked_jackpots`.
 - Boss-only uniques (`data["nomap"]`) excluded unless content module enabled (not for "cheapest" either: Lab-only Winds of Change must not hide Hateforge's base); Foulborn names stripped of `"Foulborn "` prefix for that check.
 - PoE filters can't see unique names or drop source before ID: every unique rule is base-wide.
@@ -53,7 +53,8 @@ class Synthetic(unittest.TestCase):    # setUp: cfg copy, fixed chaos tiers, EV 
 - poe.ninja ClusterJewel `levelRequired` = ilvl bucket start (`CLUSTER_ILVL`), `variant` = "N passives", `name` = enchant text (not the filter's `EnchantmentPassiveNode` name: `CLUSTER_NODES`).
 - poe.ninja SkillGem lines are per level/quality/corrupt variant; only uncorrupted level 1 (q0 / q20) can drop. Alternate gems (transfigured "Cyclone of Tumult", `gemKind` "trarthus" "Heavy Strike of Trarthus"; trade type has a `discriminator`, see `alt_gem`): the name is NOT a BaseType (BaseType = plain gem) and the game rejects the whole filter, so `price_gems` skips them; blue `TransfiguredGem True` block instead. `gemKind` "exceptional" (Empower etc.) are normal BaseTypes.
 - `ninja_categories` scrapes poe.ninja's site JS (sidebar config, `type:`...`url:`); cached `cache/ninja_categories.json` a day. Layout change -> warning only.
-- Any poe.ninja value test: `LiveCache.test_valuable_ninja_items_visible` (>= `SAFETY_DIVINE`, >= `uniques.min_listings`), maps exempt (`MAP_TYPES`, hidden by `rules/bottom.filter` on purpose).
+- Any poe.ninja value test: `LiveCache.test_valuable_ninja_items_visible` (>= `SAFETY_DIVINE`, >= `uniques.min_listings`), maps included (`map_drop` helper: tier from name, conqueror / Elder guardian prefix -> influence).
+- New item section: grep BOTH reference filters first; league.filter decides shown / hidden + style, its `#Show` / Hide rules = league-start toggles (`off=`, `unhide=`). Never hand-write a blanket class Hide.
 
 ## PoE2 gotchas
 
@@ -61,3 +62,4 @@ class Synthetic(unittest.TestCase):    # setUp: cfg copy, fixed chaos tiers, EV 
 - poe.ninja `volumePrimaryValue` is in the feed's primary currency; `price_exchange` converts it to divines.
 - PoE2 class names: runes/soul cores/idols = `Augment`, currency = `Stackable Currency`, omens = `Omen`. Our price blocks match BaseType only.
 - PoE2 tests: `tests/test_filter_poe2.py` passes a tiny fake `REFERENCE` to `build_text`; `add_item(data, feed, name, div, volume_div)`.
+- `reference/league.filter` = user's FilterBlade customization (Very Strict); `regular-neversink.filter` = stock. Copy league blocks with their own style (`neversink_blocks`). Commented-out `#Show` blocks = what the user turns on at league start -> `off=cfg.get("league_start")`.
