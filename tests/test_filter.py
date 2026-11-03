@@ -83,7 +83,8 @@ class Synthetic(unittest.TestCase):
         self.assertEqual(rules[1]["conditions"][0]["values"], ["Shagreen Boots"])
 
     def test_report_vendor_recipes(self):
-        self.cfg["vendor_recipes"]["grasping_mail"]["enabled"] = True
+        for rec in self.cfg["vendor_recipes"].values():
+            rec["enabled"] = True
         blocks, _ = self.build()
         recipe = next(v for v in vendor_recipes(self.cfg, blocks) if v["key"] == "grasping_mail")
         self.assertTrue(recipe["on"])
