@@ -505,7 +505,7 @@ note = "60x any mix; any rarity incl. unique; unidentified, corrupted or split O
 # Currency recipes, as in NeverSink's regular filter (low tier: white text + beam, Diamond).
 [vendor_recipes.chromatic]
 # Chromatic Orb: an item with R-G-B linked sockets, any size.
-enabled = true
+enabled = false
 tier = "low"
 rarity = ["Normal", "Magic", "Rare"]
 conds = ['SocketGroup "RGB"']
