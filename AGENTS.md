@@ -1,7 +1,8 @@
 # Assistant guide
 
-This folder is the PoE1 loot-filter generator. Read `README.md` for player-facing
-behavior and `config.toml` for thresholds and toggles before changing filter behavior.
+This folder contains separate PoE1 and PoE2 loot-filter generators. Read `README.md` for
+player-facing behavior and the corresponding config (`config.toml` or `config_poe2.toml`)
+before changing filter behavior.
 
 ## Code map
 
@@ -15,15 +16,18 @@ behavior and `config.toml` for thresholds and toggles before changing filter beh
   before relying on a new filter condition in a test.
 - `tests/test_filter.py` contains synthetic pricing tests and live-cache replay tests.
 - `report.py` builds `out/report.html` from raw prices and the generated filter.
+- `build_filter_poe2.py` generates the initial PoE2 price filter from Currency and Runes
+  exchange data; `tests/test_filter_poe2.py` covers its synthetic pricing cases.
+- `https://www.pathofexile.com/item-filter/about` is GGG's official filter syntax reference.
 
 ## Crafting-base pricing
 
 Crafting bases are priced separately by exact base, influence, and item-level range.
 `[bases]` controls the minimum tier and the required `listingCount` (`min_listings`) and
 sample `count` (`min_samples`) from poe.ninja. A high price with too few samples is not
-reliable enough to produce a rule; adjust these thresholds for stricter filtering. Do not
-compare prices across item levels to infer confidence: a higher-level base may legitimately
-be more valuable due to crafting demand. Keep this pricing separate from unique pricing.
+reliable enough to produce a rule; adjust these thresholds for stricter filtering. Use each
+confident price at its own item level; a higher-level base may legitimately be less valuable
+due to crafting demand. Keep this pricing separate from unique pricing.
 
 ## Validation
 
