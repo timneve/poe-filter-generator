@@ -1,0 +1,48 @@
+# Recipes + gotchas
+
+## Common changes
+
+| Want | Do |
+|---|---|
+| Force an item's tier | `[overrides]` in config (stackable/any BaseType) or `[unique_overrides]` (unique base) |
+| Change tier thresholds | `tiers.*` in config; everything refers to tiers by name |
+| Change look of a tier | `[style.<tier>]` lines. Keep: no border/bg except `top`; icon shape is set by code |
+| New hand rule | `rules/top.filter` (before prices) or `rules/bottom.filter` (after). Tag `Hide # league_start` if it should show at league start |
+| New toggle section in top rules | wrap in `# BEGIN key` / `# END key`, handle in `hand_rules` (expects exactly one section) |
+| New config key | add commented default in `config.toml`, read with `cfg.get(...)` default, add to `apply_league_start` if LS should change it, document in `README.md` + `docs/ai/CONFIG.md` |
+| New price source / poe.ninja type | add to `EXCHANGE_TYPES` / `STASH_STACKABLE_TYPES` / `UNIQUE_TYPES`; `SHAPE` entry; `empty_data()` in tests picks it up automatically |
+| New emitted section | write `emit_x(cfg, ...)` returning `section(...) + block(...)...`, insert in `build_text` list at the right priority |
+| New filter condition | add to `filtersim._match` (+ `NUMERIC`/`BOOL` map) first |
+| Campaign build module | copy `rules/leveling/rf.filter`, edit, set `[leveling] build` |
+| Report UI | edit `PAGE` string in `report.py`; data rows from `collect()` |
+| PoE2 change | `build_filter_poe2.py` / `config_poe2.toml` only; no shared code with PoE1 |
+
+## Writing tests (`tests/test_filter.py`)
+
+```python
+class Synthetic(unittest.TestCase):    # setUp: cfg copy, fixed chaos tiers, EV off, empty data (divine=400c)
+    def test_x(self):
+        add_exchange(self.data, "Currency", "Orb X", 30)          # exchange item at 30c
+        add_unique(self.data, "Heavy Belt", "Some Unique", 200)   # stash unique line
+        blocks, r = self.build()                                  # -> fs.parse(build_text(...)), r
+        self.assertTrue(fs.visible(blocks, unid_unique("Heavy Belt", "Belts")))
+```
+- Helpers: `empty_data`, `add_exchange`, `add_unique`, `add_foulborn`, `unid_unique`. Item dicts for stackables: `{"basetype":..., "class":..., "stack": n}`.
+- Assert visibility through `fs.visible` / `fs.evaluate`, not just `r[...]` tiers.
+- Synthetic `setUp` disables `tiers_follow_divine`, `uniques.ev`, `variable_jackpot_only`, `always_show_bases`, content drops; re-enable in the test if needed (`ev_setup()` for EV).
+- `LiveCache` uses real `cache/`; skips some checks when `variable_jackpot_only` is on.
+
+## Gotchas
+
+- `apply_divine_tiers` mutates `cfg["tiers"]` in place; `build_text` creates `Tiers` twice (before/after). Tests use `copy.deepcopy(cfg)`.
+- Block order = priority. First non-`Continue` match decides. Defaults are `Continue` blocks.
+- `hidden_game_colours` + `maximize_item_sizes` post-process the whole text; font size 45 everywhere except content always-show style.
+- Divination card exchange quotes are NOT trusted (no buy/sell direction). Cards priced only via `[exchange.card_rewards]`, else NeverSink fallback when volume < `card_fallback_min_volume`, else `unknown`.
+- Shards/splinters priced from finished item, never own quotes; skipped if finished item unpriced.
+- Low-volume stackable prices may SHOW an item, never hide it.
+- Unique base tier = cheapest unique (not best). Linked (5L/6L) lines excluded from unlinked pricing; handled by `price_linked_jackpots`.
+- Boss-only uniques (`data["nomap"]`) excluded unless content module enabled; Foulborn names stripped of `"Foulborn "` prefix for that check.
+- PoE filters can't see unique names or drop source before ID: every unique rule is base-wide.
+- `reference/*.filter` are huge; grep, don't read. Parsed by tag (`%D<n>`, `%H<n>`, `$tier->...`).
+- `wiki_uniques.json` fetch failure -> old cache or no boss skipping (warning on stderr).
+- Windows: read/write files with `encoding="utf-8"`.

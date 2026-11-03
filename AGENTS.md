@@ -1,43 +1,55 @@
-# Assistant guide
+# AI guide (start here)
 
-This folder contains separate PoE1 and PoE2 loot-filter generators. Read `README.md` for
-player-facing behavior and the corresponding config (`config.toml` or `config_poe2.toml`)
-before changing filter behavior.
+PoE1 + PoE2 loot-filter generators. Visibility/style = poe.ninja price tier. Python 3.11+, stdlib only,
+no network in tests. Player-facing behavior: `README.md`. Read only the doc you need:
 
-## Code map
+| Need | Read |
+|---|---|
+| Pipeline, data shapes, function index, filter block order | `docs/ai/ARCHITECTURE.md` |
+| What a `config.toml` key does + which function reads it | `docs/ai/CONFIG.md` |
+| How to do common changes, gotchas, test patterns | `docs/ai/RECIPES.md` |
 
-- `build_filter.py` fetches/caches poe.ninja data, calculates item tiers, and generates
-  the filter. `build_text()` is the no-network entry point used by tests.
-- `config.toml` is the source of tier thresholds, pricing confidence settings, overrides,
-  and style. Keep config comments in sync with behavior changes.
-- `rules/top.filter` and `rules/bottom.filter` are hand-written rules around generated
-  price rules. Do not edit `out/pricefilter.filter` directly; regenerate it.
-- `filtersim.py` evaluates the supported filter syntax for tests. Add simulator support
-  before relying on a new filter condition in a test.
-- `tests/test_filter.py` contains synthetic pricing tests and live-cache replay tests.
-- `report.py` builds `out/report.html` from raw prices and the generated filter.
-- `build_filter_poe2.py` generates the initial PoE2 price filter from Currency and Runes
-  exchange data; `tests/test_filter_poe2.py` covers its synthetic pricing cases.
-- `https://www.pathofexile.com/item-filter/about` is GGG's official filter syntax reference.
+## Files (size = read cost)
 
-## Crafting-base pricing
+| File | Lines | Role |
+|---|---|---|
+| `build_filter.py` | ~1400 | PoE1: fetch -> price -> emit filter text -> write + report. Entry `main()`; `build_text()` = no-network core |
+| `config.toml` | ~690 | PoE1 settings, heavily commented. Source of truth for tiers/styles/toggles |
+| `unique_tiers.toml` | ~200 | unique name -> drop-rarity tier 0..5 (for `[uniques.ev]` drop weights) |
+| `rules/top.filter` / `rules/bottom.filter` | 66 / 42 | Hand-written blocks before / after price rules |
+| `rules/leveling/rf.filter` | 156 | Build module for campaign (`[leveling] build = "rf"`) |
+| `filtersim.py` | ~100 | Mini filter evaluator (tests + report). Unknown condition -> raises |
+| `report.py` | ~460 | Writes `out/report.html` (mostly an embedded HTML/JS `PAGE` string) |
+| `build_filter_poe2.py` + `config_poe2.toml` | ~290 / 35 | PoE2, separate + simpler (Currency + Runes only) |
+| `tests/test_filter.py` | ~1200 | `Synthetic` (fake data) + `LiveCache` (replays `cache/`) |
+| `tests/test_filter_poe2.py` | ~100 | PoE2 synthetic |
+| `reference/*.filter` | big | NeverSink/FilterBlade exports. Parsed at build (`league.filter`, `regular-neversink.filter`). Don't read whole; grep |
+| `cache/`, `out/` | gitignored | poe.ninja/wiki JSON cache; generated filter + report. Never edit `out/` |
 
-Crafting bases are priced separately by exact base, influence, and item-level range.
-`[bases]` controls the minimum tier and the required `listingCount` (`min_listings`) and
-sample `count` (`min_samples`) from poe.ninja. A high price with too few samples is not
-reliable enough to produce a rule; adjust these thresholds for stricter filtering. Use each
-confident price at its own item level; a higher-level base may legitimately be less valuable
-due to crafting demand. Keep this pricing separate from unique pricing.
+## Hard rules
 
-## Validation
+- Never edit `out/*.filter`; change config / rules / code and rebuild.
+- New filter condition in rules or emitted code -> add it to `filtersim._match` first (else `LiveCache.test_filter_fully_modelled` fails).
+- Behavior change -> update the matching comment in `config.toml` and `README.md`.
+- Docs stay current, same change as the code (task not done until docs match):
+  - config key added/removed/renamed/LS-affected -> `docs/ai/CONFIG.md`
+  - function, emitter, filter block order, `data`/`r` shape, constant, file added/removed -> `docs/ai/ARCHITECTURE.md` (+ file table here)
+  - new workflow, test helper or gotcha learned -> `docs/ai/RECIPES.md`
+  - player-visible behavior -> `README.md`
+  - Keep docs terse; reference functions by name, not line numbers. Wrong doc = fix it when seen.
+- Style rule (user pref): no borders / backgrounds except top tier (tink); gear text white/brown; calm look.
+- Divine, Mirror, Hinekora's Lock always top/tink (`PINNED_TOP_STACKABLES`), not overridable.
+- Jackpot (`jackpot_divine`) items must never be hidden; group can't tell -> "variable" (blue).
+- Crafting bases priced per exact base + influence + ilvl range; need `min_listings` AND `min_samples`; each confident price covers only its own ilvl range (higher ilvl does not floor lower). Keep separate from unique pricing.
+- Check generated filter visibility (via `filtersim`) in tests, not just intermediate tier dicts.
+- Syntax reference: https://www.pathofexile.com/item-filter/about
 
-Run tests from this folder:
+## Commands (run in this folder)
 
-```powershell
-python -m unittest discover tests
 ```
-
-For focused checks, use unittest discovery (the `tests` directory is not a Python package).
-Synthetic crafting-base tests should cover low-sample prices being rejected and sufficiently
-sampled jackpot prices being shown. Check generated filter visibility, not only the
-intermediate price-tier list.
+python -m unittest discover tests          # all tests (tests/ is not a package)
+python -m unittest discover tests -k ev    # filter by name
+python build_filter.py [--refresh] [--league NAME]
+python build_filter_poe2.py [--refresh]
+```
+`LiveCache` tests need `cache/<league>/` populated (run a build once).
