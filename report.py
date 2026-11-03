@@ -4,9 +4,12 @@ Uses filtersim, so the verdict is what the filter text actually does, not what t
 code meant. Open the html in a browser: search, filter by category / shown / hidden.
 Items are dropped unidentified (uniques) or as single stacks (stackables).
 """
+import base64
 import html
 import json
+import shlex
 from datetime import datetime
+from pathlib import Path
 
 import filtersim as fs
 
@@ -23,6 +26,7 @@ NINJA_CLASS = {
 }
 STACK_CLASS = {"DivinationCard": "Divination Cards", "Fragment": "Map Fragments",
                "Scarab": "Map Fragments", "Invitation": "Misc Map Items", "Wombgift": "Wombgifts"}
+ASSETS = Path(__file__).parent / "assets"
 # in-game default text colours when no rule sets one
 DEFAULT_TEXT = {"Unique": "175 96 37", "Rare": "255 255 119", "Magic": "136 136 255"}
 
@@ -129,6 +133,86 @@ def collect(cfg, data, blocks, r):
     return rows
 
 
+def content_modules(cfg, data, blocks):
+    """[content.*] modules -> [{mod, on, sources, bases: [{base, look, shown, rule, uniques}]}].
+    Each base dropped as an unidentified unique, so `look` is what the filter really shows."""
+    lines = {}  # base -> poe.ninja unlinked, non-Foulborn unique lines (any listing)
+    for t in [t for t in data["stash"] if t.startswith("Unique")]:
+        for line in data["stash"][t].get("lines", []):
+            if line.get("baseType") and not line.get("links") and not line["name"].startswith("Foulborn "):
+                lines.setdefault(line["baseType"], []).append((t, line))
+    out = []
+    for mod, by_base in data.get("content", {}).items():
+        c = cfg["content"][mod]
+        bases = []
+        for base, names in sorted(by_base.items()):
+            cls = next((unique_class(l, t) for t, l in lines.get(base, [])), None)
+            item = {"rarity": "Unique", "basetype": base, "class": cls, "ilvl": 84}
+            b, style = fs.evaluate(blocks, item)
+            uniques = []
+            for name in sorted(names):
+                prices = [l["chaosValue"] for _, l in lines.get(base, []) if l["name"] == name]
+                uniques.append({"name": name, "c": min(prices) if prices else None})
+            bases.append({"base": base, "look": look(style, item), "shown": b is None or b.action != "Hide",
+                          "rule": f"{b.action} # {b.comment}" if b else "(no rule matched: shown)",
+                          "line": b.line_no if b else 0, "uniques": uniques})
+        out.append({"mod": mod, "on": bool(c.get("enabled")), "sources": c.get("sources", []), "bases": bases})
+    return out
+
+
+# Example ingredient for a [vendor_recipes.*] entry without `bases`: one cheap base per class
+RECIPE_BASE = {"Skill Gems": "Fireball", "Support Gems": "Added Fire Damage Support",
+               "Life Flasks": "Divine Life Flask", "Mana Flasks": "Divine Mana Flask",
+               "Hybrid Flasks": "Hallowed Hybrid Flask", "Utility Flasks": "Quicksilver Flask"}
+RECIPE_CLASS = {"Plate Vest": "Body Armours"}
+
+
+def recipe_sample(conds):
+    """Item fields that satisfy `conds` ('SocketGroup "RGB"', "Sockets >= 6", "Quality >= 20")."""
+    item = {}
+    for cond in conds:
+        key, *rest = shlex.split(cond)
+        vals = rest[1:] if rest and rest[0] in fs.OPS else rest
+        if key == "SocketGroup":
+            item["socket_group"] = vals[0]
+            item.setdefault("sockets", len(vals[0]))
+        elif key in fs.NUMERIC:
+            item[fs.NUMERIC[key]] = int(vals[0])
+        elif key in fs.BOOL:
+            item[fs.BOOL[key]] = vals[0] == "True"
+    return item
+
+
+def vendor_recipes(cfg, blocks):
+    """[vendor_recipes.<key>] -> [{key, name, on, tier, note, items: [{base, how, look, shown, rule}]}].
+    One item per base x `any` condition x rarity (normal .. unidentified unique), replayed through
+    the built filter, so `look` / `rule` show what that drop really gets (a better price tier may win)."""
+    out = []
+    for key, rec in cfg.get("vendor_recipes", {}).items():
+        items = []
+        classes = [rec["class"]] if isinstance(rec.get("class"), str) else rec.get("class") or [None]
+        sample = recipe_sample(rec.get("conds", []))
+        for cond in rec.get("any") or [""]:
+            flag = cond.split()[0] if cond else ""
+            for rarity in rec.get("rarity") or ("Normal", "Magic", "Rare", "Unique"):
+                for base in rec.get("bases") or [RECIPE_BASE.get(classes[0], "Plate Vest")]:
+                    item = dict(sample, **{"class": classes[0] or RECIPE_CLASS.get(base), "basetype": base,
+                                           "rarity": rarity, "ilvl": 84})
+                    if flag in fs.BOOL and cond.split()[1:] == ["True"]:
+                        item[fs.BOOL[flag]] = True
+                    b, style = fs.evaluate(blocks, item)
+                    items.append({"base": base, "how": f"{flag.lower()} {rarity.lower()}".strip(),
+                                  "look": look(style, item), "shown": b is None or b.action != "Hide",
+                                  "rule": f"{b.action} # {b.comment}" if b else "(no rule matched: shown)",
+                                  "line": b.line_no if b else 0})
+        out.append({"key": key, "name": key.replace("_", " ").title(), "on": bool(rec.get("enabled")),
+                    "tier": rec.get("tier"), "note": rec.get("note", ""),
+                    "conds": rec.get("any") or [], "needs": rec.get("conds", []),
+                    "rarity": [r.lower() for r in rec.get("rarity") or ("Normal", "Magic", "Rare", "Unique")],
+                    "items": items})
+    return out
+
+
 def browser_rules(blocks):
     """Serialize parsed filter rules for the offline item checker in report.html."""
     return [{
@@ -141,16 +225,50 @@ def browser_rules(blocks):
     } for b in blocks]
 
 
+def tier_strip(cfg, tiers):
+    """[{name, chaos, div, hidden, quiet, look}] best first, for the report header."""
+    divs = cfg.get("tiers_divine", {})
+    styles = cfg.get("style", {})
+    quiet = cfg.get("quiet_tiers", [])
+
+    def lines(n):
+        own = styles.get(n, {}).get("lines", [])
+        return own + styles.get("quiet", {}).get("lines", []) if n in quiet else own
+    return [{"name": n, "chaos": v, "div": divs.get(n), "hidden": n in cfg.get("hide_tiers", []),
+             "quiet": n in quiet, "look": look(lines(n), {})} for n, v in tiers.list]
+
+
+def unique_tier_strip(cfg, tiers):
+    """[{name, shown, why}] best first: [uniques] show toggles, plus a stricter small_loot floor."""
+    sl = cfg.get("small_loot", {})
+    floor = tiers.names.index(sl["min_tier"]) if sl.get("enabled") else len(tiers.names)
+    out = []
+    for i, n in enumerate(tiers.names):
+        on = bool(cfg["uniques"].get("show", {}).get(n))
+        why = "" if on and i <= floor else f"show.{n} = false" if not on else "[small_loot] min_tier"
+        out.append({"name": n, "shown": not why, "why": why})
+    return out
+
+
+def icon(name):
+    """assets/<name>.png as a data URI, so the report works offline."""
+    return "data:image/png;base64," + base64.b64encode((ASSETS / f"{name}.png").read_bytes()).decode()
+
+
 def write(cfg, data, text, r, league, path):
     blocks = fs.parse(text)
     rows = collect(cfg, data, blocks, r)
     meta = {"league": league, "divine": r["divine"], "when": f"{datetime.now():%Y-%m-%d %H:%M}",
             "safety": cfg["tiers"][cfg["uniques"]["never_hide_tier"]], "jackpot": cfg["jackpot_divine"],
-            "review": cfg["tiers"][cfg.get("report", {}).get("review_tier", "mid")]}
-    payload = json.dumps({"meta": meta, "rows": rows, "rules": browser_rules(blocks)},
+            "review": cfg["tiers"][cfg.get("report", {}).get("review_tier", "mid")],
+            "tiers": tier_strip(cfg, r["tiers"]), "unique_tiers": unique_tier_strip(cfg, r["tiers"])}
+    payload = json.dumps({"meta": meta, "rows": rows, "rules": browser_rules(blocks),
+                          "content": content_modules(cfg, data, blocks),
+                          "vendor": vendor_recipes(cfg, blocks)},
                          separators=(",", ":")).replace("</", "<\\/")
     path.parent.mkdir(exist_ok=True)
-    path.write_text(PAGE.replace("__DATA__", payload).replace("__LEAGUE__", html.escape(league)), encoding="utf-8")
+    path.write_text(PAGE.replace("__DATA__", payload).replace("__LEAGUE__", html.escape(league))
+                    .replace("__CHAOS__", icon("chaos")).replace("__DIVINE__", icon("divine")), encoding="utf-8")
     return path
 
 
@@ -205,6 +323,10 @@ tr.risk .v.h{color:var(--warn)}
 h2{font-size:15px;margin:20px 0 4px;font-weight:600}
 h2 small{color:var(--dim);font-weight:400}
 #rev{margin-bottom:24px}
+#cm{margin-bottom:12px}
+details.cm{padding-top:8px}
+details.cm summary{margin-bottom:6px}
+details.cm table{margin-bottom:10px}
 details{border-top:1px solid var(--line);padding-top:12px}
 summary{cursor:pointer;font-weight:600;margin-bottom:10px}
 details .bar{position:sticky;top:0;z-index:2;background:var(--bg);padding:8px 0}
@@ -214,10 +336,20 @@ details .bar{position:sticky;top:0;z-index:2;background:var(--bg);padding:8px 0}
 #lk li.bad{border-left-color:#e33}#lk li.ok{border-left-color:var(--ok)}
 #lk .t{font-weight:600}#lk .t b{color:var(--warn)}
 #lk .ex{display:flex;flex-wrap:wrap;gap:4px 14px;margin-top:6px;font-size:12px}
+.cur{display:inline-block;height:1.25em;width:auto;vertical-align:-.3em;margin-left:2px}
+.tiers{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
+.tc{display:inline-flex;gap:8px;align-items:center;padding:4px 10px;border:1px solid var(--line);border-radius:6px;background:#0e0e0e;font-size:15px;line-height:1.3;white-space:nowrap}
+.tc b{font-weight:600}.tc i{color:var(--dim);font-style:normal}.tc.tier i{color:inherit;opacity:.7;font-size:.85em}.tc span{display:inline-flex;align-items:center}
+#utiers{display:flex;gap:18px;align-items:flex-start;margin-top:8px;font-size:13px}
+.ut{list-style:none;margin:0;padding:0;line-height:1.35}.ut .h{color:var(--dim);font-size:12px}
+.ut .off{color:var(--dim);text-decoration:line-through}
+.tc.rate{border-color:#555}.tc.off{opacity:.5}.tc.off b{text-decoration:line-through}
 .jp{display:inline-block;margin-left:6px;padding:0 5px;border-radius:4px;background:#5a3fd0;color:#fff;font-size:10px;font-weight:700;letter-spacing:.04em;vertical-align:middle}
 </style></head><body>
 <header>
 <h1>Filter report <small>__LEAGUE__ · <span id="meta"></span></small></h1>
+<div class="tiers" id="tiers"></div>
+<div id="utiers"></div>
 </header>
 <main>
 <section class="panel" id="item-check">
@@ -246,10 +378,18 @@ details .bar{position:sticky;top:0;z-index:2;background:var(--bg);padding:8px 0}
 </section>
 <h2>Look at these first <small>· hidden and worth ≥ safety, grouped by why</small></h2>
 <ul id="lk"></ul>
+<h2>League content modules <small>· [content.*] in config.toml: uniques that only drop from one boss / encounter / instance</small></h2>
+<p class="note">On: priced like any unique; a base the price rules would hide shows small + faded when one of its content uniques is in a shown unique tier, so a valuable encounter drop isn't missed.
+Off: ignored on shared bases; a base with only that content's uniques stays blue. Label = how an unidentified drop on that base looks now.</p>
+<div id="cm"></div>
+<h2>Vendor recipes <small>· [vendor_recipes.*] in config.toml; tier = floor, a better price tier wins</small></h2>
+<p class="note">Each recipe ingredient dropped as a rare with the recipe's flag (corrupted / mirrored). Label and rule = what the filter really does now; another rule may win before the recipe rule.</p>
+<div id="vr"></div>
 <h2>Hidden, worth a look <small id="revsub"></small></h2>
 <p class="note">Items the filter hides even though poe.ninja prices them at or above the review line. Each one is either intended
 (e.g. a base tiered by its cheapest unique) or something to fix in config.toml.</p>
 <table id="rev"><thead><tr><th>Item</th><th>Category</th><th>Base</th><th class="num">Chaos</th><th class="num">Div</th><th class="num">Listings</th><th>Why hidden</th></tr></thead><tbody id="rb"></tbody></table>
+<div id="rl"></div>
 <details id="all"><summary>All items (search / filter)</summary>
 <div class="bar">
 <input type="search" id="q" placeholder="Search name, base, rule…">
@@ -260,7 +400,7 @@ details .bar{position:sticky;top:0;z-index:2;background:var(--bg);padding:8px 0}
 <div class="stats" id="stats"></div>
 <table><thead><tr>
 <th data-k="name">Item (as it drops)</th><th data-k="cat">Category</th><th data-k="base">Base</th>
-<th data-k="c" class="num">Chaos</th><th data-k="c" class="num">Div</th><th data-k="n" class="num">Listings</th>
+<th data-k="c" class="num" id="hc">Chaos</th><th data-k="c" class="num" id="hd">Div</th><th data-k="n" class="num">Listings</th>
 <th data-k="shown">Filter</th><th data-k="rule">Deciding rule / note</th>
 </tr></thead><tbody id="tb"></tbody></table></details></main>
 <script>
@@ -268,6 +408,8 @@ const D=__DATA__, M=D.meta, R=D.rows, RULES=D.rules;
 const BEAM={red:"#e33",yellow:"#ec3",blue:"#38f",white:"#eee",grey:"#999",brown:"#a63",pink:"#f6c",green:"#4c4",orange:"#f93",purple:"#a5f",cyan:"#3dd"};
 const $=id=>document.getElementById(id);
 const esc=s=>String(s??"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const CI=`<img class="cur" alt="c" title="Chaos Orb" src="__CHAOS__">`;
+const DI=`<img class="cur" alt="div" title="Divine Orb" src="__DIVINE__">`;
 const fmt=v=>v==null?"–":v>=100?Math.round(v).toLocaleString():v>=1?v.toFixed(1):v.toFixed(2);
 const CLASS_ALIASES={
  "Body Armour":"Body Armours","Two Handed Axe":"Two Hand Axes","Two Handed Mace":"Two Hand Maces",
@@ -404,7 +546,19 @@ function analyzeCopiedItem(){
   result.innerHTML=`<div class="stats"><b class="${shown===null?"":shown?"v s":"v h"}">${esc(headline)}</b><br>${esc(summary)}<br>Assumptions: AreaLevel ${area}; CorruptedMods ${corruptedMods}. Mod conditions are checked against the pasted text.${note?`<br>${esc(note)}`:""}</div><h3>Matching rules, in order</h3>${details}`;
  }catch(e){result.textContent=e.message}
 }
-$("meta").textContent=`built ${M.when} · divine ${Math.round(M.divine)}c · safety ${M.safety}c · jackpot ≥ ${M.jackpot} div`;
+{const frac=d=>d==null?"":d>=1?`${+d.toFixed(2)}${DI}`:`1/${Math.round(1/d)}${DI}`;
+ const pts=[`<span class="tc rate"><span>1${DI}</span><i>=</i><span>${fmt(M.divine)}${CI}</span></span>`];
+ M.tiers.forEach((t,i)=>{const nxt=M.tiers[i-1];
+  const range=t.chaos>0?`≥ ${fmt(t.chaos)}${CI}`:nxt?`< ${fmt(nxt.chaos)}${CI}`:"any";
+  const L=t.look||{};let st=L.fg?`color:${L.fg}`:"";if(L.bg)st+=`;background:${L.bg}`;if(L.bd)st+=`;border-color:${L.bd}`;
+  pts.push(`<span class="tc tier${t.hidden?" off":""}" style="${st}" title="${t.hidden?"hidden":t.quiet?"quiet":"shown"}"><b>${esc(t.name)}</b><span>${range}</span><i>${t.chaos>0?frac(t.div):""}${t.hidden?" hidden":t.quiet?" quiet":""}</i></span>`)});
+ $("tiers").innerHTML=pts.join("")}
+{const U=M.unique_tiers||[],col=(on,title)=>`<ul class="ut"><li class="h">${title}</li>`+
+  U.filter(t=>t.shown===on).map(t=>`<li class="${on?"":"off"}" title="${on?"":esc(t.why)}">${esc(t.name)}</li>`).join("")+`</ul>`;
+ $("utiers").innerHTML=`<span class="note" title="[uniques] show.<tier> in config.toml; blue variable / jackpot bases always show">Unique tiers</span>`+
+  col(true,"Shown")+col(false,"Hidden")}
+$("meta").innerHTML=`built ${esc(M.when)} · ${DI} ${Math.round(M.divine)}${CI} · safety ${fmt(M.safety)}${CI} · jackpot ≥ ${M.jackpot}${DI}`;
+$("hc").innerHTML=CI;$("hd").innerHTML=DI;
 R.forEach(r=>{r.risk=!r.nomap&&!r.shown&&(r.c||0)>=M.safety;r.jp=M.divine>0&&(r.c||0)>=M.jackpot*M.divine});
 [...new Set(R.map(r=>r.cat))].sort().forEach(c=>$("cat").insertAdjacentHTML("beforeend",`<option>${esc(c)}</option>`));
 let vis="",sortK="c",sortDir=-1;
@@ -420,7 +574,7 @@ function render(){
   (!q||(r.name+" "+r.base+" "+r.rule+" "+r.note).toLowerCase().includes(q)));
  rows.sort((a,b)=>{let x=a[sortK],y=b[sortK];if(x==null)x=sortK==="c"||sortK==="n"?-1:"";if(y==null)y=sortK==="c"||sortK==="n"?-1:"";return (x>y?1:x<y?-1:0)*sortDir});
  const sh=rows.filter(r=>r.shown).length,risk=rows.filter(r=>r.risk).length;
- $("stats").innerHTML=`<b>${rows.length}</b> items · <b>${sh}</b> shown · <b>${rows.length-sh}</b> hidden`+(risk?` · <span class="w"><b>${risk}</b> hidden worth ≥ ${M.safety}c</span>`:"");
+ $("stats").innerHTML=`<b>${rows.length}</b> items · <b>${sh}</b> shown · <b>${rows.length-sh}</b> hidden`+(risk?` · <span class="w"><b>${risk}</b> hidden worth ≥ ${fmt(M.safety)}${CI}</span>`:"");
  $("tb").innerHTML=rows.slice(0,3000).map(r=>`<tr class="${r.risk?"risk":""} ${r.shown?"":"hid"}"><td>${label(r)}</td><td>${esc(r.cat)}</td><td>${esc(r.base)}</td>
 <td class="num">${fmt(r.c)}</td><td class="num">${r.c==null||!M.divine?"–":fmt(r.c/M.divine)}</td><td class="num">${r.n??"–"}</td>
 <td class="v ${r.shown?"s":"h"}">${r.shown?"Shown":"Hidden"}</td>
@@ -439,15 +593,38 @@ $("analyze-item").addEventListener("click",analyzeCopiedItem);
 $("item-paste").addEventListener("keydown",e=>{if(e.ctrlKey&&e.key==="Enter")analyzeCopiedItem()});
 render();
 const rev=R.filter(r=>!r.nomap&&!r.shown&&(r.c||0)>=M.review);
-$("revsub").textContent=`· ${rev.length} hidden items ≥ ${M.review}c (config [report] review_tier)`;
-$("rb").innerHTML=rev.length?rev.map(r=>`<tr class="${r.risk?"risk":""}"><td>${label(r)}</td><td>${esc(r.cat)}</td><td>${esc(r.base)}</td>
+const links=r=>(r.name.match(/\((\d)L\)$/)||[])[1];
+$("revsub").innerHTML=`· ${rev.length} hidden items ≥ ${fmt(M.review)}${CI} (config [report] review_tier)`;
+const revRow=r=>`<tr class="${r.risk?"risk":""}"><td>${label(r)}</td><td>${esc(r.cat)}</td><td>${esc(r.base)}</td>
 <td class="num">${fmt(r.c)}</td><td class="num">${M.divine?fmt(r.c/M.divine):"–"}</td><td class="num">${r.n??"–"}</td>
-<td><div class="rule">${esc(r.rule)} <span>:${r.line}</span></div>${r.note?`<div class="note">${esc(r.note)}</div>`:""}</td></tr>`).join("")
- :`<tr><td colspan="7" class="empty">Nothing priced ≥ ${M.review}c is hidden.</td></tr>`;
+<td><div class="rule">${esc(r.rule)} <span>:${r.line}</span></div>${r.note?`<div class="note">${esc(r.note)}</div>`:""}</td></tr>`;
+const revMain=rev.filter(r=>!links(r));
+$("rb").innerHTML=revMain.length?revMain.map(revRow).join("")
+ :`<tr><td colspan="7" class="empty">Nothing ${rev.length?"unlinked ":""}priced ≥ ${fmt(M.review)}${CI} is hidden.</td></tr>`;
+$("rl").innerHTML=["6","5"].map(n=>{const rs=rev.filter(r=>links(r)===n);if(!rs.length)return"";
+ const risk=rs.filter(r=>r.risk).length;
+ return `<details><summary>${n}L uniques · ${rs.length} hidden${risk?` · <span class="w">${risk} ≥ ${fmt(M.safety)}${CI}</span>`:""}</summary>
+<table><thead><tr><th>Item</th><th>Category</th><th>Base</th><th class="num">Chaos</th><th class="num">Div</th><th class="num">Listings</th><th>Why hidden</th></tr></thead><tbody>${rs.map(revRow).join("")}</tbody></table></details>`}).join("");
+{const state=b=>!b.shown?"Hidden":b.rule.includes("content override show")?"Faded":"Shown";
+ $("cm").innerHTML=(D.content||[]).map(m=>{const n=s=>m.bases.filter(b=>state(b)===s).length;
+  return `<details class="cm"><summary>${esc(m.mod)} <span class="v ${m.on?"s":"h"}">${m.on?"on":"off"}</span> <span class="note">· ${m.bases.length} bases · ${n("Shown")} shown · ${n("Faded")} faded · ${n("Hidden")} hidden · source contains ${esc(m.sources.join(", "))}</span></summary>
+<table><thead><tr><th>Base (unID drop)</th><th>Uniques from this content</th><th>Filter</th><th>Deciding rule</th></tr></thead><tbody>`+
+  m.bases.map(b=>`<tr class="${b.shown?"":"hid"}"><td>${label({name:b.base,look:b.look})}</td>
+<td>${b.uniques.map(u=>`${esc(u.name)} <span class="note">${u.c==null?"unlisted":fmt(u.c)+CI}</span>`).join("<br>")}</td>
+<td class="v ${b.shown?"s":"h"}">${state(b)}</td>
+<td><div class="rule">${esc(b.rule)} <span>:${b.line}</span></div></td></tr>`).join("")+`</tbody></table></details>`}).join("")}
+$("vr").innerHTML=(D.vendor||[]).map(v=>{const n=v.items.filter(i=>i.shown).length;
+ return `<details class="cm"><summary>${esc(v.name)} <span class="v ${v.on?"s":"h"}">${v.on?"on":"off"}</span> <span class="note">· tier ${esc(v.tier)} · ${v.items.length} ingredients · ${n} shown · ${v.items.length-n} hidden</span></summary>
+<p class="note">${v.needs.length?`Needs: ${esc(v.needs.join(" + "))} · `:""}Rarity: ${esc(v.rarity.join(", "))} · state: ${v.conds.length?esc(v.conds.join(" or ")):"any (unidentified / corrupted / split / mirrored all match)"}${v.note?` · ${esc(v.note)}`:""}</p>
+<table><thead><tr><th>Ingredient</th><th>As</th><th>Filter</th><th>Deciding rule</th></tr></thead><tbody>`+
+ v.items.map(i=>`<tr class="${i.shown?"":"hid"}"><td>${label({name:i.base,look:i.look})}</td><td>${esc(i.how)}</td>
+<td class="v ${i.shown?"s":"h"}">${i.shown?"Shown":"Hidden"}</td>
+<td><div class="rule">${esc(i.rule)} <span>:${i.line}</span></div></td></tr>`).join("")+`</tbody></table></details>`}).join("")
+ ||`<p class="empty">No [vendor_recipes.*] in config.toml.</p>`;
 const unq=r=>["Unique","Foulborn","Replica"].includes(r.cat),lnk=r=>/\(\dL\)$/.test(r.name);
 const checks=[
- {sev:"bad",t:`Hidden worth ≥ ${M.jackpot} div`,rows:R.filter(r=>!r.nomap&&!r.shown&&r.jp),
-  why:"The jackpot rule should never let these hide: bug in rules or config.",ok:`Nothing worth ≥ ${M.jackpot} div is hidden.`},
+ {sev:"bad",t:`Hidden worth ≥ ${M.jackpot}${DI}`,rows:R.filter(r=>!r.nomap&&!r.shown&&r.jp),
+  why:"The jackpot rule should never let these hide: bug in rules or config.",ok:`Nothing worth ≥ ${M.jackpot}${DI} is hidden.`},
  {t:"Linked uniques hidden",rows:R.filter(r=>r.risk&&unq(r)&&lnk(r)),
   why:`The price comes from the links, but the linked rule only fires at ≥ ${M.jackpot} div. Lower jackpot_divine to catch them, or accept.`},
  {t:"Chase uniques on hidden bases",rows:R.filter(r=>r.risk&&unq(r)&&!lnk(r)),
@@ -455,9 +632,9 @@ const checks=[
  {t:"Crafting bases hidden with real volume",rows:R.filter(r=>r.risk&&r.cat==="Crafting base"&&(r.n||0)>=50),
   why:"This high-volume price meets the safety threshold but the item is hidden. Check the matching ilvl/influence rule."},
 ];
-$("lk").innerHTML=checks.filter(k=>k.rows.length||k.ok).map(k=>!k.rows.length?`<li class="ok"><span class="t">✓ ${esc(k.ok)}</span></li>`:
- `<li class="${k.sev||""}"><div class="t"><b>${k.rows.length}</b> ${esc(k.t)}</div><div class="note">${esc(k.why)}</div><div class="ex">`+
- k.rows.slice(0,6).map(r=>`<span>${label(r)} ${fmt(r.c)}c${r.base&&r.cat==="Crafting base"?` · ${esc(r.base)}`:""}${r.n?` · ${r.n} listed`:""}</span>`).join("")+
+$("lk").innerHTML=checks.filter(k=>k.rows.length||k.ok).map(k=>!k.rows.length?`<li class="ok"><span class="t">✓ ${k.ok}</span></li>`:
+ `<li class="${k.sev||""}"><div class="t"><b>${k.rows.length}</b> ${k.t}</div><div class="note">${esc(k.why)}</div><div class="ex">`+
+ k.rows.slice(0,6).map(r=>`<span>${label(r)} ${fmt(r.c)}${CI}${r.base&&r.cat==="Crafting base"?` · ${esc(r.base)}`:""}${r.n?` · ${r.n} listed`:""}</span>`).join("")+
  (k.rows.length>6?`<span class="note">+${k.rows.length-6} more below</span>`:"")+`</div></li>`).join("");
 </script></body></html>
 """

@@ -6,24 +6,7 @@ Hide # league_start
 	Class == "Maps"
 	SetFontSize 45
 
-# Gems: show 20% quality and the expensive exceptional supports, hide rest
-Show
-	Class == "Skill Gems" "Support Gems"
-	BaseType "Awakened" "Enlighten" "Empower" "Enhance"
-	SetFontSize 45
-	SetTextColor 255 0 0 255
-	PlayAlertSound 1 300
-	PlayEffect Red
-	MinimapIcon 1 Red Diamond
-
-Show
-	Class == "Skill Gems" "Support Gems"
-	Quality >= 20
-	SetFontSize 45
-	SetTextColor 20 240 240
-	PlayEffect Grey
-	MinimapIcon 1 Cyan Diamond
-
+# Gems: the rest is hidden (Awakened / 20% shows are in rules/top.filter)
 Hide # league_start
 	Class == "Skill Gems" "Support Gems"
 	SetFontSize 35

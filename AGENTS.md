@@ -18,12 +18,14 @@ no network in tests. Player-facing behavior: `README.md`. Read only the doc you 
 | `unique_tiers.toml` | ~200 | unique name -> drop-rarity tier 0..5 (for `[uniques.ev]` drop weights) |
 | `rules/top.filter` / `rules/bottom.filter` | 66 / 42 | Hand-written blocks before / after price rules |
 | `rules/leveling/rf.filter` | 156 | Build module for campaign (`[leveling] build = "rf"`) |
-| `filtersim.py` | ~100 | Mini filter evaluator (tests + report). Unknown condition -> raises |
-| `report.py` | ~460 | Writes `out/report.html` (mostly an embedded HTML/JS `PAGE` string) |
-| `build_filter_poe2.py` + `config_poe2.toml` | ~290 / 35 | PoE2, separate + simpler (Currency + Runes only) |
+| `filtersim.py` | ~120 | Mini filter evaluator (tests + report), PoE1 + PoE2 conditions. Unknown condition -> raises |
+| `report.py` | ~480 | Writes `out/report.html` (mostly an embedded HTML/JS `PAGE` string) |
+| `assets/chaos.png`, `assets/divine.png` | - | Currency icons, inlined into the report as data URIs by `report.icon()` |
+| `report_poe2.py` | ~130 | Writes `out/report_poe2.html`: tier values in ex, rates, priced items |
+| `build_filter_poe2.py` + `config_poe2.toml` | ~340 / 40 | PoE2, separate: poe.ninja exchange prices tiered in divines, NeverSink PoE2 export appended below |
 | `tests/test_filter.py` | ~1200 | `Synthetic` (fake data) + `LiveCache` (replays `cache/`) |
-| `tests/test_filter_poe2.py` | ~100 | PoE2 synthetic |
-| `reference/*.filter` | big | NeverSink/FilterBlade exports. Parsed at build (`league.filter`, `regular-neversink.filter`). Don't read whole; grep |
+| `tests/test_filter_poe2.py` | ~210 | PoE2 synthetic (fake reference) + `Poe2LiveCache` (replays `cache/poe2/`) |
+| `reference/*.filter` | big | NeverSink/FilterBlade exports. Parsed at build (`league.filter`, `regular-neversink.filter`; PoE2: `league-filterblade-poe2.filter` appended whole). Don't read whole; grep |
 | `cache/`, `out/` | gitignored | poe.ninja/wiki JSON cache; generated filter + report. Never edit `out/` |
 
 ## Hard rules
@@ -39,6 +41,10 @@ no network in tests. Player-facing behavior: `README.md`. Read only the doc you 
   - Keep docs terse; reference functions by name, not line numbers. Wrong doc = fix it when seen.
 - Style rule (user pref): no borders / backgrounds except top tier (tink); gear text white/brown; calm look.
 - Divine, Mirror, Hinekora's Lock always top/tink (`PINNED_TOP_STACKABLES`), not overridable.
+- Any vendor / crafting recipe (Grasping Mail, chromatic, jeweller, gemcutter, glassblower, new ones)
+  = a `[vendor_recipes.*]` entry, all grouped there, tier = FLOOR: ingredient worth more keeps its own
+  tier (uniques, crafting bases, overrides), cheap / hidden ones get the recipe tier. Never hand-write
+  recipe blocks in `rules/*.filter` or as plain toggles.
 - Jackpot (`jackpot_divine`) items must never be hidden; group can't tell -> "variable" (blue).
 - Crafting bases priced per exact base + influence + ilvl range; need `min_listings` AND `min_samples`; each confident price covers only its own ilvl range (higher ilvl does not floor lower). Keep separate from unique pricing.
 - Check generated filter visibility (via `filtersim`) in tests, not just intermediate tier dicts.

@@ -5,28 +5,73 @@
 # (min_tier = "mid", never_hide_tier = "top", ...), so they all move together.
 # Style for each tier is in [style.<name>] at the bottom.
 # ===========================================================================
-# true  = a tier with `div` is that fraction of 1 divine (poe.ninja rate, moves with the economy),
-#         with a minimum threshold of 1 chaos.
-# false = every tier uses its fixed `chaos` value (also the fallback when there's no divine price).
-tiers_follow_divine = true
-
-# Item worth >= threshold gets that tier. Anything below the lowest tier is hidden.
-tiers.top   = { div = 1,      chaos = 125 }   # TINK: 1 div
-tiers.high  = { div = 0.25,   chaos = 25 }    # 1/4 div
-tiers.mid   = { div = 0.0625, chaos = 5 }     # 1/4 of high (1/16 div)
-tiers.minor = { div = 0.015625, chaos = 2 }   # 1/4 of mid (1/64 div, ~5c at 300c div)
-tiers.low   = {               chaos = 1 }
-tiers.brown = {               chaos = 0.25 }
-tiers.dust  = {               chaos = 0.05 }
+# Every threshold is a fraction of 1 divine (poe.ninja rate), so tiers move with the economy.
+# Item worth >= threshold gets that tier. dust = 0: everything priced below brown.
+tiers.top   = 1                # TINK: 1 div
+tiers.high  = 0.25             # 1/4 div
+tiers.mid   = 0.0625           # 1/16 div
+tiers.minor = 0.015625         # 1/64 div  (~6c at 400c div)
+tiers.low   = 0.00390625       # 1/256 div (~1.5c at 400c div)
+tiers.brown = 0.0009765625     # 1/1024 div (~0.4c at 400c div)
+tiers.dust  = 0                # everything below brown
+# Where blue "variable" (unknown / gamble value) ranks: right after this tier. Order is then
+# top, high, mid, minor, variable, low, brown, dust: a known minor+ price beats "maybe" (vendor
+# recipe floors, tier comparisons). Jackpot / never-hide rules don't depend on it.
+variable_after = "minor"
 
 # Per-tier switches. List tier names (top, high, mid, minor, low, brown, dust, variable, unknown).
 # hide_tiers:  priced but hidden. Remove one to start showing it
-#              (e.g. drop "brown" early league when 0.25c stuff is worth picking up).
+#              (e.g. drop "brown" early league when 1/1024 div stuff is worth picking up).
 # quiet_tiers: unintrusive brown instead of the tier's own style: brown text, grey beam,
 #              grey icon, no sound (keeps the tier's font size). Style in [style.quiet].
 #              e.g. late league: quiet_tiers = ["low"], later ["low", "mid"].
 hide_tiers = ["brown", "dust"]
 quiet_tiers = ["low"]
+
+# ENDGAME RARES (ilvl rares.min_ilvl.<group>+, at least 68). poe.ninja has no rare prices, so these use NeverSink's
+# FilterBlade base tiers from reference/league.filter. Per group, list the tiers to show:
+# "t1" (best bases) .. "t5" (weapons + armour; jewellery t1..t3), "all" = every base, [] = none.
+# League start: ["all"], then tighten: ["t1", "t2", "t3"] -> ["t1", "t2"] -> ["t1"] -> [].
+# Shown rares get muted rare-yellow text (rares.text_color; game yellow = "255 255 119 255";
+# kept pale + cool so it reads apart from the orange-gold mid tier and the tan brown tier),
+# no sound / beam / icon; the rest stay hidden. Price rules (crafting bases, links) still win.
+rares.enabled = false
+rares.weapons = ["t1"]
+rares.armour = ["t1"]
+rares.jewellery = ["t1"]     # amulets, rings, belts
+rares.text_color = "235 220 105 255"
+# Per group: only rares at this item level or higher (68 = all endgame).
+rares.min_ilvl.weapons = 75
+rares.min_ilvl.armour = 75
+rares.min_ilvl.jewellery = 75
+# Per item class: false = never show that rare class, whatever its tier.
+# weapons
+rares.show."Bows" = true
+rares.show."Claws" = true
+rares.show."Daggers" = true
+rares.show."One Hand Axes" = true
+rares.show."One Hand Maces" = true
+rares.show."One Hand Swords" = true
+rares.show."Quivers" = true
+rares.show."Rune Daggers" = true
+rares.show."Sceptres" = true
+rares.show."Staves" = true
+rares.show."Thrusting One Hand Swords" = true
+rares.show."Two Hand Axes" = true
+rares.show."Two Hand Maces" = true
+rares.show."Two Hand Swords" = true
+rares.show."Wands" = true
+rares.show."Warstaves" = true
+# armour
+rares.show."Body Armours" = true
+rares.show."Boots" = true
+rares.show."Gloves" = true
+rares.show."Helmets" = true
+rares.show."Shields" = true
+# jewellery
+rares.show."Amulets" = true
+rares.show."Belts" = true
+rares.show."Rings" = true
 
 # JACKPOT: ANY item worth >= this many divines is never hidden. Where the filter can only
 # see a group (a unique base, a Foulborn base, a 5L unique base, a crafting base ilvl range)
@@ -51,18 +96,23 @@ show_5_links = false
 show_6_links = false
 show_mirrored = false
 
+# Vendor recipes: see [vendor_recipes.*] further down.
+
+# Gold: false = always hidden. true = big stacks (3001+) everywhere, small stacks in the campaign.
+show_gold = false
+
 # Re-download prices if cache older than this many minutes
 cache_minutes = 60
 
 # LEAGUE START: true = show (almost) everything while prices are thin and you're poor.
 # Overrides the settings below without editing them, so flipping back is one line:
 #   hide_tiers -> none (brown, dust shown)      small_loot -> off
-#   uniques / foulborn / bases min_tier -> lowest tier    uniques.hide_maps -> false
+#   uniques.show -> all tiers    foulborn / bases min_tier -> lowest tier    uniques.hide_maps -> false
 #   "hide" overrides, unpriced settings and card tiers -> lowest tier
 #   all [content.*] modules on, [leveling] on
 #   rules/*.filter blocks tagged "Hide # league_start" -> Show (maps, gems, small gold)
 #   white crafting bases the [leveling] build never uses stay hidden (league_start_hide_unused)
-# Only things priced below the lowest tier (dust) and plain gear in maps stay hidden.
+# Only plain gear in maps (and gold, unless show_gold) stays hidden.
 # Set back to false after a few days, when you have currency and prices settle.
 league_start = false
 
@@ -336,9 +386,9 @@ t5 = "hide"
 
 # ---------------------------------------------------------------------------
 # Uniques, [uniques.ev] on (default): a base is tiered by the EXPECTED VALUE of one
-# unidentified drop = drop chance of each unique on it x its price. Below min_tier: hidden,
+# unidentified drop = drop chance of each unique on it x its price. Tier off in show: hidden,
 # jackpots too (Leather Belt: Headhunter ~1 in 3900 unique Leather Belts -> ~1.4c per belt).
-# Shown, but its cheapest unique is below min_tier: blue "variable" (Heavy Belt: Mageblood
+# Shown, but its cheapest unique's tier is off: blue "variable" (Heavy Belt: Mageblood
 # ~1 in 3400, ~8c per belt). always_show_bases: shown no matter what.
 # Bases without drop-anywhere uniques (league content only) and [uniques.ev] off use the
 # rules below. Bases whose enabled uniques are all boss/encounter-only are always shown as
@@ -353,15 +403,26 @@ t5 = "hide"
 # (Leather Belt -> Headhunter).
 # ---------------------------------------------------------------------------
 [uniques]
+# Unique tier toggles: false = unique bases priced in that tier are hidden (variable /
+# jackpot / always_show_bases still shown). [small_loot] on still hides below its min_tier.
+# league_start turns them all on.
+show.top   = true
+show.high  = true
+show.mid   = true
+show.minor = false
+show.low   = false
+show.brown = false
+show.dust  = false
 never_hide_tier = "top"
 # Late league wrist saver: true = never_hide_tier rescue off, a cheap base goes blue
 # "variable" only when some unique on it is >= jackpot_divine (Moonstone Ring: 1c Heartbound
 # Loop / Timeclasp mostly, 200c Anathema -> hidden). Foulborn too. league_start forces false.
 variable_jackpot_only = true
+# Unique item classes always blue "variable", whatever their price tier (normal + Foulborn);
+# only a base priced top (every unique on it >= 1 div) keeps its tink. [] = off.
+variable_classes = ["Jewels", "Abyss Jewels"]
 min_listings = 10
 include_replicas = false
-# Hide unique bases whose cheapest unique is below this tier (variable bases always shown)
-min_tier = "mid"
 # Base with no priced uniques (new / unknown): tier name, "hide" or "unknown"
 unpriced = "unknown"
 # Hide ALL unique maps (Foulborn and jackpots too). Shown ones get a Square minimap icon.
@@ -415,13 +476,89 @@ unknown_chase_tier = 2
 "Angler's Plait" = false   # only drops with a Corrupted Slitherpinch equipped
 
 # ---------------------------------------------------------------------------
-# Content modules: enable a source to price its restricted uniques with the normal unique
-# rules (poe.ninja prices, tiers, and unknown-value handling). PoE filters cannot tell where
-# an item dropped, so the resulting base rule applies globally. In `drops`, "price" follows
-# normal pricing, true forces that unique's base to show, and false forces it to hide.
-# Overrides are base-wide: another unique on the same base is affected too. League start
-# intentionally enables all content modules.
+# Vendor recipes: show the ingredients of a recipe you do, Diamond minimap icon (like crafting
+# bases), styled as `tier`. The tier is a FLOOR: an ingredient whose own price tier is better
+# keeps that (a 2 div unique Fugitive Ring stays a tink, a pricey ilvl 86 crafting base or an
+# [overrides] base keeps its tier, a blue variable base stays blue); a cheaper or hidden one
+# gets the recipe tier. tier = a price tier or "variable" (blue: beats every price tier except
+# top, so a tink stays a tink). enabled = false -> recipe off.
+# Ingredients, one of:
+#   bases = exact BaseTypes, any rarity (normal, magic, rare, unique), optional `class`
+#   conds = filter conditions, all required (no bases = any base), optional `class` (one or a
+#           list) and `rarity` (list; left out = any). Uniques are left to their own rules.
+# Optional `any` = filter conditions, the item needs one of them (one block each, e.g.
+# ["Corrupted True"]); left out = any state.
+# Checked before price / leveling rules (a hidden cheap crafting base still shows), after
+# rules/top.filter (5/6 links, Awakened + 20% gems) and [overquality].
 # ---------------------------------------------------------------------------
+[vendor_recipes.grasping_mail]
+# Grasping Mail (poewiki "Vendor recipe"): 60x any mix of these Breach rings -> rare unID
+# Grasping Mail. Any rarity incl. unique; unidentified, corrupted or split fine. Formless Ring
+# is not part of it (Lost Unity recipe).
+enabled = true
+tier = "variable"
+class = "Rings"
+bases = ["Cryonic Ring", "Enthalpic Ring", "Fugitive Ring", "Organic Ring", "Synaptic Ring"]
+note = "60x any mix; any rarity incl. unique; unidentified, corrupted or split OK"
+
+# Currency recipes, as in NeverSink's regular filter (low tier: white text + beam, Diamond).
+[vendor_recipes.chromatic]
+# Chromatic Orb: an item with R-G-B linked sockets, any size.
+enabled = true
+tier = "low"
+rarity = ["Normal", "Magic", "Rare"]
+conds = ['SocketGroup "RGB"']
+note = "1 Chromatic Orb each"
+
+[vendor_recipes.jeweller]
+# 7 Jeweller's Orbs: an item with 6 sockets (5/6 links: show_5_links / show_6_links).
+enabled = false
+tier = "low"
+rarity = ["Normal", "Magic", "Rare"]
+conds = ["Sockets >= 6"]
+note = "7 Jeweller's Orbs each"
+
+[vendor_recipes.gemcutter]
+# Gemcutter's Prism: gems with 40% total quality (or one 20%). 20% and Awakened gems keep
+# their own rules (rules/top.filter).
+enabled = true
+tier = "low"
+class = ["Skill Gems", "Support Gems"]
+conds = ["Quality >= 1"]
+note = "40% total quality -> 1 Gemcutter's Prism"
+
+[vendor_recipes.glassblower]
+# Glassblower's Bauble: white flasks with 40% total quality (NeverSink shows the 20% ones).
+enabled = true
+tier = "low"
+rarity = ["Normal"]
+class = ["Hybrid Flasks", "Life Flasks", "Mana Flasks", "Utility Flasks"]
+conds = ["Quality >= 20"]
+note = "40% total quality -> 1 Glassblower's Bauble"
+
+# ---------------------------------------------------------------------------
+# Content modules: uniques that only drop from one boss / encounter / instance (Breach boss,
+# Trialmaster, Blight-ravaged map). Turn one on while you run that content; normal mapping
+# stays the same, so it can stay on.
+#   on:  its uniques are priced like any unique (a 1c one on Titan Greaves -> blue, a 5 div
+#        one -> top). A base the price rules HIDE (cheap sibling unique) still shows small +
+#        faded ([style.content]) when one of its content uniques is itself in a shown
+#        [uniques] show tier (Amber Amulet: 1c map junk, 2 div Xoph's Blood). A cheap content
+#        unique (7c Hand of the Lords) stays hidden. Base-wide: a junk map unique on a faded
+#        base shows faded too (filters can't tell which unique dropped).
+#   off: its uniques are ignored on shared bases (Titan Greaves = Kaom's Roots tier). A base
+#        with only that content's uniques still shows blue.
+# PoE filters cannot tell where an item dropped, so the rule applies everywhere.
+# Per unique in `drops`: "price" (= default), true = faded show even past [overrides] when its
+# price would hide the base (price tier still wins), false = always hide
+# (base-wide). League start enables all content modules.
+# ---------------------------------------------------------------------------
+[content.breach]
+# Breach bosses in map breaches, Genesis Tree / Ancient Wombgift, Hive coffers, Esh / Tul.
+# Normal Breach monsters don't drop these.
+enabled = true
+sources = ["BreachBoss"]
+
 [content.ultimatum]
 enabled = true
 sources = ["Ultimatum"]   # Trialmaster boss drops + Ultimatum rewards
@@ -588,8 +725,8 @@ bases = []           # exact BaseType, e.g. "Prismatic Jewel"
 #   high    = red text, >= 1/4 div
 #   mid     = yellow text, >= 1/16 div
 #   minor   = grey text, >= 1/64 div
-#   low     = grey text, >= 1c (late league: quiet_tiers -> brown)
-#   brown   = brown text, >= 0.25c   dust = brown text, >= 0.05c
+#   low     = grey text, >= 1/256 div (late league: quiet_tiers -> brown)
+#   brown   = brown text, >= 1/1024 div   dust = brown text, everything cheaper
 #   variable/unknown = blue beam, game's own text colour: value unknown or variable,
 #                      worth picking up / identifying
 # ---------------------------------------------------------------------------
@@ -650,7 +787,7 @@ lines = [
   "DisableDropSound True",
 ]
 
-# Below 1c: brown text, no beam/icon/sound
+# Below 1/256 div: brown text, no beam/icon/sound
 [style.brown]
 lines = [
   "SetFontSize 45",

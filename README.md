@@ -17,7 +17,9 @@ to the corresponding Path of Exile folder under `Documents\My Games` when that f
 You can run the Python scripts directly instead of the batch files:
 `python build_filter.py --refresh` or `python build_filter_poe2.py --refresh`.
 
-- `config.toml` - tiers (chaos), variable line (divine), confidence limits, overrides, styles
+- `config.toml` - tiers (fractions of a divine: top 1, high 1/4, mid 1/16, minor 1/64, low 1/256,
+  brown 1/1024, dust = everything cheaper), variable line (divine), confidence limits, overrides, styles,
+  `show_gold` (default off: all gold hidden)
 - Visible item labels use maximum font size 45; explicit content-module always-show overrides
   retain their deliberately smaller size.
 - `hide_forbidden_tome` in `config.toml` hides Forbidden Tome regardless of price; set it to
@@ -26,35 +28,53 @@ You can run the Python scripts directly instead of the batch files:
   6-link item alerts.
 - `show_mirrored` in `config.toml` controls the optional blue, non-tink mirrored-item rule
   (disabled by default).
+- Vendor recipes (`[vendor_recipes.<name>]`): show a recipe's ingredients (any rarity) with a
+  Diamond icon in the recipe's `tier` style. The tier is a floor: an ingredient whose own price tier
+  is better keeps it (a tink Fugitive Ring stays a tink, a blue unique base stays blue, a pricey
+  ilvl 86 crafting base or an `[overrides]` base keeps its tier); a cheap or hidden one gets the
+  recipe tier. Ingredients are `bases` (exact base types) or `conds` (filter conditions, e.g.
+  RGB sockets) with optional `class` / `rarity`.
+  `tier` can also be `"variable"` (blue). Tier order: top, high, mid, minor, variable, low,
+  brown, dust (`variable_after`), so a blue recipe only lifts low / brown / dust / hidden items.
+  `grasping_mail` (on, tier variable): Cryonic / Enthalpic / Fugitive / Organic / Synaptic Ring, any
+  rarity incl. unique, any state (poewiki: unidentified, corrupted or split are fine; Formless
+  Ring is not part of it).
+  Currency recipes as in NeverSink's regular filter (tier low; jeweller off by default): `chromatic` (R-G-B linked,
+  any size), `jeweller` (6 sockets), `gemcutter` (gems with any quality; Awakened / 20% gems keep
+  their own rules), `glassblower` (20% quality white flasks). Normal / magic / rare.
 - `[overquality]` - quality thresholds for non-mirrored, non-corrupted gear (30% on by default;
   27% and 21% are optional)
 
-## PoE2 (first version)
+## PoE2
 Run `update_poe2.bat` (or `python build_filter_poe2.py --refresh`). This writes
 `out/pricefilter_poe2.filter` and copies it to `Documents/My Games/Path of Exile 2` when that
-folder exists. Settings are in `config_poe2.toml`; price data is cached separately under
-`cache/poe2/`.
+folder exists. Settings are in `config_poe2.toml`; price data is cached under `cache/poe2/`.
 
-The filter syntax follows [GGG's item filter reference](https://www.pathofexile.com/item-filter/about),
-which documents `Show`/`Hide`, `BaseType`, `Class`, `Rarity`, `AreaLevel`, `StackSize`, and the
-visual actions used here. GGG documents `StackSize` for currency stacks, so stack-size price
-alerts are generated for Currency feed items only; Runes are priced as individual items until
-their in-game stack behavior is verified. GGG also documents the PoE2-specific `WaystoneTier`
-condition; this first version leaves waystones and other unpriced items visible rather than
-assigning guessed tiers.
+Prices come from all poe.ninja PoE2 exchange feeds (currency, fragments, abyss, uncut and lineage
+gems, essences, soul cores, idols, runes, omens, expedition, delirium, breach). Tiers are fractions
+of a divine in `[tiers]` of `config_poe2.toml` (top = 1 div, high = 1/4, mid = 1/16, minor = 1/64,
+low = 1/256, brown = 1/1024, dust = everything cheaper), so they follow the economy: early league
+exalts, later chaos. Which tiers hide or go quiet: `hide_tiers` / `quiet_tiers`. A stack big enough
+to reach a higher tier gets its own alert. Gold is hidden unless `show_gold = true`. Every shown
+item uses full text size.
+Divine, Mirror and Hinekora's Lock are always top.
 
-This initial PoE2 version prices poe.ninja's Currency and Runes exchange feeds in chaos-equivalent
-values. It does not yet price uniques or crafting bases. Normal and magic items in the configured
-gear classes are hidden from area level 65 onward; campaign gear and unpriced uniques remain
-visible. The official reference describes `Class` matching but does not publish a complete PoE2
-class-name list, so edit `[gear].classes` if your client uses different names. The generated
-`Hide` rules target normal (non-Ruthless) filters, as noted in GGG's reference.
+A price is trusted only with enough trade volume. Thin-market items never tink: they use
+NeverSink's tier if NeverSink lists them, else show blue.
+
+Each build also writes `out/report_poe2.html`: tier values in exalts (plus divine fractions), the
+div:ex and div:chaos rates, and every priced item with its tier and whether the filter shows it.
+
+Everything else (gear, rares, uniques, waystones, campaign, unpriced items) comes from the
+NeverSink/FilterBlade PoE2 export in `reference/league-filterblade-poe2.filter`, appended below the
+price rules with borders and backgrounds removed except on its top tier. To change that part,
+export a new filter from FilterBlade and replace the file.
 
 ## League start
 Set `league_start = true` (top of `config.toml`), run `update.bat`. Shows (almost) everything:
-no hidden tiers, wrist saver off, all min tiers at the lowest tier, "hide" overrides shown,
+no hidden tiers, wrist saver off, all unique tiers on, other min tiers at the lowest tier, "hide" overrides shown,
 content modules on, and rules-file blocks tagged `Hide # league_start` (maps, gems, small
-gold) shown. Only items priced below the lowest tier, plain gear in maps and white crafting
+gold when `show_gold`) shown. Only plain gear in maps and white crafting
 bases the `[leveling] build` never uses (rf: pure ES, unused weapons; unless worth
 `bases.min_tier`, `league_start_hide_unused`) stay hidden.
 Set it back to `false` after a few days.
@@ -102,18 +122,26 @@ other bases in the Shields class are larger. Vendor Shows take priority over cam
   regardless of their poe.ninja prices or manual overrides.
 - Uniques: poe.ninja listings. A base is tiered by its CHEAPEST unique (no clicking 1c junk
   for a maybe-20c). Exception: any unique on the base >= `jackpot_divine` -> variable style.
+  Which price tiers show: `[uniques] show.<tier> = true/false` (default top/high/mid on).
+  Unique jewels (`variable_classes`, Jewels + Abyss Jewels) are always blue, unless every unique
+  on the base is >= 1 div (tink).
 - Jackpot (`jackpot_divine`, top of config): ANY item worth that much is never hidden. Unique,
   Foulborn and 5L/6L unique bases and crafting base ilvl ranges with a jackpot go variable.
   Per unique the cheapest variant is used (Mageblood = 2-flask price).
 - Uniques that can't drop in a normal map (uber/pinnacle bosses, Breachlords, Atziri, Syndicate,
   Delve, Heist + Replicas, Incursion temple, Lab, recipes, upgrades) are skipped from pricing,
-  so a boss chase never makes a junk base blue. Enabling the matching `[content.<name>]` module
-  opts those drops into normal poe.ninja pricing. Source: poewiki drop-restricted flag + drop
+  so a boss chase never makes a junk base blue and a junk boss unique never drags a base down
+  (Lab-only Winds of Change doesn't hide Hateforge's Ancient Gauntlets). Enabling the matching `[content.<name>]` module
+  opts those drops into normal poe.ninja pricing (+ faded show when price hides them). Source: poewiki drop-restricted flag + drop
   source (`cache/wiki_uniques.json`); `[uniques] map_sources` / `[uniques.map_drop]` to tune.
   Bossing: toggle the filter off in game. Report lists them as category "No map drop".
-- Content modules (`[content.<name>]`, toggle): enable and rebuild before farming content
-  (Ultimatum or Blight) to include its restricted uniques in normal poe.ninja pricing and unique rules.
-  Set `[content.<name>.drops]` entries to `"price"` for normal pricing, `true` to always show,
+- Content modules (`[content.<name>]`, toggle): Ultimatum, Blight, Breach (boss / encounter /
+  instance-only uniques). On: its uniques are priced normally (Breach on: Titan Greaves blue from
+  1c Red Trail), and a base the price rules would hide still shows small + faded when one of its
+  content uniques is itself in a shown unique tier (Amber Amulet: 2 div Xoph's Blood), so the
+  valuable encounter drop isn't missed; cheap content uniques stay hidden; normal mapping is otherwise unchanged. Off: those uniques are
+  ignored on shared bases (Titan Greaves = Kaom's Roots tier); bases with only that content's
+  uniques stay blue. `[content.<name>.drops]`: `"price"` (default), `true` to always show faded,
   or `false` to always hide a specific unique's base. PoE filters cannot
   distinguish drop sources or unique names before identification, so pricing and overrides
   apply globally to the base and can affect other uniques sharing it. Always-show drops use
@@ -127,6 +155,12 @@ other bases in the Shields class are larger. Vendor Shows take priority over cam
   `[bases]` requires both `min_listings` and `min_samples`; raise these thresholds to ignore
   prices with too little supporting market data. A confident listing prices only its own ilvl
   range; a cheaper higher-ilvl listing does not floor it.
+- Endgame rares (`rares.*`, top of `config.toml`): poe.ninja has no rare prices, so ilvl 68+
+  rares use NeverSink's FilterBlade base tiers (`t1` best .. `t5`). Separate tier lists for
+  `rares.weapons`, `rares.armour` and `rares.jewellery` (amulets, rings, belts); `"all"` = every
+  base, `[]` = none. `rares.show."<Class>" = false` hides one class (e.g. Helmets, Two Hand Swords)
+  whatever its tier. `rares.min_ilvl.weapons` / `.armour` / `.jewellery` (default 75, floor 68) drop low item levels per group. Shown rares (default `t1`, `t2`) get muted yellow (`rares.text_color`), no
+  sound/beam/icon; other rares stay hidden. League start `["all"]`, then tighten to `[]`.
 
 Blue item in game = value unknown or variable. Add it to `[overrides]` or a rules file.
 
@@ -137,13 +171,23 @@ unique (unidentified, >= 1 div), stackable, card and crafting base through
 `filtersim.py` (a small filter evaluator). Run after changing config or rules.
 
 ## Report
-Each build writes `out/report.html`. Open it in a browser. Paste copied in-game item text into
+Each build writes `out/report.html`. Open it in a browser. The header shows 1 div in chaos and each
+tier's chaos value (with its divine fraction; hidden/quiet tiers marked), plus "Unique tiers":
+vertical Shown / Hidden lists of the unique tiers (`[uniques] show`, or `[small_loot]`; hover for why). Paste copied in-game item text into
 "Check an item" to see matching rules and the first rule that decides visibility. Set the area
 level to where the item dropped; the report defaults it to 83. Corrupted implicit count can be
 entered when relevant, and optional properties absent from copied text are reported unresolved
 instead of guessed. "Look at these first" groups the
 hidden items worth >= safety by why they hide (jackpot leak, linked unique, chase unique on a
-junk base, crafting base with real volume), with the config knob to change. The table, "Hidden, worth a
+junk base, crafting base with real volume), with the config knob to change. "League content
+modules" has one collapsed dropdown per `[content.*]` module (on/off, shown / faded / hidden counts)
+listing every base its uniques drop on: how an unidentified drop looks now (price tier, faded,
+hidden), the content uniques with prices, and the deciding rule. "Vendor recipes" has one
+collapsed dropdown per `[vendor_recipes.*]` recipe (on/off, tier, shown / hidden counts): each
+ingredient dropped as normal, magic, rare and unidentified unique (`conds` recipes: one example
+item per `rarity`; with the recipe's `any`
+condition, if set), allowed states + `note`, its look now, and the deciding rule (a better unique tier wins over the recipe). The table, "Hidden, worth a
 look", lists items the filter hides even though they're priced >= tier `[report] review_tier`,
-with the rule that hides them. Below it, "All items" has every priced item with its in-game
+with the rule that hides them; hidden 6L / 5L uniques sit in their own collapsed sections below it.
+Below it, "All items" has every priced item with its in-game
 look, searchable and filterable by category and shown / hidden.

@@ -14,8 +14,11 @@
 | New emitted section | write `emit_x(cfg, ...)` returning `section(...) + block(...)...`, insert in `build_text` list at the right priority |
 | New filter condition | add to `filtersim._match` (+ `NUMERIC`/`BOOL` map) first |
 | Campaign build module | copy `rules/leveling/rf.filter`, edit, set `[leveling] build` |
-| Report UI | edit `PAGE` string in `report.py`; data rows from `collect()` |
-| PoE2 change | `build_filter_poe2.py` / `config_poe2.toml` only; no shared code with PoE1 |
+| Add vendor recipe | Check ingredients on poewiki via the API (`api.php?action=parse&page=Vendor recipe&prop=wikitext` with `UA`; the HTML pages are bot-blocked). `[vendor_recipes.<name>]` table in `config.toml` (`enabled`, `tier`, `class`, `bases` or `conds` + `rarity`, optional `any`, `note`); never hand-write recipe blocks in `rules/*.filter` (no floor there). Conditions in `conds` / `any` must be in `filtersim._match`; `report.recipe_sample` must know how to fake them (add a `RECIPE_BASE` example for new classes); `emit_vendor_recipes` + report pick it up automatically |
+| Report UI | edit `PAGE` string in `report.py` (PoE2: `report_poe2.py`); data rows from `collect()` |
+| PoE2 change | `build_filter_poe2.py` / `config_poe2.toml` only; no shared code with PoE1 (except `filtersim`) |
+| PoE2 new poe.ninja feed | add to `[exchange].types` + `SHAPES` (+ `NO_STACK` if it never stacks, `LEVELED_FEEDS` if "(Level N)" means GemLevel) |
+| PoE2 gear/uniques/waystones look | not ours: replace `reference/league-filterblade-poe2.filter` with a new FilterBlade export; new conditions in it -> `filtersim` (`Poe2LiveCache.test_filter_fully_modelled`) |
 
 ## Writing tests (`tests/test_filter.py`)
 
@@ -34,15 +37,22 @@ class Synthetic(unittest.TestCase):    # setUp: cfg copy, fixed chaos tiers, EV 
 
 ## Gotchas
 
-- `apply_divine_tiers` mutates `cfg["tiers"]` in place; `build_text` creates `Tiers` twice (before/after). Tests use `copy.deepcopy(cfg)`.
+- `apply_divine_tiers` mutates `cfg["tiers"]` in place. Tests use `copy.deepcopy(cfg)`; `Synthetic.setUp` sets `tiers_follow_divine = False` + `FIXED_TIERS` chaos so numbers stay stable.
 - Block order = priority. First non-`Continue` match decides. Defaults are `Continue` blocks.
-- `hidden_game_colours` + `maximize_item_sizes` post-process the whole text; font size 45 everywhere except content always-show style.
+- `hidden_game_colours` + `maximize_item_sizes` post-process the whole text; font size 45 everywhere except content always-show style (block comment must start `content override show:` to keep its small size).
 - Divination card exchange quotes are NOT trusted (no buy/sell direction). Cards priced only via `[exchange.card_rewards]`, else NeverSink fallback when volume < `card_fallback_min_volume`, else `unknown`.
 - Shards/splinters priced from finished item, never own quotes; skipped if finished item unpriced.
 - Low-volume stackable prices may SHOW an item, never hide it.
 - Unique base tier = cheapest unique (not best). Linked (5L/6L) lines excluded from unlinked pricing; handled by `price_linked_jackpots`.
-- Boss-only uniques (`data["nomap"]`) excluded unless content module enabled; Foulborn names stripped of `"Foulborn "` prefix for that check.
+- Boss-only uniques (`data["nomap"]`) excluded unless content module enabled (not for "cheapest" either: Lab-only Winds of Change must not hide Hateforge's base); Foulborn names stripped of `"Foulborn "` prefix for that check.
 - PoE filters can't see unique names or drop source before ID: every unique rule is base-wide.
 - `reference/*.filter` are huge; grep, don't read. Parsed by tag (`%D<n>`, `%H<n>`, `$tier->...`).
 - `wiki_uniques.json` fetch failure -> old cache or no boss skipping (warning on stderr).
 - Windows: read/write files with `encoding="utf-8"`.
+
+## PoE2 gotchas
+
+- `config_poe2.toml`: plain keys after `[tiers]` land inside that table; top-level keys go above it.
+- poe.ninja `volumePrimaryValue` is in the feed's primary currency; `price_exchange` converts it to divines.
+- PoE2 class names: runes/soul cores/idols = `Augment`, currency = `Stackable Currency`, omens = `Omen`. Our price blocks match BaseType only.
+- PoE2 tests: `tests/test_filter_poe2.py` passes a tiny fake `REFERENCE` to `build_text`; `add_item(data, feed, name, div, volume_div)`.

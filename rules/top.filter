@@ -9,6 +9,7 @@ Show
 	PlayEffect Green
 	MinimapIcon 1 Green Pentagon
 
+# BEGIN show_gold
 # Big gold stacks only
 Show
 	BaseType == "Gold"
@@ -31,6 +32,7 @@ Show
 	SetTextColor 255 212 87
 	SetBackgroundColor 0 0 0 0
 	DisableDropSound True
+# END show_gold
 
 # Linked items (configured in config.toml)
 # BEGIN show_6_links
@@ -66,3 +68,23 @@ Show # mirrored items (variable value)
 	PlayEffect Blue
 	MinimapIcon 1 Blue Star
 # END show_mirrored
+
+
+# Gems: expensive exceptional supports + 20% quality. Before the price rules so the gem
+# vendor recipe ([vendor_recipes.gemcutter], tier = floor) can't restyle them; rest hidden in bottom.filter
+Show
+	Class == "Skill Gems" "Support Gems"
+	BaseType "Awakened" "Enlighten" "Empower" "Enhance"
+	SetFontSize 45
+	SetTextColor 255 0 0 255
+	PlayAlertSound 1 300
+	PlayEffect Red
+	MinimapIcon 1 Red Diamond
+
+Show
+	Class == "Skill Gems" "Support Gems"
+	Quality >= 20
+	SetFontSize 45
+	SetTextColor 20 240 240
+	PlayEffect Grey
+	MinimapIcon 1 Cyan Diamond

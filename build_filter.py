@@ -52,6 +52,11 @@ CURRENCY_CLASSES = [
     (["Wombgifts"], "Moon"),
 ]
 HIDDEN_STYLE = ["SetFontSize 18", "DisableDropSound True"]
+# rules/top.filter toggle sections: text used instead of the section when the toggle is off
+TOGGLE_OFF = {"show_gold": 'Hide # gold (show_gold = false)\n\tBaseType == "Gold"\n\tSetFontSize 18\n'
+                           '\tDisableDropSound True\n\n'}
+# Divine price (chaos) assumed until poe.ninja's is known; tier thresholds are divine fractions.
+FALLBACK_DIVINE = 150
 # Minimap icon shape = item category, colour/size = price tier.
 # Star only for uniques and tink (top tier); unknown / bases get Diamond.
 SHAPE = {
@@ -74,6 +79,14 @@ GEAR_CLASSES = [
     "Tinctures", "Two Hand Axes", "Two Hand Maces", "Two Hand Swords", "Utility Flasks", "Wands",
     "Warstaves", "Trinkets", "Fishing Rods",
 ]
+# Endgame rare gear groups (NeverSink's rare hide layer classes): rares.weapons / armour / jewellery
+RARE_GROUPS = {
+    "weapons": ["Bows", "Claws", "Daggers", "One Hand Axes", "One Hand Maces", "One Hand Swords",
+                "Quivers", "Rune Daggers", "Sceptres", "Staves", "Thrusting One Hand Swords",
+                "Two Hand Axes", "Two Hand Maces", "Two Hand Swords", "Wands", "Warstaves"],
+    "armour": ["Body Armours", "Boots", "Gloves", "Helmets", "Shields"],
+    "jewellery": ["Amulets", "Belts", "Rings"],
+}
 
 
 # ---------------------------------------------------------------- fetching
@@ -202,8 +215,11 @@ def content_bases(rows, cfg):
 
 
 def content_policy(content, cfg):
-    """Resolve enabled content uniques to price, always-show, and always-hide base sets."""
-    price_names, show, hide = set(), {}, {}
+    """Resolve enabled content uniques to price, always-show, always-hide and rescue base sets.
+    Default / "price": priced normally, and rescue: base shown in [style.content] if price hides it
+    but the content unique itself is in a shown tier (valuable_content_bases).
+    true: priced too, faded show before every other rule when price hides it. false: base hidden."""
+    price_names, show, hide, rescue = set(), {}, {}, {}
     all_names = set()
     for mod, by_base in content.items():
         names = {name for base_names in by_base.values() for name in base_names}
@@ -222,8 +238,10 @@ def content_policy(content, cfg):
         for base, base_names in by_base.items():
             for name in base_names:
                 mode = overrides.get(name)
-                if mode is None or mode == "price":
+                if mode is not False:
                     price_names.add(name)
+                if mode is None or mode == "price":
+                    rescue.setdefault(base, set()).add(name)
                 else:
                     target = show if mode else hide
                     target.setdefault(base, set()).add(name)
@@ -231,7 +249,7 @@ def content_policy(content, cfg):
     if conflicts:
         raise ValueError(f"Conflicting content drop overrides on shared base(s): {', '.join(sorted(conflicts))}")
     return {"price_names": price_names, "excluded_names": all_names - price_names,
-            "show": show, "hide": hide}
+            "show": show, "hide": hide, "rescue": rescue}
 
 
 def no_map_drop(data, name):
@@ -245,6 +263,10 @@ class Tiers:
         # [(name, chaos)] highest first
         self.list = sorted(cfg["tiers"].items(), key=lambda kv: -kv[1])
         self.names = [n for n, _ in self.list]
+        # variable (blue) sits right after `variable_after` (default minor): top..minor beat it
+        after = cfg.get("variable_after", "minor")
+        cut = self.names.index(after) + 1 if after in self.names else 0
+        self.order = self.names[:cut] + ["variable"] + self.names[cut:] + ["unknown", "hide"]
 
     def of(self, chaos):
         for name, thr in self.list:
@@ -257,19 +279,27 @@ class Tiers:
         return min((thr for n, thr in self.list if n not in cfg.get("hide_tiers", [])), default=math.inf)
 
     def rank(self, tier):
-        # lower = better; variable best, hide worst
-        order = ["variable"] + self.names + ["unknown", "hide"]
-        return order.index(tier)
+        # lower = better; hide worst
+        return self.order.index(tier)
+
+
+def exchange_divine(data):
+    """Divine price in chaos from the (chaos-primary) exchange feeds, or None."""
+    for d in data["exchange"].values():
+        core = d.get("core", {})
+        if core.get("primary", "chaos") == "chaos" and core.get("rates", {}).get("divine"):
+            return 1 / core["rates"]["divine"]
+    return None
 
 
 def apply_divine_tiers(cfg, divine_chaos):
-    """tiers_follow_divine: a tier's `div` = fraction of the current divine price (top = 1 div).
-    Divine-linked thresholds have a 1c minimum. Rewrites cfg["tiers"] so every later reader
-    sees the same numbers. Off or no divine price: the fixed `chaos` values stay."""
-    if not cfg.get("tiers_follow_divine") or not divine_chaos:
+    """Tier threshold = its `tiers_divine` fraction x the current divine price (top = 1 div).
+    Rewrites cfg["tiers"] (chaos) so every later reader sees the same numbers. No divine price,
+    or tests setting tiers_follow_divine = false: cfg["tiers"] stays as it is."""
+    if not cfg.get("tiers_follow_divine", True) or not divine_chaos:
         return
     for name, frac in cfg.get("tiers_divine", {}).items():
-        cfg["tiers"][name] = max(1.0, round(frac * divine_chaos, 1))
+        cfg["tiers"][name] = round(frac * divine_chaos, 3)
 
 
 def price_stackables(data, cfg, tiers):
@@ -377,6 +407,13 @@ def min_shown_rank(cfg, tiers, min_tier):
     return rank
 
 
+def shown_unique_tiers(cfg, tiers):
+    """Price tiers [uniques.show] turns on, minus those below a stricter small_loot."""
+    sl = small_loot(cfg)
+    floor = tiers.rank(tiers.of(sl[0])) if sl else math.inf
+    return {t for t in tiers.names if cfg["uniques"]["show"].get(t) and tiers.rank(t) <= floor}
+
+
 def unique_drop_weights(data, cfg):
     """name -> relative drop weight of a drop-anywhere unique: its tier weight / number of
     drop-anywhere uniques in that tier (a drop picks a tier, then any unique in it evenly).
@@ -394,17 +431,18 @@ def price_unique_bases(data, cfg, tiers, divine_chaos):
     """base -> (tier, cheapest_chaos, best_chaos, best_name, ev_chaos or None).
 
     [uniques.ev] on: a base with drop-anywhere uniques is tiered by the expected value of one
-    unidentified drop (drop weights x price, see unique_drop_weights). Below min_tier: hidden,
-    even with a jackpot on it, unless in always_show_bases. Shown but its cheapest unique is
-    below min_tier: "variable" (worth it on average, most drops are junk). The rest below.
+    unidentified drop (drop weights x price, see unique_drop_weights). Tier toggled off in
+    [uniques.show]: hidden, even with a jackpot on it, unless in always_show_bases. Shown but
+    its cheapest unique's tier is off: "variable" (worth it on average, most drops are junk).
+    The rest below.
 
     cheapest only from confident prices (>= min_listings), per unique its cheapest variant.
     best from any listing and the BEST variant: the variant can't be seen unidentified, so a
     jackpot roll (Voices 1 passive, Mageblood) makes the base worth checking. Linked lines
     are skipped above, so 6L prices never count.
     A base that would be hidden but has any unique >= never_hide_tier goes "variable".
-    Boss / encounter-only uniques still count for cheapest but not for best; enabled content
-    modules instead price their restricted uniques normally.
+    Boss / encounter-only uniques (can't drop in a map) count for neither cheapest nor best;
+    enabled content modules instead price their restricted uniques normally.
     """
     u = cfg["uniques"]
     content = content_policy(data.get("content", {}), cfg)
@@ -436,7 +474,7 @@ def price_unique_bases(data, cfg, tiers, divine_chaos):
                 v = variants.setdefault(key, [0, 0])
                 v[0] += line["chaosValue"] * listings
                 v[1] += listings
-            if listings >= u["min_listings"]:
+            if listings >= u["min_listings"] and name not in content["excluded_names"] and not boss:
                 confident[key] = min(confident.get(key, math.inf), line["chaosValue"])
 
     cheap_by_base, best_by_base = {}, {}
@@ -446,7 +484,8 @@ def price_unique_bases(data, cfg, tiers, divine_chaos):
         best_by_base[base] = max(best_by_base.get(base, (0, "")), (v, name))
 
     jackpot = jackpot_chaos(cfg, divine_chaos)
-    min_rank = min_shown_rank(cfg, tiers, u["min_tier"])
+    shown = shown_unique_tiers(cfg, tiers)
+    off = lambda t: t == "hide" or (t in tiers.names and t not in shown)
     result = {}
     # uniques on a base with no confident poe.ninja price: thin listings, or not listed at all
     # although the wiki says they still drop (boss-only too: they drop, value unknown)
@@ -486,9 +525,9 @@ def price_unique_bases(data, cfg, tiers, divine_chaos):
         cheapest = cheap_by_base.get(base)
         best = best_by_base.get(base, (0, ""))
         tier = tiers.of(value)
-        if tiers.rank(tier) > min_rank:
+        if off(tier):
             tier = "hide"
-        elif cheapest is None or tiers.rank(tiers.of(cheapest)) > min_rank:
+        elif cheapest is None or off(tiers.of(cheapest)):
             tier = "variable"
         if hidden(cfg, tier) and other[0] >= jackpot:
             tier = "variable"  # league-content jackpot outside the drop pool
@@ -505,7 +544,7 @@ def price_unique_bases(data, cfg, tiers, divine_chaos):
         # known >= top tier stays a tink; only cheaper bases with a big unique go "variable"
         if best[0] >= jackpot and tier != tiers.names[0]:
             tier = "variable"
-        if tiers.rank(tier) > min_rank:
+        if off(tier):
             tier = "hide"
         if hidden(cfg, tier) and best[0] >= never_hide_floor(cfg, jackpot):
             tier = "variable"
@@ -537,6 +576,22 @@ def price_unique_bases(data, cfg, tiers, divine_chaos):
         old = result.get(base, (None, 0, 0, "", None))
         result[base] = (tier,) + old[1:]
     return result
+
+
+def valuable_content_bases(data, cfg, tiers):
+    """Enabled-module bases worth the faded show: base -> its most valuable content unique's
+    confident price (cheapest variant), kept only when that price's tier is a shown unique tier."""
+    rescue = content_policy(data.get("content", {}), cfg)["rescue"]
+    shown = shown_unique_tiers(cfg, tiers)
+    value = {}
+    for t in UNIQUE_TYPES:
+        for line in data["stash"][t].get("lines", []):
+            base, name = line.get("baseType"), line["name"]
+            if name in rescue.get(base, ()) and not line.get("links") \
+                    and line.get("listingCount", 0) >= cfg["uniques"]["min_listings"]:
+                value.setdefault(base, {})
+                value[base][name] = min(value[base].get(name, math.inf), line["chaosValue"])
+    return {b: max(v.values()) for b, v in value.items() if tiers.of(max(v.values())) in shown}
 
 
 def price_foulborn_bases(data, cfg, tiers, divine_chaos):
@@ -588,8 +643,8 @@ def price_foulborn_bases(data, cfg, tiers, divine_chaos):
         tier = tiers.of(cheapest) if cheapest is not None else f["unpriced"]
         if best[0] >= jackpot and tier != tiers.names[0]:
             tier = "variable"
-        if cheapest is not None and tiers.rank(tier) > min_rank:
-            tier = "hide"
+        if cheapest is not None and tier != "variable" and tiers.rank(tier) > min_rank:
+            tier = "hide"  # a jackpot (variable) is never hidden by min_tier
         if hidden(cfg, tier) and best[0] >= never_hide_floor(cfg, jackpot):
             tier = "variable"
         if cfg.get("unknown_as_variable") and cheapest is not None and base in unknown:
@@ -867,22 +922,81 @@ def emit_stackables(cfg, tiers, prices, ref_currency, ref_cards, card_volumes):
     return out
 
 
-def emit_content_overrides(cfg, content):
+def emit_content_overrides(cfg, content, ubases):
     policy = content_policy(content, cfg)
-    if not policy["show"] and not policy["hide"]:
+    # true: faded show, but a base its price already shows keeps its price tier style
+    show = {b: n for b, n in policy["show"].items() if hidden(cfg, ubases.get(b, ("hide",))[0])}
+    if not show and not policy["hide"]:
         return ""
     out = section("League-content unique overrides ([content.<name>.drops])")
     for base, names in sorted(policy["hide"].items()):
         out += block("Hide", ["Rarity Unique", f"BaseType == {q([base])}"], HIDDEN_STYLE,
                      f"content override hide: {', '.join(sorted(names))}")
-    for base, names in sorted(policy["show"].items()):
+    for base, names in sorted(show.items()):
         out += block("Show", ["Rarity Unique", f"BaseType == {q([base])}"],
                      cfg["style"]["content"]["lines"],
                      f"content override show: {', '.join(sorted(names))}")
     return out
 
 
-def emit_uniques(cfg, tiers, bases, fbases, linked, map_bases):
+def recipe_floor(cfg, tiers, tier, bases, cbases):
+    """-> [(tier, conds, style, label)]: crafting bases and [overrides] whose own tier is better
+    than a recipe tier. Emitted (with the recipe's conditions) before the recipe block, so an
+    ingredient worth more keeps its own tier. `bases` None = any base."""
+    out, groups = [], {}
+    for t, lo, hi, infl, name, _ in cbases:
+        if tiers.rank(t) < tiers.rank(tier) and (bases is None or name in bases):
+            groups.setdefault((t, lo, hi, infl), []).append(name)
+    for (t, lo, hi, infl), names in sorted(groups.items(), key=lambda kv: (tiers.rank(kv[0][0]), -kv[0][1])):
+        span = f"{lo}-{hi}" if hi else f"{lo}+"
+        out.append((t, crafting_conds(lo, hi, infl, names), style_for(cfg, t), f"base {t} ilvl{span} {infl or 'plain'}"))
+    over = {}
+    for name, t in cfg.get("overrides", {}).items():
+        if not hidden(cfg, t) and tiers.rank(t) < tiers.rank(tier) and (bases is None or name in bases):
+            over.setdefault(t, []).append(name)
+    for t, names in sorted(over.items(), key=lambda kv: tiers.rank(kv[0])):
+        out.append((t, [f"BaseType == {q(names)}"], style_for(cfg, t), f"override {t}"))
+    return out
+
+
+def emit_vendor_recipes(cfg, tiers, ubases, fbases, cbases):
+    """[vendor_recipes.<name>]: ingredients shown in the recipe's `tier` style, Diamond icon.
+    Ingredients = `bases` (any rarity) or, without bases, every item matching `conds` (+ `rarity`).
+    The tier is a floor: unique bases whose own (normal or Foulborn) tier is better are left
+    out, so their unique rule wins (a tink Fugitive Ring stays a tink); better crafting bases /
+    [overrides] get a copy of their own block first (recipe_floor)."""
+    out = ""
+    for name, rec in cfg.get("vendor_recipes", {}).items():
+        if not rec.get("enabled"):
+            continue
+        tier = rec["tier"]
+        if tier not in tiers.names + ["variable"]:
+            raise ValueError(f"[vendor_recipes.{name}] tier must be a price tier or variable, got {tier!r}")
+        better = lambda b: any(tiers.rank(p.get(b, ("hide",))[0]) < tiers.rank(tier) for p in (ubases, fbases))
+        classes = [rec["class"]] if isinstance(rec.get("class"), str) else rec.get("class")
+        cls = [f"Class == {q(classes)}"] if classes else []
+        style = style_for(cfg, tier, BASE_SHAPE)
+        bases = rec.get("bases")
+        conds = list(rec.get("conds", []))
+        if bases:
+            items, uniques = ["Rarity < Unique", f"BaseType == {q(bases)}"], [b for b in bases if not better(b)]
+        else:
+            items, uniques = [f"Rarity {' '.join(rec['rarity'])}"] if rec.get("rarity") else [], []
+        floor = recipe_floor(cfg, tiers, tier, bases, cbases)
+        for cond in rec.get("any") or [""]:
+            extra = cls + conds + ([cond] if cond else [])
+            rarity = [c for c in items if c.startswith("Rarity")]  # recipe rarities are all <= Rare
+            for t, fconds, fstyle, label in floor:
+                own = [c for c in fconds if not (rarity and c.startswith("Rarity"))]
+                out += block("Show", extra + rarity + own, fstyle, f"vendor recipe: {name} (worth more: {label})")
+            out += block(action_for(cfg, tier), extra + items, style, f"vendor recipe: {name}")
+            if uniques:
+                out += block(action_for(cfg, tier), extra + ["Rarity Unique", f"BaseType == {q(uniques)}"],
+                             style, f"vendor recipe: {name} (uniques not worth more)")
+    return section("Vendor recipes ([vendor_recipes.*], tier = floor)") + out if out else ""
+
+
+def emit_uniques(cfg, tiers, bases, fbases, linked, map_bases, rescue=None):
     out = section("Uniques (tier = EV of one unID drop, or cheapest unique without drop tiers; variable = gamble; 5L/6L jackpots)")
     # shown tiers first (Foulborn before normal), then corrupted-implicit rescue, then the
     # Foulborn catch-all (so no Foulborn reaches the hidden normal tiers), then hidden tiers
@@ -909,6 +1023,10 @@ def emit_uniques(cfg, tiers, bases, fbases, linked, map_bases):
     for tier in shown:
         out += tier_blocks(tier, fbases, foul, "foulborn")
         out += tier_blocks(tier, bases, ["Rarity Unique"], "uniques")
+        if tier == tiers.names[0] and cfg["uniques"].get("variable_classes"):
+            # whole classes always blue; only a known tink base beats it
+            out += block("Show", ["Rarity Unique", f"Class == {q(cfg['uniques']['variable_classes'])}"],
+                         style_for(cfg, "variable", UNIQUE_SHAPE), "uniques variable_classes")
     for links in sorted(linked, reverse=True):
         out += block("Show", ["Rarity Unique", f"LinkedSockets >= {links}", f"BaseType == {q(linked[links])}"],
                      style_for(cfg, "variable", UNIQUE_SHAPE), f"linked unique jackpot {links}L")
@@ -917,6 +1035,11 @@ def emit_uniques(cfg, tiers, bases, fbases, linked, map_bases):
         if tier not in shown:
             out += tier_blocks(tier, fbases, foul, "foulborn")
     out += unpriced_blocks(cfg["foulborn"]["unpriced"], foul, "foulborn unpriced")
+    # enabled [content.*] unique in a shown tier on a base the price rules hide: small + faded
+    faded = sorted(b for b in rescue or {} if b in bases and hidden(cfg, bases[b][0]))
+    if faded:
+        out += block("Show", ["Rarity Unique", f"BaseType == {q(faded)}"], cfg["style"]["content"]["lines"],
+                     "content override show: enabled [content.*] uniques on otherwise hidden bases")
     for tier in order:
         if tier not in shown:
             out += tier_blocks(tier, bases, ["Rarity Unique"], "uniques")
@@ -941,21 +1064,80 @@ def emit_crafting_bases(cfg, tiers, entries):
     for tier, lo, hi, infl, name, _ in entries:
         groups.setdefault((tier, lo, hi, infl), []).append(name)
     out = section("Crafting bases (poe.ninja base prices)")
-    keys = sorted(groups, key=lambda k: (tiers.rank(k[0]), -k[1], k[3] or ""))
+    # jackpot (variable) blocks first, before the league-start unused-white hides
+    keys = sorted(groups, key=lambda k: (k[0] != "variable", tiers.rank(k[0]), -k[1], k[3] or ""))
     unused = league_start_unused_whites(cfg)
     floor = tiers.rank(cfg["bases"].get("config_min_tier", cfg["bases"]["min_tier"]))
     for tier, lo, hi, infl in keys:
-        if unused and tiers.rank(tier) > floor:
+        if unused and tier != "variable" and tiers.rank(tier) > floor:
             out, unused = out + unused, ""
-        # dual-influence entries use their first influence (matches any item having it)
-        conds = ["Rarity <= Rare", "Corrupted False", f"ItemLevel >= {lo}"]
-        if hi:
-            conds.append(f"ItemLevel <= {hi}")
-        conds += [f"HasInfluence {infl.split('/')[0] if infl else 'None'}",
-                  f"BaseType == {q(groups[(tier, lo, hi, infl)])}"]
         span = f"{lo}-{hi}" if hi else f"{lo}+"
-        out += block(action_for(cfg, tier), conds, style_for(cfg, tier), f"base {tier} ilvl{span} {infl or 'plain'}")
+        out += block(action_for(cfg, tier), crafting_conds(lo, hi, infl, groups[(tier, lo, hi, infl)]),
+                     style_for(cfg, tier), f"base {tier} ilvl{span} {infl or 'plain'}")
     return out + unused
+
+
+def crafting_conds(lo, hi, infl, names):
+    # dual-influence entries use their first influence (matches any item having it)
+    conds = ["Rarity <= Rare", "Corrupted False", f"ItemLevel >= {lo}"]
+    if hi:
+        conds.append(f"ItemLevel <= {hi}")
+    return conds + [f"HasInfluence {infl.split('/')[0] if infl else 'None'}", f"BaseType == {q(names)}"]
+
+
+def emit_rares(cfg, ref_text):
+    """Endgame rares by NeverSink base tier, per RARE_GROUPS group (rares.weapons / armour /
+    jewellery = tier list). poe.ninja has no rare prices, so the "$type->rr... $tier->tN" blocks
+    (commented out in the Very Strict reference) are copied back on, each limited to its group's
+    classes with rares.show.<class> true (missing = true), styled only by rares.text_color (muted yellow; no sound /
+    beam / icon). "all" = every rare of the group. Only ilvl >= rares.min_ilvl.<group> (68 floor)."""
+    rc = cfg.get("rares", {})
+    if not rc.get("enabled", True):
+        return ""
+    show = rc.get("show", {})
+    unknown = set(show) - {c for classes in RARE_GROUPS.values() for c in classes}
+    if unknown:
+        raise ValueError(f"rares.show: unknown class {sorted(unknown)}, use one of {RARE_GROUPS}")
+    hide = {c for c, on in show.items() if not on}
+    style = [f"SetTextColor {rc['text_color']}"] if rc.get("text_color") else []
+    ref = []  # (type, tier, conds without Class, classes or None)
+    lines = ref_text.splitlines()
+    for i, l in enumerate(lines):
+        m = re.match(r"#?Show\b.*\$type->(rr\S*)\s+\$tier->(\w+)", l)
+        if not m:
+            continue
+        conds, classes = [], None
+        for body in lines[i + 1:]:
+            body = body.lstrip("#").strip()
+            word = (body.split() or [""])[0]
+            if not re.fullmatch(r"[A-Z][A-Za-z]+", word) or word in ("Show", "Hide"):
+                break
+            if word == "Class":
+                classes = re.findall(r'"([^"]+)"', body)
+            elif not body.startswith(("Set", "Play", "Minimap", "Disable")):
+                conds.append(body)
+        ref.append((m.group(1), m.group(2), conds, classes))
+
+    out = ""
+    for group, group_classes in RARE_GROUPS.items():
+        wanted = rc.get(group, [])
+        allowed = [c for c in group_classes if c not in hide]
+        ilvl = f"ItemLevel >= {max(68, rc.get('min_ilvl', {}).get(group, 68))}"  # NeverSink's endgame floor
+        if not wanted or not allowed:
+            continue
+        if "all" in wanted:
+            out += block("Show", [ilvl, "Rarity Rare", f"Class == {q(allowed)}"], style,
+                         f"rare {group}, any base (rares.{group} all)")
+            continue
+        for kind, tier, conds, classes in ref:
+            if classes is None and group == "jewellery":
+                continue  # generic gear tiers: armour / weapon bases only
+            shown = [c for c in allowed if classes is None or c in classes]
+            if tier in wanted and shown:
+                conds = [ilvl if c.startswith("ItemLevel >=") else c for c in conds]
+                out += block("Show", conds + [f"Class == {q(shown)}"], style,
+                             f"rare {group} {kind} {tier} (NeverSink base tier)")
+    return section("Endgame rares: NeverSink base tiers (rares.*)") + out if out else ""
 
 
 def league_start_unused_whites(cfg):
@@ -1224,10 +1406,10 @@ def load_cfg():
 
 
 def split_tiers(cfg):
-    """tiers.<name> = {div, chaos} -> cfg["tiers"] = {name: chaos}, cfg["tiers_divine"] = {name: div}."""
-    raw = cfg["tiers"]
-    cfg["tiers"] = {n: t["chaos"] for n, t in raw.items()}
-    cfg["tiers_divine"] = {n: t["div"] for n, t in raw.items() if "div" in t}
+    """tiers.<name> = divine fraction -> cfg["tiers_divine"]; cfg["tiers"] = chaos at
+    FALLBACK_DIVINE until build_text knows the real divine price (apply_divine_tiers)."""
+    cfg["tiers_divine"] = {n: float(v) for n, v in cfg["tiers"].items()}
+    cfg["tiers"] = {n: v * FALLBACK_DIVINE for n, v in cfg["tiers_divine"].items()}
     return cfg
 
 
@@ -1241,8 +1423,10 @@ def apply_league_start(cfg):
     cfg.setdefault("small_loot", {})["enabled"] = False
     cfg["uniques"]["variable_jackpot_only"] = False
     cfg["bases"]["config_min_tier"] = cfg["bases"]["min_tier"]
+    cfg["uniques"]["show"] = dict.fromkeys(cfg["tiers"], True)
     for sec in ("uniques", "foulborn", "bases"):
-        cfg[sec]["min_tier"] = lowest
+        if sec != "uniques":
+            cfg[sec]["min_tier"] = lowest
         if "unpriced" in cfg[sec]:
             cfg[sec]["unpriced"] = shown(cfg[sec]["unpriced"])
     cfg["uniques"]["hide_maps"] = False
@@ -1259,9 +1443,9 @@ def hand_rules(cfg, name):
     """rules/<name>.filter; league_start turns "Hide # league_start" blocks into Show."""
     text = (ROOT / "rules" / f"{name}.filter").read_text(encoding="utf-8")
     if name == "top":
-        for key in ("show_5_links", "show_6_links", "show_mirrored"):
+        for key in ("show_5_links", "show_6_links", "show_mirrored", "show_gold"):
             pattern = rf"(?ms)^# BEGIN {key}\r?\n(.*?)^# END {key}\r?\n?"
-            replacement = r"\1" if cfg.get(key, key == "show_6_links") else ""
+            replacement = r"\1" if cfg.get(key, key == "show_6_links") else TOGGLE_OFF.get(key, "")
             text, count = re.subn(pattern, replacement, text)
             if count != 1:
                 raise ValueError(f"Expected one {key} section in rules/top.filter, found {count}")
@@ -1272,10 +1456,10 @@ def hand_rules(cfg, name):
 
 def build_text(cfg, data, league):
     """Whole filter text + pricing results. No network, no file writes (tests use this)."""
-    prices, divine = price_stackables(data, cfg, Tiers(cfg))
-    card_volumes = card_trade_volumes(data)
-    apply_divine_tiers(cfg, divine)
+    apply_divine_tiers(cfg, exchange_divine(data))
     tiers = Tiers(cfg)
+    prices, divine = price_stackables(data, cfg, tiers)
+    card_volumes = card_trade_volumes(data)
     ancient_wombgift, item_type = prices.get("Ancient Wombgift", (0, "Wombgift"))
     prices["Ancient Wombgift"] = (max(ancient_wombgift, cfg["tiers"]["minor"]), item_type)
     ubases = price_unique_bases(data, cfg, tiers, divine)
@@ -1290,23 +1474,26 @@ def build_text(cfg, data, league):
     header = (f"# Price filter - generated {datetime.now():%Y-%m-%d %H:%M}"
               + ("   LEAGUE START (almost nothing hidden)" if cfg.get("league_start") else "") + "\n"
               f"# League: {league}   Divine = {divine:.0f}c\n"
-              f"# Tiers (chaos): " + ", ".join(f"{n}>={v}" for n, v in tiers.list) +
+              f"# Tiers (chaos, from divine fractions): " + ", ".join(f"{n}>={v:g}" for n, v in tiers.list) +
               f"   Jackpot (never hidden) >= {cfg['jackpot_divine']} div\n"
               f"# Do not edit - edit config.toml / rules/*.filter and rerun build_filter.py\n")
     text = "\n".join([
         header,
         emit_forbidden_tome(cfg),
-        emit_content_overrides(cfg, data.get("content", {})),
+        emit_content_overrides(cfg, data.get("content", {}), ubases),
         emit_defaults(cfg),
         emit_pinned_stackables(cfg),
         hand_rules(cfg, "top"),
+        emit_overquality(cfg),  # before vendor recipes: a 30% RGB item keeps its overquality alert
+        emit_vendor_recipes(cfg, tiers, ubases, fbases, cbases),
         emit_leveling(cfg, ref_text),
         campaign_unhide(cfg, emit_overrides(cfg, prices)),
-        emit_overquality(cfg),
         campaign_unhide(cfg, emit_stackables(cfg, tiers, prices, ref_currency, ref_cards, card_volumes)),
         emit_uniques(cfg, tiers, ubases, fbases, linked,
-                     {l["baseType"] for l in data["stash"]["UniqueMap"].get("lines", []) if l.get("baseType")}),
+                     {l["baseType"] for l in data["stash"]["UniqueMap"].get("lines", []) if l.get("baseType")},
+                     valuable_content_bases(data, cfg, tiers)),
         emit_crafting_bases(cfg, tiers, cbases),
+        emit_rares(cfg, ref_text),
         hand_rules(cfg, "bottom"),
     ])
     text = hidden_game_colours(text)
