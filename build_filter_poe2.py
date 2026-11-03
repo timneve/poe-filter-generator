@@ -1,4 +1,4 @@
-"""Build a PoE2 loot filter from poe.ninja Currency and Runes exchange data."""
+"""Build a PoE2 loot filter: poe.ninja exchange prices tiered in divines, on top of NeverSink's filter."""
 import argparse
 import json
 import math
@@ -15,15 +15,19 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent
 NINJA = "https://poe.ninja/poe2/api"
 UA = {"User-Agent": "price-filter-builder/1.0 (personal loot filter script)"}
-PINNED_TOP = {"Divine Orb", "Mirror of Kalandra"}
-GEAR_CLASSES = [
-    "Amulets", "Belts", "Body Armours", "Boots", "Bows", "Bucklers", "Charms",
-    "Claws", "Crossbows", "Foci", "Gloves", "Helmets", "Life Flasks", "Mana Flasks",
-    "One Hand Axes", "One Hand Maces", "One Hand Swords", "Quarterstaves", "Quivers",
-    "Rings", "Sceptres", "Shields", "Spears", "Staves", "Two Hand Axes",
-    "Two Hand Maces", "Two Hand Swords", "Wands", "Warstaves",
-]
-SHAPES = {"Currency": "Circle", "Runes": "Moon"}
+PINNED_TOP = {"Divine Orb", "Mirror of Kalandra", "Hinekora's Lock"}
+# Minimap shape per poe.ninja feed (top tier always Star). Unlisted feeds -> Diamond.
+SHAPES = {"Currency": "Circle", "Essences": "Circle", "Ritual": "Circle",
+          "Fragments": "Hexagon", "Breach": "Hexagon", "Delirium": "Hexagon",
+          "Expedition": "Hexagon", "Abyss": "Hexagon",
+          "Runes": "Moon", "SoulCores": "Moon", "Idols": "Moon",
+          "UncutGems": "Triangle", "LineageSupportGems": "Triangle"}
+# Feeds whose items never stack: no stack-size blocks.
+NO_STACK = {"UncutGems", "LineageSupportGems"}
+# poe.ninja "Uncut Skill Gem (Level 19)" = BaseType "Uncut Skill Gem" + GemLevel 19.
+# (Other feeds' "(Level N)" names, e.g. Thaumaturgic Flux, are the literal BaseType.)
+LEVELED_FEEDS = {"UncutGems"}
+LEVELED = re.compile(r"^(.*) \(Level (\d+)\)$")
 HIDDEN_STYLE = ["SetFontSize 18", "DisableDropSound True"]
 STYLES = {
     "top": ["SetFontSize 45", "SetTextColor 255 0 0 255", "SetBorderColor 255 0 0 255",
@@ -44,6 +48,8 @@ STYLES = {
 }
 QUIET_STYLE = ["SetTextColor 210 178 134 255", "PlayEffect Grey",
                "MinimapIcon 2 Grey Circle", "DisableDropSound True"]
+TINK_BACKGROUND = "SetBackgroundColor 255 255 255 255"
+GOLD_HIDE = 'Hide # gold (show_gold = false)\n\tBaseType == "Gold"\n' + "".join(f"\t{line}\n" for line in HIDDEN_STYLE)
 
 
 def q(names):
@@ -57,19 +63,16 @@ def block(action, conditions, style, comment=""):
 
 
 class Tiers:
-    def __init__(self, cfg, divine_chaos):
-        self.cfg = cfg
-        self.values = {}
-        for name, value in cfg["tiers"].items():
-            if cfg["tiers_follow_divine"] and divine_chaos and "div" in value:
-                self.values[name] = max(1.0, round(value["div"] * divine_chaos, 2))
-            else:
-                self.values[name] = float(value["chaos"])
-        self.ordered = sorted(self.values.items(), key=lambda pair: -pair[1])
+    """Tier thresholds are fractions of 1 divine, so they follow the economy on their own."""
 
-    def of(self, chaos):
+    def __init__(self, cfg):
+        self.cfg = cfg
+        self.ordered = sorted(((name, float(value)) for name, value in cfg["tiers"].items()),
+                              key=lambda pair: -pair[1])
+
+    def of(self, div):
         for name, threshold in self.ordered:
-            if chaos >= threshold:
+            if div >= threshold:
                 return name
         return "hide"
 
@@ -122,11 +125,15 @@ def detect_league(cfg, args):
     raise RuntimeError("poe.ninja reports no indexed PoE2 trade league.")
 
 
-def fetch_all(league, cfg, refresh):
+def cache_dir(league):
     cache_name = re.sub(r"[^A-Za-z0-9._-]+", "_", league).strip("._")
     if not cache_name:
         raise ValueError(f"Invalid league name: {league!r}")
-    cache = ROOT / "cache" / "poe2" / cache_name
+    return ROOT / "cache" / "poe2" / cache_name
+
+
+def fetch_all(league, cfg, refresh):
+    cache = cache_dir(league)
     query = urllib.parse.urlencode({"league": league})
     data = {"exchange": {}}
     for item_type in cfg["exchange"]["types"]:
@@ -136,124 +143,183 @@ def fetch_all(league, cfg, refresh):
     return data
 
 
-def currency_conversion(core):
-    """Return chaos per primary unit and divine price in chaos, when available."""
-    primary = core.get("primary")
-    rates = core.get("rates", {})
-    if primary == "chaos":
-        chaos_per_primary = 1.0
-    else:
-        chaos_per_primary = rates.get("chaos")
-    if not isinstance(chaos_per_primary, (int, float)) or chaos_per_primary <= 0:
-        return None, None
-    if primary == "divine":
-        divine_chaos = chaos_per_primary
-    elif primary == "chaos":
-        divine_rate = rates.get("divine")
-        divine_chaos = 1 / divine_rate if isinstance(divine_rate, (int, float)) and divine_rate > 0 else None
-    else:
-        divine_rate = rates.get("divine")
-        divine_chaos = (chaos_per_primary / divine_rate
-                        if isinstance(divine_rate, (int, float)) and divine_rate > 0 else None)
-    return float(chaos_per_primary), divine_chaos
+def divine_per_primary(core):
+    """Divines per 1 unit of the feed's primary currency (rates = units per 1 primary)."""
+    if core.get("primary") == "divine":
+        return 1.0
+    rate = core.get("rates", {}).get("divine")
+    return float(rate) if isinstance(rate, (int, float)) and rate > 0 else None
 
 
-def price_exchange(data, cfg):
-    """Return name -> (chaos price, feed type, chaos-equivalent market volume)."""
+def price_exchange(data):
+    """Return name -> (price in divines, feed type, traded volume in divines)."""
     prices = {}
-    divine_chaos = None
     for item_type, feed in data["exchange"].items():
         core = feed.get("core", {})
-        chaos_per_primary, divine_rate = currency_conversion(core)
-        if feed.get("lines") and chaos_per_primary is None:
-            raise ValueError(f"{item_type} feed has prices but no conversion to chaos: {core}")
-        if divine_rate:
-            divine_chaos = divine_rate
+        factor = divine_per_primary(core)
+        if feed.get("lines") and factor is None:
+            raise ValueError(f"{item_type} feed has prices but no conversion to divine: {core}")
         names = {item.get("id"): item.get("name") for item in feed.get("items", [])}
         for line in feed.get("lines", []):
             name = names.get(line.get("id"))
-            if not name or chaos_per_primary is None:
-                continue
             value = line.get("primaryValue")
             volume = line.get("volumePrimaryValue", 0)
-            if not isinstance(value, (int, float)) or not math.isfinite(value) or value <= 0:
+            if not name or not isinstance(value, (int, float)) or not math.isfinite(value) or value <= 0:
                 continue
             if not isinstance(volume, (int, float)) or not math.isfinite(volume):
                 volume = 0
-            price = (value * chaos_per_primary, item_type, volume * chaos_per_primary)
+            price = (value * factor, item_type, volume * factor)
             if name not in prices or price[0] > prices[name][0]:
                 prices[name] = price
-    return prices, divine_chaos
+    return prices
 
 
-def build_text(cfg, data, league):
-    prices, divine_chaos = price_exchange(data, cfg)
-    tiers = Tiers(cfg, divine_chaos)
-    singles = {}
-    stacks = {}
+def per_divine(prices, name):
+    """How many `name` buy 1 divine (e.g. chaos per divine), or None if unpriced."""
+    return 1 / prices[name][0] if name in prices else None
+
+
+def fmt(div, prices):
+    """Price in the unit players think in: div, else chaos, else exalted."""
+    if div >= 1:
+        return f"{div:.2f} div"
+    for name, unit in (("Chaos Orb", "c"), ("Exalted Orb", "ex")):
+        rate = per_divine(prices, name)
+        if rate and div * rate >= 1:
+            return f"{div * rate:.1f}{unit}"
+    rate = per_divine(prices, "Exalted Orb")
+    return f"{div * rate:.2f}ex" if rate else f"{div:.4f} div"
+
+
+def reliable(cfg, value, volume):
+    """Enough trade to trust the price: min_volume divines traded, and either min_units items
+    or trusted_volume divines (expensive items trade few units)."""
+    ex = cfg["exchange"]
+    return (volume >= ex["min_volume"]
+            and (volume / value >= ex["min_units"] or volume >= ex["trusted_volume"]))
+
+
+def item_key(name, item_type):
+    """-> (BaseType, GemLevel or None)."""
+    match = LEVELED.match(name) if item_type in LEVELED_FEEDS else None
+    return (match.group(1), int(match.group(2))) if match else (name, None)
+
+
+def item_conditions(names, level):
+    return [f"BaseType == {q(names)}"] + ([f"GemLevel == {level}"] if level else [])
+
+
+def reference_basetypes(text):
+    """Every BaseType named in an active (uncommented) reference block."""
+    names = set()
+    for line in text.splitlines():
+        if line.strip().startswith("BaseType"):
+            names.update(re.findall(r'"([^"]+)"', line))
+    return names
+
+
+def reference_body(text):
+    """NeverSink's rules from the first section holding a block, calmed to our style:
+    border/background only on tink (white background) blocks."""
+    lines = text.splitlines()
+    first = next(i for i, line in enumerate(lines) if line.startswith(("Show", "Hide", "Minimal")))
+    while first > 0 and lines[first - 1].startswith("#"):
+        first -= 1
+    chunks = "\n".join(lines[first:]).split("\n\n")
+    calm = []
+    for chunk in chunks:
+        if TINK_BACKGROUND not in chunk:
+            chunk = "\n".join(line for line in chunk.split("\n")
+                              if not line.strip().startswith(("SetBorderColor", "SetBackgroundColor")))
+        calm.append(chunk)
+    return "\n\n".join(calm) + "\n"
+
+
+def maximize_item_sizes(text):
+    """Every shown item at full text size (hidden ones stay small)."""
+    out = []
+    for blk in re.split(r"(?m)(?=^(?:Show|Hide|Minimal)\b)", text):
+        if blk.startswith(("Show", "Minimal")):
+            blk = re.sub(r"(?m)^(\s*SetFontSize\s+)\d+\b", r"\g<1>45", blk)
+        out.append(blk)
+    return "".join(out)
+
+
+def build_text(cfg, data, league, reference_text):
+    prices = price_exchange(data)
+    tiers = Tiers(cfg)
+    ref_names = reference_basetypes(reference_text)
+    singles = {}    # (tier, shape, level) -> [basetype]
+    stacks = {}     # (target tier, count, shape) -> [basetype]
+    deferred = []   # thin market, NeverSink tiers it
     for name, (value, item_type, volume) in prices.items():
         if name in PINNED_TOP:
             continue
-        tier = tiers.of(value)
-        reliable = volume >= cfg["exchange"]["min_volume"]
-        if tiers.hidden(tier) and not reliable:
-            tier = "unknown"
+        base, level = item_key(name, item_type)
         shape = SHAPES.get(item_type, "Diamond")
-        singles.setdefault((tier, shape), []).append(name)
-        if tier == "unknown" or item_type != "Currency":
+        if not reliable(cfg, value, volume):
+            if base in ref_names:
+                deferred.append(name)
+                continue
+            tier = "unknown"
+        else:
+            tier = tiers.of(value)
+        singles.setdefault((tier, shape, level), []).append(base)
+        if tier == "unknown" or item_type in NO_STACK:
             continue
         for target, threshold in tiers.ordered:
             count = math.ceil(threshold / value - 1e-9)
-            if count > 1 and count <= cfg["exchange"]["max_stack"]:
-                stacks.setdefault((target, count, shape), []).append(name)
+            if 1 < count <= cfg["exchange"]["max_stack"] and not tiers.hidden(target):
+                stacks.setdefault((target, count, shape), []).append(base)
 
-    divine_label = f"{divine_chaos:.2f}c" if divine_chaos else "unknown"
+    rates = "   ".join(f"{label} = {rate:.1f}" for label, rate in
+                       (("chaos/div", per_divine(prices, "Chaos Orb")),
+                        ("ex/div", per_divine(prices, "Exalted Orb"))) if rate)
+    tier_line = ", ".join(f"{name} {fmt(value, prices)}" for name, value in tiers.ordered)
     header = (f"# PoE2 price filter - generated {datetime.now():%Y-%m-%d %H:%M}\n"
-              f"# League: {league}   Divine = {divine_label}\n"
-              "# Prices: poe.ninja Currency and Runes exchange feeds; prices are chaos-equivalent.\n"
+              f"# League: {league}   {rates}\n"
+              f"# Tiers: {tier_line}\n"
+              f"# Prices: poe.ninja exchange ({', '.join(data['exchange'])}), tiered in divines.\n"
+              "# Below the price rules: NeverSink's PoE2 filter (reference/), calmed.\n"
               "# Do not edit - edit config_poe2.toml and rerun build_filter_poe2.py\n")
     out = [header]
     for name in sorted(PINNED_TOP):
         out.append(block("Show", [f"BaseType == {q([name])}"], tiers.style(tiers.ordered[0][0], "Circle"),
-                          f"pinned {name}"))
+                         f"pinned {name}"))
 
-    out.append("\n# Stack-size alerts: a full stack can reach a higher price tier.\n")
+    out.append("\n# Price tiers. Stack-size blocks: a full stack reaches a higher tier.\n")
     for target, _ in tiers.ordered:
         for (tier, count, shape), names in sorted(stacks.items()):
             if tier == target:
-                out.append(block(tiers.action(tier),
-                                 [f"StackSize >= {count}", f"BaseType == {q(names)}"],
+                out.append(block(tiers.action(tier), [f"StackSize >= {count}", f"BaseType == {q(names)}"],
                                  tiers.style(tier, shape), f"{tier} stack x{count}"))
-        for (tier, shape), names in sorted(singles.items()):
+        for (tier, shape, level), names in sorted(singles.items(), key=lambda kv: (kv[0][1], kv[0][2] or 0)):
             if tier == target:
-                out.append(block(tiers.action(tier), [f"BaseType == {q(names)}"],
+                out.append(block(tiers.action(tier), item_conditions(names, level),
                                  tiers.style(tier, shape), tier))
 
-    hidden_names = [name for (tier, _), names in singles.items() if tier == "hide" for name in names]
-    if hidden_names:
-        out.append(block("Hide", [f"BaseType == {q(hidden_names)}"], HIDDEN_STYLE,
-                         "priced below lowest tier"))
+    for (tier, _, level), names in sorted(singles.items(), key=lambda kv: (kv[0][1], kv[0][2] or 0)):
+        if tier == "unknown":
+            out.append(block("Show", item_conditions(names, level), STYLES["unknown"],
+                             "thin market, not in NeverSink: never hide"))
+        elif tier == "hide":
+            out.append(block("Hide", item_conditions(names, level), HIDDEN_STYLE,
+                             "priced below lowest tier"))
 
-    unknown = singles.get(("unknown", "Circle"), []) + singles.get(("unknown", "Moon"), [])
-    if unknown:
-        out.append(block("Show", [f"BaseType == {q(unknown)}"], STYLES["unknown"],
-                         "low-volume price: never hide"))
-
-    classes = cfg["gear"]["classes"]
-    if cfg["gear"]["hide_normal_magic_after_area"] >= 0:
-        out.append(block(
-            "Hide",
-            [f"AreaLevel >= {cfg['gear']['hide_normal_magic_after_area']}",
-             "Rarity <= Magic", f"Class == {q(classes)}"],
-            HIDDEN_STYLE, "hide normal/magic gear after configured area level"))
-    out.append(block("Show", ["Rarity Unique"], STYLES["unknown"], "unpriced uniques: review"))
-    out.append(block("Show", [], [], "unmatched items: keep visible"))
-    return "".join(out), {"prices": prices, "divine": divine_chaos, "tiers": tiers}
+    if not cfg.get("show_gold", False):
+        out.append(GOLD_HIDE)
+    out.append("\n# ===== NeverSink PoE2 rules (gear, uniques, waystones, unpriced items) =====\n\n")
+    out.append(reference_body(reference_text))
+    return maximize_item_sizes("".join(out)), {"prices": prices, "tiers": tiers, "deferred": deferred}
 
 
 def load_cfg():
     with (ROOT / "config_poe2.toml").open("rb") as f:
         return tomllib.load(f)
+
+
+def load_reference(cfg):
+    return (ROOT / cfg["reference"]).read_text(encoding="utf-8")
 
 
 def main():
@@ -265,7 +331,7 @@ def main():
     league = detect_league(cfg, args)
     print(f"PoE2 league: {league}")
     data = fetch_all(league, cfg, args.refresh)
-    text, result = build_text(cfg, data, league)
+    text, result = build_text(cfg, data, league, load_reference(cfg))
     out_file = ROOT / "out" / f"{cfg['output_name']}.filter"
     out_file.parent.mkdir(parents=True, exist_ok=True)
     out_file.write_text(text, encoding="utf-8")
@@ -276,9 +342,14 @@ def main():
             print(f"Copied to {destination / out_file.name}")
         else:
             print(f"Skip missing output dir: {destination}", file=sys.stderr)
-    print(f"Priced items: {len(result['prices'])}")
-    print(f"Divine: {result['divine']:.2f}c" if result["divine"] else "Divine price unavailable")
+    prices = result["prices"]
+    print(f"Priced items: {len(prices)}  (thin market left to NeverSink: {len(result['deferred'])})")
+    for name in ("Chaos Orb", "Exalted Orb"):
+        if name in prices:
+            print(f"{name}: {fmt(prices[name][0], prices)} = {prices[name][0]:.4f} div")
     print(f"Written: {out_file}")
+    import report_poe2  # imports this module; keep it out of the import-time cycle
+    print(f"Report:  {report_poe2.write(cfg, text, result, league, ROOT / 'out' / 'report_poe2.html')}")
 
 
 if __name__ == "__main__":

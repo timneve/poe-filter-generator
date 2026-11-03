@@ -3,31 +3,40 @@ league = "auto"
 output_name = "pricefilter_poe2"
 output_dirs = ["~/Documents/My Games/Path of Exile 2"]
 cache_minutes = 60
-tiers_follow_divine = true
+
+# Everything not priced here (gear, rares, uniques, waystones, gems, unpriced currency) uses
+# this NeverSink/FilterBlade PoE2 export. Borders/backgrounds are stripped except on its tink tier.
+reference = "reference/league-filterblade-poe2.filter"
+
+# hide_tiers:  priced but hidden (e.g. add "low" late league, drop "brown" at league start).
+# quiet_tiers: shown, brown text, grey beam/icon, no sound (keeps font size).
 hide_tiers = ["brown", "dust"]
 quiet_tiers = ["low"]
 
+# Gold: false = always hidden. true = NeverSink's gold rules.
+show_gold = false
+
+# PRICE TIERS in DIVINES. Item worth >= threshold gets that tier. dust = 0: everything below brown.
+# Divine-based on purpose: if chaos falls to 1/100 div late league, chaos drops to "low"
+# (quiet) and exalts (~1/500 div) to "brown" (hidden); stacks that reach a higher tier still show.
 [tiers]
-top = { div = 1.0, chaos = 125.0 }
-high = { div = 0.25, chaos = 25.0 }
-mid = { div = 0.0625, chaos = 5.0 }
-minor = { div = 0.015625, chaos = 2.0 }
-low = { chaos = 1.0 }
-brown = { chaos = 0.25 }
-dust = { chaos = 0.05 }
+top   = 1.0          # TINK: 1 div
+high  = 0.25         # 1/4 div
+mid   = 0.0625       # 1/16 div
+minor = 0.015625     # 1/64 div
+low   = 0.00390625   # 1/256 div
+brown = 0.0009765625 # 1/1024 div
+dust  = 0            # everything below brown
 
 [exchange]
-types = ["Currency", "Runes"]
-min_volume = 5.0
+# poe.ninja PoE2 exchange feeds (Divine, Mirror, Hinekora's Lock are always top).
+types = ["Currency", "Fragments", "Abyss", "UncutGems", "LineageSupportGems", "Essences",
+         "SoulCores", "Idols", "Runes", "Ritual", "Expedition", "Delirium", "Breach"]
+# A price is trusted with volume >= min_volume divines AND (>= min_units items traded OR
+# volume >= trusted_volume divines: a 100 div item trading once a day is a real price).
+# Untrusted: NeverSink's tier if it lists the item, else blue "unknown" (never hidden, no tink).
+min_volume = 0.05
+min_units = 3
+trusted_volume = 5.0
+# Largest stack size checked for "stack reaches a higher tier" alerts.
 max_stack = 40
-
-[gear]
-# Keep campaign gear visible; hide ordinary normal/magic gear in endgame areas.
-hide_normal_magic_after_area = 65
-classes = [
-  "Amulets", "Belts", "Body Armours", "Boots", "Bows", "Bucklers", "Charms",
-  "Claws", "Crossbows", "Foci", "Gloves", "Helmets", "Life Flasks", "Mana Flasks",
-  "One Hand Axes", "One Hand Maces", "One Hand Swords", "Quarterstaves", "Quivers",
-  "Rings", "Sceptres", "Shields", "Spears", "Staves", "Two Hand Axes",
-  "Two Hand Maces", "Two Hand Swords", "Wands", "Warstaves",
-]
