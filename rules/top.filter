@@ -32,7 +32,8 @@ Show
 	SetBackgroundColor 0 0 0 0
 	DisableDropSound True
 
-# 6-links
+# Linked items (configured in config.toml)
+# BEGIN show_6_links
 Show
 	LinkedSockets 6
 	SetFontSize 45
@@ -42,6 +43,19 @@ Show
 	PlayAlertSound 6 300
 	PlayEffect Red
 	MinimapIcon 0 Red Star
+# END show_6_links
+
+# BEGIN show_5_links
+Show
+	LinkedSockets 5
+	SetFontSize 45
+	SetTextColor 255 0 0 255
+	SetBorderColor 255 0 0 255
+	SetBackgroundColor 255 255 255 255
+	PlayAlertSound 6 300
+	PlayEffect Red
+	MinimapIcon 0 Red Star
+# END show_5_links
 
 # Mirrored / fractured-6 etc: anything mirrored is worth a look
 Show

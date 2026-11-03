@@ -77,8 +77,15 @@ def collect(cfg, data, blocks, r):
             {"class": STACK_CLASS.get(t, "Stackable Currency"), "basetype": name, "stack": 1})
     for name, tier in r["ref_cards"].items():
         if name not in r["prices"]:
+            volume = r.get("card_volumes", {}).get(name, 0)
+            if volume >= cfg["exchange"]["card_fallback_min_volume"]:
+                note = (f"no reliable buy-order price; exchange activity {volume:.1f}c meets "
+                        "threshold, so kept unknown instead of using NeverSink fallback")
+            else:
+                note = (f"no reliable buy-order or currency-recipe price; low activity "
+                        f"({volume:.1f}c), regular NeverSink fallback tier {tier}")
             add("Card", name, "", None, None, {"class": "Divination Cards", "basetype": name},
-                f"no poe.ninja price, NeverSink tier -> {tier}")
+                note)
 
     for t in [t for t in data["stash"] if t.startswith("Unique")]:
         for line in data["stash"][t].get("lines", []):
@@ -122,12 +129,26 @@ def collect(cfg, data, blocks, r):
     return rows
 
 
+def browser_rules(blocks):
+    """Serialize parsed filter rules for the offline item checker in report.html."""
+    return [{
+        "action": b.action,
+        "comment": b.comment,
+        "line": b.line_no,
+        "continue": b.cont,
+        "conditions": [{"key": key, "op": op, "values": values}
+                       for key, op, values, _ in b.conds],
+    } for b in blocks]
+
+
 def write(cfg, data, text, r, league, path):
-    rows = collect(cfg, data, fs.parse(text), r)
+    blocks = fs.parse(text)
+    rows = collect(cfg, data, blocks, r)
     meta = {"league": league, "divine": r["divine"], "when": f"{datetime.now():%Y-%m-%d %H:%M}",
             "safety": cfg["tiers"][cfg["uniques"]["never_hide_tier"]], "jackpot": cfg["jackpot_divine"],
             "review": cfg["tiers"][cfg.get("report", {}).get("review_tier", "mid")]}
-    payload = json.dumps({"meta": meta, "rows": rows}, separators=(",", ":")).replace("</", "<\\/")
+    payload = json.dumps({"meta": meta, "rows": rows, "rules": browser_rules(blocks)},
+                         separators=(",", ":")).replace("</", "<\\/")
     path.parent.mkdir(exist_ok=True)
     path.write_text(PAGE.replace("__DATA__", payload).replace("__LEAGUE__", html.escape(league)), encoding="utf-8")
     return path
@@ -147,6 +168,20 @@ h1 small{color:var(--dim);font-weight:400}
 .bar{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
 input,select{background:#0e0e0e;color:var(--fg);border:1px solid var(--line);border-radius:6px;padding:6px 8px;font:inherit}
 input[type=search]{flex:1 1 220px;min-width:0}
+textarea{display:block;width:100%;min-height:130px;resize:vertical;background:#0e0e0e;color:var(--fg);border:1px solid var(--line);border-radius:6px;padding:8px;font:13px/1.45 Consolas,monospace}
+button{background:#333;color:var(--fg);border:1px solid var(--line);border-radius:6px;padding:7px 12px;font:inherit;cursor:pointer}
+button:hover{background:#444}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:12px;margin:12px 0 20px}
+.paste-controls{display:flex;flex-wrap:wrap;gap:8px 14px;align-items:end;margin:8px 0}
+.paste-controls label{display:grid;gap:3px;color:var(--dim);font-size:12px}
+.paste-controls input[type=number]{width:110px}
+#item-result{margin-top:10px}
+.rule-hit{background:#111;border-left:3px solid var(--line);padding:8px 10px;margin:6px 0}
+.rule-hit.decision{border-left-color:var(--ok)}
+.rule-hit.hide{border-left-color:var(--warn)}
+.rule-hit.uncertain{border-left-color:#ec3}
+.rule-hit b{font-family:Consolas,monospace}
+.rule-conds{color:var(--dim);font:12px/1.5 Consolas,monospace;margin-top:3px;white-space:pre-wrap;overflow-wrap:anywhere}
 .seg{display:inline-flex;border:1px solid var(--line);border-radius:6px;overflow:hidden}
 .seg button{background:#0e0e0e;color:var(--dim);border:0;padding:6px 10px;font:inherit;cursor:pointer}
 .seg button.on{background:#333;color:var(--fg)}
@@ -185,6 +220,30 @@ details .bar{position:sticky;top:0;z-index:2;background:var(--bg);padding:8px 0}
 <h1>Filter report <small>__LEAGUE__ · <span id="meta"></span></small></h1>
 </header>
 <main>
+<section class="panel" id="item-check">
+<h2>Check an item <small>· paste the in-game item text</small></h2>
+<p class="note">Copy an item in Path of Exile and paste it here. Rules are checked in order: matching Continue rules apply style and keep checking; the first matching non-Continue rule decides. Area level is not in copied item text, so set it to the zone where it dropped (83 for maps).</p>
+<textarea id="item-paste" spellcheck="false" placeholder="Paste copied item text here…"></textarea>
+<div class="paste-controls">
+<label>Area level<input type="number" id="item-area" min="1" max="100" value="83"></label>
+<label>Corrupted implicit count<input type="number" id="item-corrupted-mods" min="0" max="10" value="0"></label>
+<button id="analyze-item" type="button">Check rules</button>
+<span class="note">Ctrl+Enter also checks. Set corrupted implicit count only when relevant.</span>
+</div>
+<details>
+<summary>Optional item properties not included in copied text</summary>
+<div class="paste-controls">
+<label>Width<input type="number" id="item-width" min="1" max="4"></label>
+<label>Height<input type="number" id="item-height" min="1" max="4"></label>
+<label>Drop level<input type="number" id="item-drop-level" min="1"></label>
+<label>Base armour<input type="number" id="item-base-armour" min="0"></label>
+<label>Base evasion<input type="number" id="item-base-evasion" min="0"></label>
+<label>Base energy shield<input type="number" id="item-base-es" min="0"></label>
+</div>
+<p class="note">These values are not reliably available from the clipboard. If a matching rule depends on one you left blank, the analyzer reports it as unresolved rather than guessing.</p>
+</details>
+<div id="item-result" aria-live="polite"></div>
+</section>
 <h2>Look at these first <small>· hidden and worth ≥ safety, grouped by why</small></h2>
 <ul id="lk"></ul>
 <h2>Hidden, worth a look <small id="revsub"></small></h2>
@@ -205,11 +264,146 @@ details .bar{position:sticky;top:0;z-index:2;background:var(--bg);padding:8px 0}
 <th data-k="shown">Filter</th><th data-k="rule">Deciding rule / note</th>
 </tr></thead><tbody id="tb"></tbody></table></details></main>
 <script>
-const D=__DATA__, M=D.meta, R=D.rows;
+const D=__DATA__, M=D.meta, R=D.rows, RULES=D.rules;
 const BEAM={red:"#e33",yellow:"#ec3",blue:"#38f",white:"#eee",grey:"#999",brown:"#a63",pink:"#f6c",green:"#4c4",orange:"#f93",purple:"#a5f",cyan:"#3dd"};
 const $=id=>document.getElementById(id);
 const esc=s=>String(s??"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 const fmt=v=>v==null?"–":v>=100?Math.round(v).toLocaleString():v>=1?v.toFixed(1):v.toFixed(2);
+const CLASS_ALIASES={
+ "Body Armour":"Body Armours","Two Handed Axe":"Two Hand Axes","Two Handed Mace":"Two Hand Maces",
+ "Two Handed Sword":"Two Hand Swords","One Handed Axe":"One Hand Axes","One Handed Mace":"One Hand Maces",
+ "One Handed Sword":"One Hand Swords","Thrusting One Handed Sword":"Thrusting One Hand Swords",
+ "Staff":"Staves","Fishing Rod":"Fishing Rods","Jewel":"Jewels","Cluster Jewel":"Jewels",
+ "Life Flask":"Life Flasks","Mana Flask":"Mana Flasks","Hybrid Flask":"Hybrid Flasks",
+ "Utility Flask":"Utility Flasks","Skill Gem":"Skill Gems","Support Gem":"Support Gems",
+ "Divination Card":"Divination Cards","Map":"Maps"
+};
+const RARITY_RANK={Normal:0,Magic:1,Rare:2,Unique:3};
+const NUM_FIELDS={
+ StackSize:"stack",ItemLevel:"ilvl",Quality:"quality",LinkedSockets:"links",
+ CorruptedMods:"corrupted_mods",Sockets:"sockets",DropLevel:"drop_level",
+ Width:"width",Height:"height",AreaLevel:"area_level",BaseArmour:"armour",
+ BaseEvasion:"evasion",BaseEnergyShield:"es"
+};
+const BOOL_FIELDS={Corrupted:"corrupted",Mirrored:"mirrored",Identified:"identified",Foulborn:"foulborn"};
+function parseCopiedItem(raw,areaLevel,corruptedMods,extra){
+ const lines=raw.split(/\r?\n/).map(x=>x.trim());
+ const classLine=lines.find(x=>/^Item Class:\s*/i.test(x));
+ const rarityLine=lines.find(x=>/^Rarity:\s*/i.test(x));
+ if(!classLine||!rarityLine)throw new Error("Could not find Item Class and Rarity. Paste the complete copied item text.");
+ const rawClass=classLine.replace(/^Item Class:\s*/i,"").trim();
+ const rarity=rarityLine.replace(/^Rarity:\s*/i,"").trim();
+ if(!(rarity in RARITY_RANK))throw new Error(`Unsupported item rarity: ${rarity}`);
+ const rarityIndex=lines.indexOf(rarityLine),header=[];
+ for(let i=rarityIndex+1;i<lines.length&&!/^-{3,}$/.test(lines[i]);i++)if(lines[i])header.push(lines[i]);
+ if(!header.length)throw new Error("Could not identify the item base type in the copied text.");
+ const item={
+  "class":CLASS_ALIASES[rawClass]||rawClass,basetype:header[header.length-1],rarity,
+  area_level:areaLevel,corrupted_mods:corruptedMods,quality:0,identified:!lines.some(x=>/^Unidentified$/i.test(x)),
+  corrupted:lines.some(x=>/^Corrupted$/i.test(x)),mirrored:lines.some(x=>/^Mirrored$/i.test(x)),
+  foulborn:lines.some(x=>/\bFoulborn\b/i.test(x)),mods:[raw]
+ };
+ const readNumber=(pattern,field)=>{const m=raw.match(pattern);if(m)item[field]=Number(m[1])};
+ readNumber(/^\s*Item Level:\s*(\d+)/im,"ilvl");
+ readNumber(/^\s*Stack Size:\s*(\d+)(?:\s*\/\s*\d+)?/im,"stack");
+ readNumber(/^\s*Quality:\s*\+?(\d+)\s*%/im,"quality");
+ const sock=raw.match(/^\s*Sockets:\s*(.+)$/im);
+ if(sock){
+  const groups=sock[1].trim().split(/\s+/).map(x=>x.replace(/[^RGBWDA]/gi,"")).filter(Boolean);
+  item.sockets=groups.reduce((n,x)=>n+x.length,0);
+  item.links=groups.reduce((n,x)=>Math.max(n,x.length),0);
+  item.socket_group=sock[1].trim();
+ }
+ item.influence=["Shaper","Elder","Crusader","Redeemer","Hunter","Warlord"]
+   .filter(x=>new RegExp(`\\b${x} Item\\b`,"i").test(raw));
+ Object.entries(extra).forEach(([field,value])=>{if(value!==null)item[field]=value});
+ return item;
+}
+function compare(a,op,b){
+ if(op==="="||op==="==")return a===b;
+ if(op==="!="||op==="!")return a!==b;
+ if(op==="<")return a<b;if(op==="<=")return a<=b;
+ if(op===">")return a>b;if(op===">=")return a>=b;
+ throw new Error(`Unsupported rule operator: ${op}`);
+}
+function matchesCondition(item,c){
+ const vals=c.values;
+ if(c.key==="Class"||c.key==="BaseType"){
+  const value=item[c.key==="Class"?"class":"basetype"]||"";
+  const hit=vals.some(x=>c.op==="=="?value===x:value.includes(x));
+  return ["!","!="].includes(c.op)?!hit:hit;
+ }
+ if(c.key==="Rarity"){
+  const value=RARITY_RANK[item.rarity]??0;
+  if(c.op==="="||c.op==="==")return vals.some(x=>value===RARITY_RANK[x]);
+  if(c.op==="!"||c.op==="!=")return vals.every(x=>value!==RARITY_RANK[x]);
+  return compare(value,c.op,RARITY_RANK[vals[0]]);
+ }
+ if(c.key in NUM_FIELDS){
+  const value=item[NUM_FIELDS[c.key]];
+  return value===undefined?null:compare(value,c.op,Number(vals[0]));
+ }
+ if(c.key in BOOL_FIELDS)return Boolean(item[BOOL_FIELDS[c.key]])===(vals[0]==="True");
+ if(c.key==="SocketGroup")return vals.some(x=>(item.socket_group||"").includes(x));
+ if(c.key==="HasExplicitMod")return vals.some(x=>item.mods.some(m=>m.includes(x)));
+ if(c.key==="HasInfluence"){
+  const infl=new Set(item.influence||[]);
+  if(vals.length===1&&vals[0]==="None")return infl.size===0;
+  return c.op==="=="?vals.every(x=>infl.has(x)):vals.some(x=>infl.has(x));
+ }
+ throw new Error(`Unsupported filter condition: ${c.key}`);
+}
+function traceRules(item,rules=RULES){
+ const matched=[];let decision=null,uncertainDecision=null;
+ for(const rule of rules){
+  const unknown=[];
+  let failed=false;
+  for(const c of rule.conditions){
+   const result=matchesCondition(item,c);
+   if(result===false){failed=true;break}
+   if(result===null)unknown.push(c.key);
+  }
+  if(failed)continue;
+  const uncertain=unknown.length>0;
+  matched.push({rule,uncertain,unknown:[...new Set(unknown)]});
+  if(uncertain){
+   if(!rule.continue){uncertainDecision=rule;break}
+   continue;
+  }
+  if(!rule.continue){decision=rule;break}
+ }
+ return {matched,decision,uncertainDecision};
+}
+function analyzeCopiedItem(){
+ const result=$("item-result"),raw=$("item-paste").value;
+ try{
+  if(!raw.trim())throw new Error("Paste an item first.");
+  const area=Number($("item-area").value)||83;
+  const corruptedMods=Number($("item-corrupted-mods").value)||0;
+  const optional=id=>$(id).value===""?null:Number($(id).value);
+  const extra={
+   width:optional("item-width"),height:optional("item-height"),drop_level:optional("item-drop-level"),
+   armour:optional("item-base-armour"),evasion:optional("item-base-evasion"),es:optional("item-base-es")
+  };
+  const item=parseCopiedItem(raw,area,corruptedMods,extra);
+  const trace=traceRules(item),decision=trace.decision,uncertain=trace.uncertainDecision;
+  const shown=uncertain?null:!decision||decision.action!=="Hide";
+  const headline=uncertain?`Unresolved — possible ${uncertain.action} #${uncertain.comment} (line ${uncertain.line})`:
+   decision?`${decision.action} — ${decision.comment||"rule"} (line ${decision.line})`:
+   "Shown by default — no deciding rule matched";
+  const details=trace.matched.length?trace.matched.map(hit=>{
+   const {rule}=hit;
+   const deciding=rule===decision;
+   const title=`${rule.action} # ${rule.comment||"(no comment)"}`;
+   const state=hit.uncertain?`NEEDS ${hit.unknown.join(", ")}`:deciding?"DECIDES":rule.continue?"Continue — style only":"";
+   const conditions=rule.conditions.length?rule.conditions.map(c=>`${c.key} ${c.op} ${c.values.map(x=>JSON.stringify(x)).join(" ")}`).join("\n"):"No conditions";
+   return `<div class="rule-hit ${hit.uncertain?"uncertain":deciding?(rule.action==="Hide"?"hide":"decision"):""}"><b>${esc(title)}</b> <span class="note">· line ${rule.line}${state?` · ${state}`:""}</span><div class="rule-conds">${esc(conditions)}</div></div>`;
+  }).join(""):`<p class="note">No filter rule matched. Items with no matching rule are shown by default.</p>`;
+  const summary=`${item.rarity} · ${item["class"]} · ${item.basetype} · ilvl ${item.ilvl??"not shown"} · ${item.identified?"identified":"unidentified"}${item.corrupted?", corrupted":""}`;
+  const note=trace.matched.some(x=>x.uncertain&&x.rule.continue)?"Some matching style rules need optional values, but evaluation continued to the deciding rule.":"";
+  result.innerHTML=`<div class="stats"><b class="${shown===null?"":shown?"v s":"v h"}">${esc(headline)}</b><br>${esc(summary)}<br>Assumptions: AreaLevel ${area}; CorruptedMods ${corruptedMods}. Mod conditions are checked against the pasted text.${note?`<br>${esc(note)}`:""}</div><h3>Matching rules, in order</h3>${details}`;
+ }catch(e){result.textContent=e.message}
+}
 $("meta").textContent=`built ${M.when} · divine ${Math.round(M.divine)}c · safety ${M.safety}c · jackpot ≥ ${M.jackpot} div`;
 R.forEach(r=>{r.risk=!r.nomap&&!r.shown&&(r.c||0)>=M.safety;r.jp=M.divine>0&&(r.c||0)>=M.jackpot*M.divine});
 [...new Set(R.map(r=>r.cat))].sort().forEach(c=>$("cat").insertAdjacentHTML("beforeend",`<option>${esc(c)}</option>`));
@@ -241,6 +435,8 @@ document.querySelectorAll("#vis button").forEach(b=>{b.classList.toggle("on",b.d
  b.onclick=()=>{vis=b.dataset.v;document.querySelectorAll("#vis button").forEach(x=>x.classList.toggle("on",x===b));render()}});
 document.querySelectorAll("th").forEach(th=>th.onclick=()=>{const k=th.dataset.k;sortDir=sortK===k?-sortDir:(k==="c"||k==="n"?-1:1);sortK=k;render()});
 ["q","cat","min"].forEach(id=>$(id).addEventListener("input",render));
+$("analyze-item").addEventListener("click",analyzeCopiedItem);
+$("item-paste").addEventListener("keydown",e=>{if(e.ctrlKey&&e.key==="Enter")analyzeCopiedItem()});
 render();
 const rev=R.filter(r=>!r.nomap&&!r.shown&&(r.c||0)>=M.review);
 $("revsub").textContent=`· ${rev.length} hidden items ≥ ${M.review}c (config [report] review_tier)`;
@@ -257,7 +453,7 @@ const checks=[
  {t:"Chase uniques on hidden bases",rows:R.filter(r=>r.risk&&unq(r)&&!lnk(r)),
   why:"Unidentified, the filter only sees the base, and the cheapest unique on it is junk. Worth farming? Add the base to [unique_overrides] as \"variable\", or set uniques.variable_jackpot_only = false."},
  {t:"Crafting bases hidden with real volume",rows:R.filter(r=>r.risk&&r.cat==="Crafting base"&&(r.n||0)>=50),
-  why:"Hidden because a higher ilvl of the same base sells for less (outlier floor). With 50+ listings the price is probably real: check poe.ninja."},
+  why:"This high-volume price meets the safety threshold but the item is hidden. Check the matching ilvl/influence rule."},
 ];
 $("lk").innerHTML=checks.filter(k=>k.rows.length||k.ok).map(k=>!k.rows.length?`<li class="ok"><span class="t">✓ ${esc(k.ok)}</span></li>`:
  `<li class="${k.sev||""}"><div class="t"><b>${k.rows.length}</b> ${esc(k.t)}</div><div class="note">${esc(k.why)}</div><div class="ex">`+

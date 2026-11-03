@@ -5,7 +5,8 @@
 # (min_tier = "mid", never_hide_tier = "top", ...), so they all move together.
 # Style for each tier is in [style.<name>] at the bottom.
 # ===========================================================================
-# true  = a tier with `div` is that fraction of 1 divine (poe.ninja rate, moves with the economy).
+# true  = a tier with `div` is that fraction of 1 divine (poe.ninja rate, moves with the economy),
+#         with a minimum threshold of 1 chaos.
 # false = every tier uses its fixed `chaos` value (also the fallback when there's no divine price).
 tiers_follow_divine = true
 
@@ -42,6 +43,13 @@ league = "auto"
 output_name = "pricefilter"
 output_dirs = ["~/Documents/My Games/Path of Exile"]
 
+# Hide Forbidden Tome regardless of its price or fallback class rule.
+hide_forbidden_tome = true
+
+# Show generic 5-link / 6-link items.
+show_5_links = false
+show_6_links = false
+
 # Re-download prices if cache older than this many minutes
 cache_minutes = 60
 
@@ -58,10 +66,10 @@ cache_minutes = 60
 league_start = false
 
 # Text colour for normal/magic/rare gear, so rarity (yellow/blue) never grabs the eye.
-# White now; when rich switch to brown "210 178 134 255" (less clicking, less distraction).
+# Light grey now; when rich switch to brown "210 178 134 255" (less clicking, less distraction).
 # Price tier styles still win (a 1 div base keeps its red tink text).
 # Maps only: in the campaign ([leveling] on, AreaLevel <= area_level_max) gear keeps rarity colour.
-gear_text_color = "255 255 255 255"
+gear_text_color = "215 215 215 255"
 # Campaign only: white (normal) gear text, a bit grey so it reads below magic / rare.
 campaign_white_text_color = "170 170 170 255"
 
@@ -76,18 +84,25 @@ unknown_as_variable = true
 # essences, fossils, oils, omens, tattoos, fragments, ...)
 # ---------------------------------------------------------------------------
 [exchange]
-# Ignore prices with less daily trade volume than this (chaos). 0 = trust all.
+# Ignore non-card prices with less trade volume than this (chaos). Divination-card
+# exchange data has no buy/sell direction, so card quotes are not used at any volume.
 min_volume = 5
+# Use the NeverSink card group only when there is no reliable card/reward price AND this
+# exchange volume is below the threshold. volumePrimaryValue is a chaos-equivalent activity
+# proxy, not a count of trades. At/above the threshold cards without a reliable price stay
+# unknown (blue, silent), rather than inheriting a potentially misleading reference tier.
+card_fallback_min_volume = 5
 # Also show stacks: 10x a 0.5c item = 5c, tiered as 5c. Stack checks up to:
 max_stack = 40
-# Low-volume prices are still used to SHOW an item, never to hide it.
+# Low-volume prices for non-card stackables are still used to SHOW an item, never to hide it.
 # What to do with stackables poe.ninja has no price for: a tier name, "hide" or "unknown"
 # "reference" = NeverSink currency tier from reference/league.filter (mapping below), so
 # league start (no poe.ninja prices yet) still has sane tiers; not in reference -> "unknown".
 unpriced_currency = "reference"
-# Cards: poe.ninja only prices exchange-traded cards (~130 of ~450). "reference" = use the
-# NeverSink card tier from reference/league.filter (mapping below), else "unknown".
-unpriced_cards = "reference"
+# Card quotes are not used to assign a value. Cards with explicitly configured, guaranteed
+# rewards use exact reward value / set size. Other unpriced cards use regular NeverSink's
+# divination-card groups as a fallback; unmatched cards stay unknown (blue beam, no sound).
+# NeverSink groups are not treated as market prices.
 
 # Splinters that combine into one item: price = finished item / count (poe.ninja splinter
 # prices are thin and wrong). Stack checks go up to count, so 72x a 0.07c splinter shows.
@@ -106,6 +121,171 @@ unpriced_cards = "reference"
 "Simulacrum Splinter" = ["Simulacrum", 300]
 "Ritual Splinter" = ["Ritual Vessel", 100]
 
+# Guaranteed, deterministic rewards: card = (exact reward item's price * quantity) / set size.
+# Stackable rewards use their exact poe.ninja Currency Exchange item price (including fragments,
+# scarabs, and other listed categories); named uniques/maps use listings for that exact item,
+# weighted by listing count and requiring uniques.min_listings. Card rewards can chain through
+# another configured exact card reward. Missing/insufficient reward prices leave the card unpriced.
+# Random, selectable, corrupted, variable-outcome, and generic-category rewards are intentionally
+# excluded. Divination-card quotes never price a card because the feed does not distinguish buy
+# orders from sell quotes. Exact reward values override card quotes.
+[exchange.card_rewards]
+"A Sea of Blue" = ["Orb of Alteration", 13, 3]
+"Abandoned Wealth" = ["Exalted Orb", 3, 5]
+"Acclimatisation" = ["Orb of Alteration", 20, 2]
+"Alluring Bounty" = ["Exalted Orb", 10, 7]
+"Ambitious Obsession" = ["Skittering Delirium Orb", 1, 4]
+"Avian Pursuit" = ["Vivid Crystallised Lifeforce", 1500, 3]
+"Brother's Gift" = ["Divine Orb", 5, 1]
+"Brother's Stash" = ["Exalted Orb", 5, 1]
+"Buried Treasure" = ["Sulphite Scarab", 1, 3]
+"Chaotic Disposition" = ["Chaos Orb", 5, 1]
+"Checkmate" = ["Simulacrum Splinter", 76, 8]
+"Coveted Possession" = ["Regal Orb", 5, 9]
+"Darker Half" = ["Eldritch Chaos Orb", 5, 3]
+"Demigod's Wager" = ["Orb of Annulment", 1, 7]
+"Divine Beauty" = ["Divine Orb", 7, 12]
+"Ever-Changing" = ["Orb of Unmaking", 10, 3]
+"History" = ["Hinekora's Lock", 2, 5]
+"I See Brothers" = ["Fracturing Orb", 2, 2]
+"Loyalty" = ["Orb of Fusing", 3, 5]
+"Lucky Connections" = ["Orb of Fusing", 20, 7]
+"Lucky Deck" = ["Stacked Deck", 10, 9]
+"Man With Bear" = ["Bestiary Scarab", 1, 3]
+"No Traces" = ["Orb of Scouring", 30, 9]
+"Outfoxed" = ["Veiled Exalted Orb", 1, 2]
+"Rain of Chaos" = ["Chaos Orb", 1, 8]
+"Seven Years Bad Luck" = ["Mirror Shard", 1, 13]
+"Society's Remorse" = ["Orb of Alteration", 10, 1]
+"The Catalyst" = ["Vaal Orb", 1, 3]
+"The Finishing Touch" = ["Fertile Catalyst", 1, 2]
+"The Fool" = ["Orb of Chance", 20, 4]
+"The Fortunate" = ["Divine Orb", 2, 12]
+"The Gemcutter" = ["Gemcutter's Prism", 1, 3]
+"The Heroic Shot" = ["Chromatic Orb", 17, 1]
+"The Hoarder" = ["Exalted Orb", 1, 12]
+"The Innocent" = ["Orb of Regret", 40, 10]
+"The Inventor" = ["Vaal Orb", 10, 6]
+"The Lake" = ["Reflecting Mist", 1, 8]
+"The Rusted Bard" = ["Tainted Mythic Orb", 4, 9]
+"The Saint's Treasure" = ["Exalted Orb", 2, 10]
+"The Scholar" = ["Scroll of Wisdom", 40, 3]
+"The Scout" = ["Exalted Orb", 7, 8]
+"The Seeker" = ["Orb of Annulment", 3, 9]
+"The Sephirot" = ["Divine Orb", 10, 11]
+"The Slumbering Beast" = ["Hinekora's Lock", 1, 5]
+"The Survivalist" = ["Orb of Alchemy", 7, 3]
+"The Transformation" = ["Tainted Mythic Orb", 1, 5]
+"The Union" = ["Gemcutter's Prism", 10, 7]
+"The Wrath" = ["Chaos Orb", 10, 8]
+"Three Faces in the Dark" = ["Chaos Orb", 3, 7]
+"Underground Forest" = ["Grand Eldritch Ichor", 10, 4]
+"Unrequited Love" = ["Mirror Shard", 19, 16]
+"Vinia's Token" = ["Orb of Regret", 10, 5]
+"A Dab of Ink" = ["The Poet's Pen", 1, 9]
+"A Note in the Wind" = ["Asenath's Mark", 1, 4]
+"Alivia's Grace" = ["Queen of the Forest", 1, 6]
+"The Immortal" = ["House of Mirrors", 1, 10]
+"House of Mirrors" = ["Mirror of Kalandra", 1, 9]
+"Beauty Through Death" = ["Atziri's Reflection", 1, 5]
+"Broken Truce" = ["Cold Iron Point", 1, 5]
+"Choking Guilt" = ["Stranglegasp", 1, 6]
+"Cursed Words" = ["Maw of Mischief", 1, 13]
+"Dark Temptation" = ["Obliteration", 1, 5]
+"Death" = ["Mon'tregul's Grasp", 1, 4]
+"Desperate Crusade" = ["Prism Guardian", 1, 3]
+"Earth Drinker" = ["Granite Flask", 1, 5]
+"Endless Night" = ["Maloney's Mechanism", 1, 7]
+"Energy Sword" = ["Ephemeral Edge", 1, 3]
+"Eternal Bonds" = ["Replica Cortex", 1, 4]
+"Fire Of Unknown Origin" = ["Nimis", 1, 7]
+"Friendship" = ["Aul's Uprising", 1, 3]
+"Humility" = ["Tabula Rasa", 1, 9]
+"Hunter's Reward" = ["The Taming", 1, 3]
+"Last Stand" = ["The Surrender", 1, 3]
+"Lethean Temptation" = ["Nebulis", 1, 6]
+"Lonely Warrior" = ["Defiance of Destiny", 1, 10]
+"Lucky Bastion" = ["Svalinn", 1, 6]
+"Might is Right" = ["Trypanon", 1, 9]
+"Pearls Before Swine" = ["Progenesis", 1, 3]
+"Pride of the First Ones" = ["Farrul's Fur", 1, 7]
+"Rats" = ["Rat's Nest", 1, 8]
+"Rebirth" = ["Charan's Sword", 1, 27]
+"Reckless Ambition" = ["Omeyocan", 1, 6]
+"Reflection of the Heart" = ["Kalandra's Touch", 1, 2]
+"Silence and Frost" = ["The Pandemonius", 1, 7]
+"Succor of the Sinless" = ["Bottled Faith", 1, 6]
+"The Academic" = ["Inspired Learning", 1, 8]
+"The Adventuring Spirit" = ["Victario's Influence", 1, 6]
+"The Apothecary" = ["Mageblood", 1, 5]
+"The Army of Blood" = ["Bloodbond", 1, 6]
+"The Beast" = ["Belly of the Beast", 1, 6]
+"The Betrayal" = ["Maligaro's Virtuosity", 1, 9]
+"The Blazing Fire" = ["Chin Sol", 1, 6]
+"The Coming Storm" = ["Lightning Coil", 1, 8]
+"The Conduit" = ["Doryani's Fist", 1, 9]
+"The Craving" = ["Unending Hunger", 1, 4]
+"The Cursed King" = ["Rigwald's Curse", 1, 8]
+"The Damned" = ["Soul Ripper", 1, 6]
+"The Deep Ones" = ["Tidebreaker", 1, 5]
+"The Demoness" = ["Death's Hand", 1, 5]
+"The Doctor" = ["Headhunter", 1, 8]
+"The Dragon" = ["Coruscating Elixir", 1, 4]
+"The Drunken Aristocrat" = ["Divination Distillate", 1, 8]
+"The Endless Darkness" = ["Voidforge", 1, 9]
+"The Escape" = ["Seven-League Step", 1, 5]
+"The Fathomless Depths" = ["Lightpoacher", 1, 8]
+"The Formless Sea" = ["Varunastra", 1, 7]
+"The Forsaken" = ["Umbilicus Immortalis", 1, 7]
+"The Harvester" = ["The Harvest", 1, 11]
+"The Hermit" = ["Lifesprig", 1, 9]
+"The Hunger" = ["Taste of Hate", 1, 9]
+"The Incantation" = ["The Whispering Ice", 1, 4]
+"The King's Heart" = ["Kaom's Heart", 1, 8]
+"The Last One Standing" = ["Atziri's Disfavour", 1, 10]
+"The Last Supper" = ["Bino's Kitchen Knife", 1, 6]
+"The Life Thief" = ["Zerphi's Heart", 1, 6]
+"The Long Watch" = ["The Fourth Vow", 1, 3]
+"The Lunaris Priestess" = ["Sire of Shards", 1, 5]
+"The Mind's Eyes" = ["Astral Projector", 1, 7]
+"The Oath" = ["Death's Oath", 1, 6]
+"The Offering" = ["Shavronne's Wrappings", 1, 8]
+"The Offspring" = ["Ryslatha's Coil", 1, 9]
+"The One That Got Away" = ["Replica Bated Breath", 1, 7]
+"The Pack Leader" = ["Alpha's Howl", 1, 6]
+"The Pact" = ["Pledge of Hands", 1, 9]
+"The Polymath" = ["Astramentis", 1, 3]
+"The Progeny of Lunaris" = ["Dying Sun", 1, 2]
+"The Queen" = ["Atziri's Acuity", 1, 16]
+"The Return of the Rat" = ["Tavukai", 1, 3]
+"The Risk" = ["Ventor's Gamble", 1, 3]
+"The Scarred Meadow" = ["Wake of Destruction", 1, 9]
+"The Scavenger" = ["Carcass Jack", 1, 8]
+"The Shieldbearer" = ["The Squire", 1, 8]
+"The Soul" = ["Soul Taker", 1, 9]
+"The Spark and the Flame" = ["Berek's Respite", 1, 2]
+"The Sun" = ["Rise of the Phoenix", 1, 7]
+"The Sword King's Salute" = ["Daresso's Salute", 1, 7]
+"The Vast" = ["Song of the Sirens", 1, 7]
+"The Visionary" = ["Lioneye's Vision", 1, 6]
+"The Watcher" = ["Crown of Eyes", 1, 12]
+"The Wedding Gift" = ["Arakaali's Fang", 1, 2]
+"The Whiteout" = ["Cospri's Malice", 1, 8]
+"The Wind" = ["Windripper", 1, 7]
+"The Witch" = ["Kiara's Determination", 1, 8]
+"The Wolf's Shadow" = ["Hyaon's Fury", 1, 3]
+"The Wolven King's Bite" = ["Rigwald's Quills", 1, 8]
+"The World Eater" = ["Starforge", 1, 8]
+"Thirst for Knowledge" = ["Gluttony", 1, 5]
+"Thunderous Skies" = ["Storm Cloud", 1, 5]
+"Tranquillity" = ["Voltaxic Rift", 1, 7]
+"Vile Power" = ["Doomfletch", 1, 5]
+"The Dreamland" = ["Poorjoy's Asylum", 1, 8]
+"The Professor" = ["The Putrid Cloister", 1, 4]
+"Scholar of the Seas" = ["Mao Kun", 1, 7]
+"The Twilight Moon" = ["The Twilight Temple", 1, 6]
+"The Wolf's Legacy" = ["Vaults of Atziri", 1, 4]
+
 # NeverSink currency tier number (t1exalted, t4chaos, t8trans, fossil t2, ...) -> our tier
 [exchange.reference_currency_tiers]
 1 = "top"
@@ -119,12 +299,32 @@ unpriced_cards = "reference"
 9 = "dust"
 
 [exchange.reference_card_tiers]
+# Source: the card groups in reference/regular-neversink.filter. Left side is a rough
+# NeverSink ranking by expected value/interest, highest to lowest:
+#   t1   - highest-value chase cards
+#   t2   - very valuable cards, below t1
+#   t3   - valuable/mid-ranked cards
+#   t4c  - lower-ranked currency-reward cards
+#   t4   - lower-ranked general cards
+#   t5c  - very low-ranked currency-reward cards
+#   t5   - lowest-ranked general cards (hidden in the regular reference filter)
+#   tnew - new/experimental group; commented out in the reference, so usually no cards
+#
+# These are NOT drop-rate rarity classes, exact prices, or price bands; the reference gives
+# no chaos/divine values. Right side selects this filter's visual/visibility tier:
+#   top = tink (normally >= 1 div); high = red (>= 1/4 div); mid = yellow (>= 1/16 div);
+#   low = quiet (>= 1c); hide = hidden; unknown = blue.
+# Those thresholds describe the styles for actually priced items. A fallback card has NO
+# such price: e.g. t3 -> mid makes it yellow, but does NOT mean it is worth 1/16 div. This
+# mapping only borrows the presentation and is used only when there is no reliable price AND
+# exchange volume is below card_fallback_min_volume. Cards with enough activity but no
+# reliable buy-side price stay blue/unknown instead.
 t1 = "top"
 t2 = "high"
 t3 = "mid"
 tnew = "unknown"
-t4c = "low"
-t4 = "low"
+t4c = "hide"
+t4 = "hide"
 t5c = "hide"
 t5 = "hide"
 
@@ -135,9 +335,8 @@ t5 = "hide"
 # Shown, but its cheapest unique is below min_tier: blue "variable" (Heavy Belt: Mageblood
 # ~1 in 3400, ~8c per belt). always_show_bases: shown no matter what.
 # Bases without drop-anywhere uniques (league content only) and [uniques.ev] off use the
-# rules below:
-# Bases whose enabled uniques are all boss/encounter-only are always shown as variable;
-# these bases do not drop unique items in normal maps.
+# rules below. Bases whose enabled uniques are all boss/encounter-only are always shown as
+# variable, unless enabled in a [content.*] module where poe.ninja pricing applies.
 #
 # Uniques: a base is tiered by its CHEAPEST unique. Heavy Belt with
 # 1c Belt of the Deceiver = 1c tier, no matter what else rolls on it.
@@ -186,7 +385,7 @@ wiki_cache_days = 7
 # A drop-restricted unique still counts if its wiki drop source contains any of these
 # (case-insensitive): map content where it can drop.
 map_sources = [
-  "Map Boss", "Rare enem", "Ritual", "Blight", "Ultimatum", "Runic monsters", "mercenary",
+  "Map Boss", "Rare enem", "Ritual", "Ultimatum", "Runic monsters", "mercenary",
   "AbyssTwoLeague", "ReligiousTemplar", "LeagueAzmeri", "LeagueBestiary", "LegionLeague",
   "LeagueAffliction", "AfflictionTown", "MavenHub", "Monsters/Wb", "DemonBosses",
   "LunarisSolaris", "Statue", "UnholyTrio", "Viking",
@@ -210,15 +409,39 @@ unknown_chase_tier = 2
 "Angler's Plait" = false   # only drops with a Corrupted Slitherpinch equipped
 
 # ---------------------------------------------------------------------------
-# Content modules: turn one on while farming that content. Its drop-restricted uniques
-# (poewiki drop source contains any of `sources`) show small and silent ([style.content]):
-# no beam, icon or sound, just a label to grab after the fight. Off in normal mapping so
-# junk bases (Gold Ring) stay hidden. Matched by base, so any unique on such a base shows.
-# Module uniques (on or off) never make a base "unknown value" blue (unknown_as_variable).
+# Content modules: enable a source to price its restricted uniques with the normal unique
+# rules (poe.ninja prices, tiers, and unknown-value handling). PoE filters cannot tell where
+# an item dropped, so the resulting base rule applies globally. In `drops`, "price" follows
+# normal pricing, true forces that unique's base to show, and false forces it to hide.
+# Overrides are base-wide: another unique on the same base is affected too. League start
+# intentionally enables all content modules.
 # ---------------------------------------------------------------------------
 [content.ultimatum]
 enabled = true
 sources = ["Ultimatum"]   # Trialmaster boss drops + Ultimatum rewards
+
+[content.blight]
+enabled = false
+sources = ["Blight"]   # Blight encounters, including Blight-ravaged maps
+
+[content.blight.drops]
+"Breathstealer" = "price"
+"Cowl of the Ceraunophile" = "price"
+"Cowl of the Cryophile" = "price"
+"Cowl of the Thermophile" = "price"
+"Sporeguard" = "price"
+"Stranglegasp" = true
+"The Stampede" = "price"
+
+[content.ultimatum.drops]
+"Gamblesprint" = "price"
+"Glimpse of Chaos" = true       # Vaal Mask
+"Hateforge" = true
+"Ixchel's Temptation" = true
+"Mahuxotl's Machination" = "price"
+"Relic of the Pact" = "price"
+"Temptation Step" = "price"
+"Yaomac's Accord" = "price"
 
 # ---------------------------------------------------------------------------
 # Foulborn uniques: priced on their own, never mixed into the normal unique tiers.
@@ -248,6 +471,16 @@ min_tier = "mid"
 types = ["Invitation", "Wombgift"]
 
 # ---------------------------------------------------------------------------
+# Overquality items: non-mirrored, non-corrupted gear at these quality thresholds
+# is shown before price-based rules. 30% matches the active NeverSink tier;
+# enable 27% and 21% as desired.
+# ---------------------------------------------------------------------------
+[overquality]
+quality_30 = true
+quality_27 = false
+quality_21 = false
+
+# ---------------------------------------------------------------------------
 # Campaign / leveling: NeverSink's leveling rules, taken from reference/league.filter
 # (sections [2802] jewels, [[5000]]-[[5400]] flasks + gear) every build. Campaign currency:
 # price tiers / NeverSink reference tiers, never hidden (show_all_stackables).
@@ -261,17 +494,17 @@ types = ["Invitation", "Wombgift"]
 #         types in its "Show # whites" block, other white gear is always hidden. No build: all
 #         white gear. Flasks not included. Other build module Shows still win (rf: Iron Ring, 4-links).
 # hide_magic_after: last area level where magic (blue) gear shows, same classes as white
-#         (flasks / tinctures stay, jewellery stays with show_jewellery). Beats the build
-#         module and show_magic_rare_cells (= rares only after it). Leave out = off.
+#         (flasks / tinctures stay, jewellery stays with show_jewellery). Vendor items enabled
+#         by show_magic_vendor still show; this hide beats the build module. Leave out = off.
 # keep_build_weapons_magic: true = magic weapons the build module Shows (rf: 2H axes / maces
 #         until the RF swap) still show after hide_magic_after. false = hidden too.
 # show_jewellery: amulets, rings, belts of any rarity (white too) always shown in the
 #         campaign, before the build module (its Hides don't apply to them).
 # show_gems: all skill + support gems shown in the campaign (maps: only the bottom.filter gem rules).
-# show_magic_rare_cells: magic + rare items of every class this many inventory cells or
-#         smaller always shown in the campaign (class size = its biggest base: Shields 2x4 = 8),
-#         before the build module (its Hides don't apply: vendored for currency). 4 = jewellery, jewels,
-#         flasks, tinctures, wands, daggers, claws, rapiers, helmets, boots, gloves. 0 = off.
+# show_magic_vendor / show_rare_vendor: independently show magic / rare vendor items in the
+#         campaign, before hide_magic_after and the build module (their Hides don't apply).
+# show_magic_rare_cells: maximum inventory cells for those items, measured per base with its
+#         Width x Height (for example, small shields show while 2x4 shields do not at 4). 0 = off.
 # league_start_hide_unused: with league_start, white crafting bases in maps that the build
 #         module hides (rf: pure ES, unused weapons, jewels, ...) stay hidden, unless worth
 #         bases.min_tier. Other white bases show at league start.
@@ -288,6 +521,8 @@ hide_magic_after = 7
 keep_build_weapons_magic = true
 show_jewellery = true
 show_gems = true
+show_magic_vendor = true
+show_rare_vendor = true
 show_magic_rare_cells = 4
 league_start_hide_unused = true
 show_all_stackables = true
@@ -311,10 +546,10 @@ include_dual_influence = false
 
 # ---------------------------------------------------------------------------
 # Manual overrides by exact BaseType. Win over prices.
+# Divine Orb, Mirror of Kalandra, and Hinekora's Lock are pinned to top/tink and cannot be overridden.
 # ---------------------------------------------------------------------------
 [overrides]
 # name = tier name | "hide" | "variable" | "unknown"
-"Mirror of Kalandra" = "top"
 "Scroll of Wisdom" = "hide"
 "Portal Scroll" = "hide"
 
@@ -335,17 +570,19 @@ bases = []           # exact BaseType, e.g. "Prismatic Jewel"
 
 # ---------------------------------------------------------------------------
 # Styles. Raw filter lines. Taken from your FilterBlade filter.
+# Visible item text uses maximum font size 45, except explicit content-module show overrides.
 # Minimap icons: size 1 (medium) everywhere, colour = text colour. Only tink gets size 0 (big).
 # Icon SHAPE is set by build_filter.py per category (shape in styles below is replaced):
-#   Star = uniques + tink, Square = unique maps, Circle = currency/cards, Hexagon = fragments/scarabs,
-#   Diamond = bases / recipes / unknown, Moon = league mechanic stackables.
+#   Star = uniques + tink, Square = unique maps, Circle = currency-like stackables/cards,
+#   Hexagon = fragments/scarabs, Diamond = bases / recipes / unknown,
+#   Moon = league-specific stackables without a more fitting category.
 # Rule: no SetBorderColor / SetBackgroundColor except top (tink). Borders are
 # cleared for everything by a default block, so only add them on purpose.
 #   top     = TINK. Only for items KNOWN to be >= 1 div. White bg, red text, tink sound.
 #   high    = red text, >= 1/4 div
 #   mid     = yellow text, >= 1/16 div
-#   minor   = white text, >= 1/64 div
-#   low     = white text, >= 1c (late league: quiet_tiers -> brown)
+#   minor   = grey text, >= 1/64 div
+#   low     = grey text, >= 1c (late league: quiet_tiers -> brown)
 #   brown   = brown text, >= 0.25c   dust = brown text, >= 0.05c
 #   variable/unknown = blue beam, game's own text colour: value unknown or variable,
 #                      worth picking up / identifying
@@ -382,7 +619,7 @@ lines = [
 [style.minor]
 lines = [
   "SetFontSize 45",
-  "SetTextColor 255 255 255 255",
+  "SetTextColor 215 215 215 255",
   "PlayAlertSound 2 300",
   "PlayEffect White",
   "MinimapIcon 1 White Circle",
@@ -391,7 +628,7 @@ lines = [
 [style.low]
 lines = [
   "SetFontSize 45",
-  "SetTextColor 255 255 255 255",
+  "SetTextColor 215 215 215 255",
   "PlayAlertSound 2 300",
   "PlayEffect White",
   "MinimapIcon 1 White Circle",
@@ -410,22 +647,22 @@ lines = [
 # Below 1c: brown text, no beam/icon/sound
 [style.brown]
 lines = [
-  "SetFontSize 40",
+  "SetFontSize 45",
   "SetTextColor 210 178 134 255",
   "DisableDropSound True",
 ]
 
-# Content modules: small, no beam / icon / sound
+# Content modules: small, no beam / icon / sound; keep unique text colour and soften label
 [style.content]
 lines = [
   "SetFontSize 32",
-  "SetTextColor 210 178 134 255",
+  "SetBackgroundColor 0 0 0 193",
   "DisableDropSound True",
 ]
 
 [style.dust]
 lines = [
-  "SetFontSize 35",
+  "SetFontSize 45",
   "SetTextColor 210 178 134 255",
   "DisableDropSound True",
 ]
@@ -441,6 +678,7 @@ lines = [
 [style.unknown]
 lines = [
   "SetFontSize 45",
+  "SetTextColor 215 215 215 255",
   "PlayAlertSound 2 300",
   "PlayEffect Blue",
   "MinimapIcon 1 Blue Star",

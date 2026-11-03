@@ -55,14 +55,15 @@ HIDDEN_STYLE = ["SetFontSize 18", "DisableDropSound True"]
 # Minimap icon shape = item category, colour/size = price tier.
 # Star only for uniques and tink (top tier); unknown / bases get Diamond.
 SHAPE = {
-    "Currency": "Circle", "DivinationCard": "Circle",
+    "Currency": "Circle", "DivinationCard": "Circle", "Essence": "Circle",
+    "Fossil": "Circle", "Resonator": "Circle", "Oil": "Circle", "Artifact": "Circle",
     "Fragment": "Hexagon", "Scarab": "Hexagon", "Invitation": "Hexagon",
-    "Essence": "Moon", "Fossil": "Moon", "Resonator": "Moon", "Oil": "Moon",
-    "DeliriumOrb": "Moon", "Tattoo": "Moon", "Omen": "Moon", "Artifact": "Moon",
+    "DeliriumOrb": "Circle", "Tattoo": "Moon", "Omen": "Moon",
     "Runegraft": "Moon", "AllflameEmber": "Moon", "Astrolabe": "Moon", "Vial": "Moon",
     "Wombgift": "Moon",
 }
 UNIQUE_SHAPE, BASE_SHAPE, MAP_SHAPE = "Star", "Diamond", "Square"
+PINNED_TOP_STACKABLES = {"Divine Orb", "Hinekora's Lock", "Mirror of Kalandra"}
 # Normal/magic/rare stuff that gets config gear_text_color instead of rarity colour
 GEAR_CLASSES = [
     "Abyss Jewels", "Amulets", "Belts", "Body Armours", "Boots", "Bows", "Claws", "Daggers",
@@ -200,6 +201,39 @@ def content_bases(rows, cfg):
     return out
 
 
+def content_policy(content, cfg):
+    """Resolve enabled content uniques to price, always-show, and always-hide base sets."""
+    price_names, show, hide = set(), {}, {}
+    all_names = set()
+    for mod, by_base in content.items():
+        names = {name for base_names in by_base.values() for name in base_names}
+        all_names.update(names)
+        settings = cfg.get("content", {}).get(mod, {})
+        overrides = settings.get("drops", {})
+        unknown = set(overrides) - names
+        if unknown:
+            raise ValueError(f"Unknown [content.{mod}.drops] unique name(s): {', '.join(sorted(unknown))}")
+        if any(not isinstance(value, bool) and value != "price" for value in overrides.values()):
+            raise ValueError(
+                f"[content.{mod}.drops] values must be true (always show), false (always hide), or \"price\""
+            )
+        if not settings.get("enabled"):
+            continue
+        for base, base_names in by_base.items():
+            for name in base_names:
+                mode = overrides.get(name)
+                if mode is None or mode == "price":
+                    price_names.add(name)
+                else:
+                    target = show if mode else hide
+                    target.setdefault(base, set()).add(name)
+    conflicts = set(show) & set(hide)
+    if conflicts:
+        raise ValueError(f"Conflicting content drop overrides on shared base(s): {', '.join(sorted(conflicts))}")
+    return {"price_names": price_names, "excluded_names": all_names - price_names,
+            "show": show, "hide": hide}
+
+
 def no_map_drop(data, name):
     return (name[9:] if name.startswith("Foulborn ") else name) in data.get("nomap", {})
 
@@ -230,12 +264,12 @@ class Tiers:
 
 def apply_divine_tiers(cfg, divine_chaos):
     """tiers_follow_divine: a tier's `div` = fraction of the current divine price (top = 1 div).
-    Rewrites cfg["tiers"] so every later reader sees the same numbers. Off or no divine
-    price: the fixed `chaos` values stay."""
+    Divine-linked thresholds have a 1c minimum. Rewrites cfg["tiers"] so every later reader
+    sees the same numbers. Off or no divine price: the fixed `chaos` values stay."""
     if not cfg.get("tiers_follow_divine") or not divine_chaos:
         return
     for name, frac in cfg.get("tiers_divine", {}).items():
-        cfg["tiers"][name] = round(frac * divine_chaos, 1)
+        cfg["tiers"][name] = max(1.0, round(frac * divine_chaos, 1))
 
 
 def price_stackables(data, cfg, tiers):
@@ -257,8 +291,13 @@ def price_stackables(data, cfg, tiers):
             value = line["primaryValue"]
             if primary != "chaos":  # never seen, but don't silently mis-tier
                 continue
+            # This feed has no buy/sell direction for card quotes, so it cannot establish
+            # the buy-side value needed for reliable divination-card pricing.
+            if t == "DivinationCard":
+                continue
+            volume = line.get("volumePrimaryValue", 0)
             # thin volume: trust it to show (safe), not to hide; hiding falls back to unpriced rules
-            if line.get("volumePrimaryValue", 0) < ex["min_volume"] and value < shown_floor:
+            if volume < ex["min_volume"] and value < shown_floor:
                 continue
             prices[it["name"]] = (value, t)
     prices.setdefault("Chaos Orb", (1.0, "Currency"))
@@ -271,7 +310,44 @@ def price_stackables(data, cfg, tiers):
     for name, (whole, count) in ex.get("splinters", {}).items():
         if whole in prices:
             prices[name] = (prices[whole][0] / count, prices[whole][1])
+    exact_item_prices = {}
+    for t in UNIQUE_TYPES:
+        for line in data["stash"][t].get("lines", []):
+            listings = line.get("listingCount", 0)
+            if listings < cfg["uniques"]["min_listings"]:
+                continue
+            name = line["name"]
+            total, count = exact_item_prices.get(name, (0.0, 0))
+            exact_item_prices[name] = (total + line["chaosValue"] * listings, count + listings)
+    exact_item_prices = {name: total / count for name, (total, count) in exact_item_prices.items()}
+    pending_rewards = dict(ex.get("card_rewards", {}))
+    while pending_rewards:
+        resolved = []
+        for name, (reward, quantity, set_size) in pending_rewards.items():
+            if quantity <= 0 or set_size <= 0:
+                raise ValueError(f"Invalid card reward for {name}: {quantity} / {set_size}")
+            reward_price = prices.get(reward)
+            reward_value = reward_price[0] if reward_price else exact_item_prices.get(reward)
+            if reward_value and reward_value > 0:
+                prices[name] = (reward_value * quantity / set_size, "DivinationCard")
+                resolved.append(name)
+        if not resolved:
+            break
+        for name in resolved:
+            del pending_rewards[name]
     return prices, divine_chaos or 0
+
+
+def card_trade_volumes(data):
+    """Best available poe.ninja exchange volume per card, in primary-currency value."""
+    exchange = data["exchange"].get("DivinationCard", {})
+    items = {item["id"]: item["name"] for item in exchange.get("items", [])}
+    volumes = {}
+    for line in exchange.get("lines", []):
+        name = items.get(line["id"])
+        if name:
+            volumes[name] = max(volumes.get(name, 0), line.get("volumePrimaryValue", 0))
+    return volumes
 
 
 def jackpot_chaos(cfg, divine_chaos):
@@ -326,10 +402,12 @@ def price_unique_bases(data, cfg, tiers, divine_chaos):
     jackpot roll (Voices 1 passive, Mageblood) makes the base worth checking. Linked lines
     are skipped above, so 6L prices never count.
     A base that would be hidden but has any unique >= never_hide_tier goes "variable".
-    Boss / encounter-only uniques still drop, so they count for cheapest (a tier must hold
-    for anything on the base) but never for best (no Cane of Kulemak -> blue Serpentine Staff).
+    Boss / encounter-only uniques still count for cheapest but not for best; enabled content
+    modules instead price their restricted uniques normally.
     """
     u = cfg["uniques"]
+    content = content_policy(data.get("content", {}), cfg)
+    content_prices = content["price_names"]
     confident, any_listed = {}, {}  # (base, name) -> cheapest variant / best variant
     variants = {}  # (base, name) -> [sum chaos * listings, listings]: one unID drop, rolls by supply
     boss_only = set()  # bases with a boss / encounter-only unique
@@ -342,7 +420,7 @@ def price_unique_bases(data, cfg, tiers, divine_chaos):
             if line.get("links"):
                 linked.add((base, name))  # Tabula Rasa only exists linked: priced, not unknown
                 continue
-            boss = no_map_drop(data, name)  # boss / encounter only, see non_map_drops
+            boss = no_map_drop(data, name) and name not in content_prices
             if boss:
                 boss_only.add(base)
             if name.startswith("Replica ") and not u["include_replicas"]:
@@ -372,15 +450,16 @@ def price_unique_bases(data, cfg, tiers, divine_chaos):
     # uniques on a base with no confident poe.ninja price: thin listings, or not listed at all
     # although the wiki says they still drop (boss-only too: they drop, value unknown)
     unknown = {}
-    # content-module uniques never count: their module shows them (small) while farming
-    content = {n for by_base in data.get("content", {}).values() for ns in by_base.values() for n in ns}
+    # Disabled modules and explicit overrides do not enter normal price/unknown handling.
+    excluded_content = content["excluded_names"]
     # boss / recipe / removed uniques (non_map_drops) never count: they can't be the drop
     for (base, name) in seen - confident.keys():
-        if name not in content and not no_map_drop(data, name):
+        if name not in excluded_content and (not no_map_drop(data, name) or name in content_prices):
             unknown.setdefault(base, set()).add(name)
     for base, names in data.get("wiki_bases", {}).items():
         for name in names:
-            if (base, name) not in seen | linked and name not in content and not no_map_drop(data, name) \
+            if (base, name) not in seen | linked and name not in excluded_content \
+                    and (not no_map_drop(data, name) or name in content_prices) \
                     and not (name.startswith("Replica ") and not u["include_replicas"]):
                 unknown.setdefault(base, set()).add(name)
 
@@ -436,11 +515,11 @@ def price_unique_bases(data, cfg, tiers, divine_chaos):
     wiki_bases = data.get("wiki_bases", {})
     boss_only_bases = {
         base for base, names in wiki_bases.items()
-        if names and all(no_map_drop(data, name) for name in names)
+        if names and all(no_map_drop(data, name) and name not in content_prices for name in names)
     }
     map_drop_bases = {
         base for base, names in wiki_bases.items()
-        if any(not no_map_drop(data, name) for name in names)
+        if any(not no_map_drop(data, name) or name in content_prices for name in names)
     }
     boss_only_bases.update(boss_only - {b for b, _ in any_listed} - map_drop_bases)
     unique_map_bases = {
@@ -526,11 +605,13 @@ def price_linked_jackpots(data, cfg, divine_chaos):
     Unlinked pricing skips linked lines, so without this a 5L jackpot on a junk base hides.
     Boss / encounter-only uniques are skipped as in the other unique pricing."""
     jackpot = jackpot_chaos(cfg, divine_chaos)
+    content_prices = content_policy(data.get("content", {}), cfg)["price_names"]
     out = {}
     for t in UNIQUE_TYPES:
         for line in data["stash"][t].get("lines", []):
             if line.get("links") and line.get("baseType") and line.get("listingCount", 0) >= 1 \
-                    and line["chaosValue"] >= jackpot and not no_map_drop(data, line["name"]):
+                    and line["chaosValue"] >= jackpot \
+                    and (not no_map_drop(data, line["name"]) or line["name"] in content_prices):
                 out.setdefault(line["links"], set()).add(line["baseType"])
     return out
 
@@ -538,10 +619,9 @@ def price_linked_jackpots(data, cfg, divine_chaos):
 def price_crafting_bases(data, cfg, tiers, divine_chaos):
     """[(tier, ilvl_min, ilvl_max or None, influence or None, base, chaos)]
 
-    Each poe.ninja entry covers its ilvl up to the next listed ilvl. Value at an ilvl is
-    the cheapest price at that ilvl or any higher one (higher ilvl is never worth less),
-    which kills outliers like a 445c ilvl82 base next to a 9c ilvl85 one.
-    Exception: a confident entry worth >= jackpot is shown "variable" whatever the floor.
+    Each confident poe.ninja entry covers its ilvl up to the next listed ilvl. Keep its own
+    price: a higher ilvl can have less crafting demand, so its price must not floor this one.
+    A confident entry worth >= jackpot is shown "variable".
     """
     b = cfg["bases"]
     if not b["enabled"]:
@@ -560,27 +640,27 @@ def price_crafting_bases(data, cfg, tiers, divine_chaos):
     out = []
     for (name, infl), entries in by_base.items():
         entries.sort(key=lambda e: -e[0])
-        floor, upper = math.inf, None  # running min from higher ilvls; next ilvl above
+        upper = None  # next ilvl above
         for ilvl, chaos, confident in entries:
-            floor = min(floor, chaos)  # cheap evidence counts even if low confidence
             if confident:
-                tier = tiers.of(floor)
-                if tiers.rank(tier) <= min_rank:
-                    out.append((tier, ilvl, upper - 1 if upper else None, infl, name, floor))
-                elif chaos >= jackpot:
+                if chaos >= jackpot:
                     out.append(("variable", ilvl, upper - 1 if upper else None, infl, name, chaos))
+                else:
+                    tier = tiers.of(chaos)
+                    if tiers.rank(tier) <= min_rank:
+                        out.append((tier, ilvl, upper - 1 if upper else None, infl, name, chaos))
             upper = ilvl
     return out
 
 
 def reference_card_tiers(cfg, text):
-    """card -> our tier, from the NeverSink divination tiers in reference/league.filter.
-    Fallback for cards poe.ninja doesn't price (it only has exchange-traded cards)."""
+    """card -> our tier, from the regular NeverSink divination-card groups."""
     mapping = cfg["exchange"]["reference_card_tiers"]
     out = {}
     for blk in re.split(r"\n(?=(?:Show|Hide|Minimal)\b)", text):
         m = re.search(r"\$type->divination \$tier->(\S+)", blk.split("\n", 1)[0])
-        if not m or m.group(1) not in mapping:
+        if (not m or m.group(1) not in mapping
+                or re.search(r"^\s*StackSize\b", blk, re.M)):
             continue
         for conds in re.findall(r"^\s*BaseType ==? (.*)$", blk, re.M):
             for name in re.findall(r'"([^"]+)"', conds):
@@ -644,7 +724,8 @@ def section(title):
 def emit_defaults(cfg):
     # Continue blocks: style applies, later blocks can still override or hide
     out = section("Defaults: no borders, gear text colour (config.toml gear_text_color)")
-    out += block("Show", [], ["SetBorderColor 0 0 0 0", "Continue"], "no borders unless a style sets one")
+    out += block("Show", [], ["SetFontSize 45", "SetBorderColor 0 0 0 0", "Continue"],
+                 "maximum item size; no borders unless a style sets one")
     # campaign ([leveling] on): gear keeps its rarity colour
     lv = cfg.get("leveling", {})
     camp = [f"AreaLevel > {lv.get('area_level_max', 67)}"] if lv.get("enabled") else []
@@ -656,24 +737,70 @@ def emit_defaults(cfg):
     return out
 
 
+def emit_pinned_stackables(cfg):
+    return section("Pinned top-tier stackables") + "".join(
+        block("Show", [f"BaseType == {q([name])}"], style_for(cfg, "top", SHAPE["Currency"]),
+              f"pinned {name} (always tink)")
+        for name in sorted(PINNED_TOP_STACKABLES)
+    )
+
+
 def emit_overrides(cfg, prices):
     groups = {}
     for name, tier in cfg.get("overrides", {}).items():
+        if name in PINNED_TOP_STACKABLES:
+            continue
         shape = SHAPE.get(prices.get(name, (0, None))[1], BASE_SHAPE)
         groups.setdefault((tier, shape), []).append(name)
+    if not groups:
+        return ""
     out = section("Overrides (config.toml [overrides])")
     for (tier, shape), names in groups.items():
         out += block(action_for(cfg, tier), [f"BaseType == {q(names)}"], style_for(cfg, tier, shape), f"override {tier}")
     return out
 
 
-def emit_stackables(cfg, tiers, prices, ref_cards, ref_currency):
+def emit_overquality(cfg):
+    settings = cfg.get("overquality", {})
+    classes = [
+        "Amulets", "Belts", "Body Armours", "Boots", "Bows", "Claws", "Daggers",
+        "Gloves", "Helmets", "One Hand Axes", "One Hand Maces", "One Hand Swords",
+        "Quivers", "Rings", "Rune Daggers", "Sceptres", "Shields", "Staves",
+        "Thrusting One Hand Swords", "Two Hand Axes", "Two Hand Maces", "Two Hand Swords",
+        "Wands", "Warstaves",
+    ]
+    tiers = [
+        (30, "quality_30", ["SetFontSize 45", "PlayEffect Red", "MinimapIcon 0 Red Diamond",
+                            "SetTextColor 255 0 0 255", "PlayAlertSound 6 300",
+                            "SetBorderColor 255 0 0 255", "SetBackgroundColor 255 255 255 255"]),
+        (27, "quality_27", ["SetFontSize 45", "PlayAlertSound 3 300", "PlayEffect Blue",
+                            "MinimapIcon 2 Blue Diamond", "SetTextColor 255 255 255 255"]),
+        (21, "quality_21", ["SetFontSize 45", "PlayAlertSound 3 300", "PlayEffect Blue",
+                            "MinimapIcon 2 Blue Diamond", "SetTextColor 255 255 255 255"]),
+    ]
+    out = section("Overquality gear (config.toml [overquality])")
+    for quality, key, style in tiers:
+        if settings.get(key, False):
+            out += block("Show", ["Mirrored False", "Corrupted False", f"Quality >= {quality}",
+                                  f"Class == {q(classes)}"], style, f"overquality {quality}%+")
+    return out
+
+
+def emit_forbidden_tome(cfg):
+    if not cfg.get("hide_forbidden_tome", False):
+        return ""
+    return section("Config visibility toggles") + block(
+        "Hide", ['BaseType == "Forbidden Tome"'], HIDDEN_STYLE, "Forbidden Tome (config.toml hide_forbidden_tome)"
+    )
+
+
+def emit_stackables(cfg, tiers, prices, ref_currency, ref_cards, card_volumes):
     ex = cfg["exchange"]
     overridden = set(cfg.get("overrides", {}))
     singles = {}   # (tier, shape) -> [names]
     stacks = {}    # (tier, n, shape) -> [names]
     for name, (v, t) in prices.items():
-        if name in overridden or v <= 0:
+        if name in PINNED_TOP_STACKABLES or name in overridden or v <= 0:
             continue
         own, shape = tiers.of(v), SHAPE.get(t, BASE_SHAPE)
         sl = small_loot(cfg)
@@ -682,7 +809,11 @@ def emit_stackables(cfg, tiers, prices, ref_cards, ref_currency):
             continue
         singles.setdefault((own, shape), []).append(name)
         # cheapest stack size that lifts it into each better tier
-        max_stack = max(ex["max_stack"], ex.get("splinters", {}).get(name, [None, 0])[1])
+        if t == "DivinationCard":
+            max_stack = ex["card_rewards"][name][2]
+        else:
+            max_stack = max(ex["max_stack"],
+                            ex.get("splinters", {}).get(name, [None, 0])[1])
         for tname, thr in tiers.list:
             if tiers.rank(tname) >= tiers.rank(own):
                 continue
@@ -723,15 +854,35 @@ def emit_stackables(cfg, tiers, prices, ref_cards, ref_currency):
     for classes, shape in CURRENCY_CLASSES:
         setting = "unknown" if ex["unpriced_currency"] == "reference" else ex["unpriced_currency"]
         out += fallback(classes, setting, classes[0].lower(), shape)
-    if ex["unpriced_cards"] == "reference":
-        out += reference(ref_cards, ['Class == "Divination Cards"'], "cards")
-        out += fallback(["Divination Cards"], "unknown", "cards (not in reference either)", "Circle")
-    else:
-        out += fallback(["Divination Cards"], ex["unpriced_cards"], "cards", "Circle")
+    card_fallbacks = {
+        name: tier for name, tier in ref_cards.items()
+        if card_volumes.get(name, 0) < ex["card_fallback_min_volume"]
+    }
+    out += reference(card_fallbacks, ['Class == "Divination Cards"'], "cards")
+    unknown_card_style = [line for line in style_for(cfg, "unknown", "Circle")
+                          if not line.startswith("PlayAlertSound")]
+    unknown_card_style.append("DisableDropSound True")
+    out += block(action_for(cfg, "unknown"), ['Class == "Divination Cards"'],
+                 unknown_card_style, "unpriced cards (no reliable buy-order quote)")
     return out
 
 
-def emit_uniques(cfg, tiers, bases, fbases, linked, content, map_bases):
+def emit_content_overrides(cfg, content):
+    policy = content_policy(content, cfg)
+    if not policy["show"] and not policy["hide"]:
+        return ""
+    out = section("League-content unique overrides ([content.<name>.drops])")
+    for base, names in sorted(policy["hide"].items()):
+        out += block("Hide", ["Rarity Unique", f"BaseType == {q([base])}"], HIDDEN_STYLE,
+                     f"content override hide: {', '.join(sorted(names))}")
+    for base, names in sorted(policy["show"].items()):
+        out += block("Show", ["Rarity Unique", f"BaseType == {q([base])}"],
+                     cfg["style"]["content"]["lines"],
+                     f"content override show: {', '.join(sorted(names))}")
+    return out
+
+
+def emit_uniques(cfg, tiers, bases, fbases, linked, map_bases):
     out = section("Uniques (tier = EV of one unID drop, or cheapest unique without drop tiers; variable = gamble; 5L/6L jackpots)")
     # shown tiers first (Foulborn before normal), then corrupted-implicit rescue, then the
     # Foulborn catch-all (so no Foulborn reaches the hidden normal tiers), then hidden tiers
@@ -766,24 +917,10 @@ def emit_uniques(cfg, tiers, bases, fbases, linked, content, map_bases):
         if tier not in shown:
             out += tier_blocks(tier, fbases, foul, "foulborn")
     out += unpriced_blocks(cfg["foulborn"]["unpriced"], foul, "foulborn unpriced")
-    out += emit_content(cfg, content)
     for tier in order:
         if tier not in shown:
             out += tier_blocks(tier, bases, ["Rarity Unique"], "uniques")
     out += unpriced_blocks(cfg["uniques"]["unpriced"], ["Rarity Unique"], "unpriced uniques")
-    return out
-
-
-def emit_content(cfg, content):
-    """Content you farm ([content.<name>] on): its unique bases that would be hidden show
-    small and silent, to loot after the fight. Shown tiers above still win."""
-    out = ""
-    for mod, by_base in sorted(content.items()):
-        if not cfg["content"][mod].get("enabled"):
-            continue
-        names = ", ".join(sorted(n for ns in by_base.values() for n in ns))
-        out += block("Show", ["Rarity Unique", f"BaseType == {q(by_base)}"],
-                     cfg["style"]["content"]["lines"], f"content {mod}: {names}")
     return out
 
 
@@ -843,17 +980,16 @@ def league_start_unused_whites(cfg):
 
 # NeverSink sections copied for the campaign: (first section, section after it)
 LEVELING_SECTIONS = [("2802", "2803"), ("5000", "5406")]  # [[3800]] currency: campaign_unhide instead
-# Inventory cells per gear class, highest base size when a class varies (RePoE base_items)
-CLASS_CELLS = {
-    "Amulets": 1, "Rings": 1, "Jewels": 1, "Abyss Jewels": 1, "Belts": 2,
-    "Life Flasks": 2, "Mana Flasks": 2, "Hybrid Flasks": 2, "Utility Flasks": 2, "Tinctures": 2,
-    "Wands": 3, "Daggers": 3, "Rune Daggers": 3,
-    "Claws": 4, "Thrusting One Hand Swords": 4, "Helmets": 4, "Boots": 4, "Gloves": 4,
-    "One Hand Axes": 6, "One Hand Swords": 6, "One Hand Maces": 6, "Sceptres": 6,
-    "Body Armours": 6, "Quivers": 6,
-    "Bows": 8, "Staves": 8, "Warstaves": 8, "Two Hand Axes": 8, "Two Hand Swords": 8,
-    "Two Hand Maces": 8, "Shields": 8,
-}
+# Gear classes eligible for the campaign vendor-item size rule. Size is checked per item
+# using Width and Height, rather than the largest base in its class.
+VENDOR_CLASSES = [
+    "Amulets", "Rings", "Jewels", "Abyss Jewels", "Belts",
+    "Life Flasks", "Mana Flasks", "Hybrid Flasks", "Utility Flasks", "Tinctures",
+    "Wands", "Daggers", "Rune Daggers", "Claws", "Thrusting One Hand Swords",
+    "Helmets", "Boots", "Gloves", "One Hand Axes", "One Hand Swords", "One Hand Maces",
+    "Sceptres", "Body Armours", "Quivers", "Bows", "Staves", "Warstaves",
+    "Two Hand Axes", "Two Hand Swords", "Two Hand Maces", "Shields",
+]
 # White gear hidden by [leveling] hide_normal_after (flasks / tinctures stay)
 NORMAL_HIDE_CLASSES = [c for c in GEAR_CLASSES if "Flask" not in c and c not in (
     "Tinctures", "Maps", "Blueprints", "Contracts", "Heist Brooches", "Heist Cloaks", "Heist Gear", "Heist Tools")]
@@ -938,6 +1074,16 @@ def hidden_game_colours(text):
     return "".join(out)
 
 
+def maximize_item_sizes(text):
+    """Use maximum font size for visible rules, except intentional content-module overrides."""
+    out = []
+    for blk in re.split(r"(?m)(?=^(?:Show|Hide|Minimal)\b)", text):
+        if blk.startswith(("Show", "Minimal")) and "content override show:" not in blk.splitlines()[0]:
+            blk = re.sub(r"(?m)^(\s*SetFontSize\s+)\d+\b", r"\g<1>45", blk)
+        out.append(blk)
+    return "".join(out)
+
+
 def campaign_only(text, area):
     """Adds "AreaLevel <= area" to every block that has no AreaLevel <= limit of its own."""
     out = []
@@ -979,7 +1125,26 @@ def emit_leveling(cfg, ref_text):
         out += block("Show", [f"AreaLevel <= {area}", 'Class == "Skill Gems" "Support Gems"'],
                      ["SetFontSize 40", "SetTextColor 20 240 240"], "skill / support gems (show_gems)") + "\n"
     text = (ROOT / "rules" / "leveling" / f"{build}.filter").read_text(encoding="utf-8") if build else ""
-    # magic gear after hide_magic_after: before vendor fodder and the build module, so only
+    # Vendor fodder goes first so it can override hide_magic_after and build-module Hides.
+    # The rarity toggles let users keep only the magic or rare vendor recipe items they want.
+    cells = lv.get("show_magic_rare_cells", 0)
+    if cells:
+        for rarity, enabled, setting in (
+            ("Magic", lv.get("show_magic_vendor", True), "show_magic_vendor"),
+            ("Rare", lv.get("show_rare_vendor", True), "show_rare_vendor"),
+        ):
+            if enabled:
+                for width in range(1, cells + 1):
+                    max_height = cells // width
+                    if max_height:
+                        out += block(
+                            "Show",
+                            [f"Rarity {rarity}", f"AreaLevel <= {area}", f"Class == {q(VENDOR_CLASSES)}",
+                             f"Width == {width}", f"Height <= {max_height}"],
+                            ["SetFontSize 40"],
+                            f"{rarity.lower()}, {cells} cells or less, to vendor ({setting})",
+                        ) + "\n"
+    # magic gear after hide_magic_after: after vendor fodder, so only
     # flasks / tinctures, jewellery (show_jewellery) and the kept build weapons stay
     magic_after = lv.get("hide_magic_after")
     kept = build_magic_weapons(text) if lv.get("keep_build_weapons_magic", True) else []
@@ -987,12 +1152,6 @@ def emit_leveling(cfg, ref_text):
         out += block("Hide", ["Rarity Magic", f"AreaLevel > {magic_after}", f"AreaLevel <= {area}",
                               f"Class == {q([c for c in NORMAL_HIDE_CLASSES if c not in kept])}"],
                      HIDDEN_STYLE, f"magic gear after area {magic_after} (hide_magic_after)") + "\n"
-    # vendor fodder (currency from the vendor): before the build module, so its Hides don't apply
-    cells = lv.get("show_magic_rare_cells", 0)
-    if cells:
-        small = [c for c, n in CLASS_CELLS.items() if n <= cells]
-        out += block("Show", ["Rarity Magic Rare", f"AreaLevel <= {area}", f"Class == {q(small)}"],
-                     ["SetFontSize 40"], f"magic / rare, {cells} cells or less, to vendor (show_magic_rare_cells)") + "\n"
     normal_after = lv.get("hide_normal_after")
     if build:
         # "Show # whites": the white item types the build uses, shown until hide_normal_after
@@ -1088,7 +1247,6 @@ def apply_league_start(cfg):
             cfg[sec]["unpriced"] = shown(cfg[sec]["unpriced"])
     cfg["uniques"]["hide_maps"] = False
     cfg["exchange"]["unpriced_currency"] = shown(cfg["exchange"]["unpriced_currency"])
-    cfg["exchange"]["unpriced_cards"] = shown(cfg["exchange"]["unpriced_cards"])
     cfg["exchange"]["reference_card_tiers"] = {k: shown(t) for k, t in cfg["exchange"]["reference_card_tiers"].items()}
     cfg["overrides"] = {k: shown(t) for k, t in cfg.get("overrides", {}).items()}
     for mod in cfg.get("content", {}).values():
@@ -1100,6 +1258,13 @@ def apply_league_start(cfg):
 def hand_rules(cfg, name):
     """rules/<name>.filter; league_start turns "Hide # league_start" blocks into Show."""
     text = (ROOT / "rules" / f"{name}.filter").read_text(encoding="utf-8")
+    if name == "top":
+        for key in ("show_5_links", "show_6_links"):
+            pattern = rf"(?ms)^# BEGIN {key}\r?\n(.*?)^# END {key}\r?\n?"
+            replacement = r"\1" if cfg.get(key, key == "show_6_links") else ""
+            text, count = re.subn(pattern, replacement, text)
+            if count != 1:
+                raise ValueError(f"Expected one {key} section in rules/top.filter, found {count}")
     if cfg.get("league_start"):
         text = re.sub(r"^Hide(?= # league_start)", "Show", text, flags=re.M)
     return section(f"Hand-written {name} rules (rules/{name}.filter)") + text
@@ -1108,6 +1273,7 @@ def hand_rules(cfg, name):
 def build_text(cfg, data, league):
     """Whole filter text + pricing results. No network, no file writes (tests use this)."""
     prices, divine = price_stackables(data, cfg, Tiers(cfg))
+    card_volumes = card_trade_volumes(data)
     apply_divine_tiers(cfg, divine)
     tiers = Tiers(cfg)
     ubases = price_unique_bases(data, cfg, tiers, divine)
@@ -1115,7 +1281,8 @@ def build_text(cfg, data, league):
     linked = price_linked_jackpots(data, cfg, divine)
     cbases = price_crafting_bases(data, cfg, tiers, divine)
     ref_text = (ROOT / "reference/league.filter").read_text(encoding="utf-8")
-    ref_cards = reference_card_tiers(cfg, ref_text)
+    card_ref_text = (ROOT / "reference/regular-neversink.filter").read_text(encoding="utf-8")
+    ref_cards = reference_card_tiers(cfg, card_ref_text)
     ref_currency = reference_currency_tiers(cfg, ref_text)
 
     header = (f"# Price filter - generated {datetime.now():%Y-%m-%d %H:%M}"
@@ -1126,20 +1293,25 @@ def build_text(cfg, data, league):
               f"# Do not edit - edit config.toml / rules/*.filter and rerun build_filter.py\n")
     text = "\n".join([
         header,
+        emit_forbidden_tome(cfg),
+        emit_content_overrides(cfg, data.get("content", {})),
         emit_defaults(cfg),
+        emit_pinned_stackables(cfg),
         hand_rules(cfg, "top"),
         emit_leveling(cfg, ref_text),
         campaign_unhide(cfg, emit_overrides(cfg, prices)),
-        campaign_unhide(cfg, emit_stackables(cfg, tiers, prices, ref_cards, ref_currency)),
-        emit_uniques(cfg, tiers, ubases, fbases, linked, data.get("content", {}),
+        emit_overquality(cfg),
+        campaign_unhide(cfg, emit_stackables(cfg, tiers, prices, ref_currency, ref_cards, card_volumes)),
+        emit_uniques(cfg, tiers, ubases, fbases, linked,
                      {l["baseType"] for l in data["stash"]["UniqueMap"].get("lines", []) if l.get("baseType")}),
         emit_crafting_bases(cfg, tiers, cbases),
         hand_rules(cfg, "bottom"),
     ])
     text = hidden_game_colours(text)
+    text = maximize_item_sizes(text)
     return text, {"tiers": tiers, "prices": prices, "divine": divine, "ubases": ubases,
                   "fbases": fbases, "linked": linked, "cbases": cbases, "ref_cards": ref_cards,
-            "ref_currency": ref_currency}
+            "ref_currency": ref_currency, "card_volumes": card_volumes}
 
 
 def main():
@@ -1174,7 +1346,12 @@ def main():
         return ", ".join(f"{k}:{v}" for k, v in sorted(c.items(), key=lambda kv: tiers.rank(kv[0])))
     print(f"Divine: {divine:.0f}c")
     print(f"Stackables priced: {len(prices)}  ({count(tiers.of(v) for v, _ in prices.values())})")
-    print(f"Cards from reference tiers: {sum(1 for n in r['ref_cards'] if n not in prices)}")
+    card_fallbacks = sum(1 for n in r["ref_cards"] if n not in prices
+                         and r["card_volumes"].get(n, 0) < cfg["exchange"]["card_fallback_min_volume"])
+    card_active_unknown = sum(1 for n in r["ref_cards"] if n not in prices
+                              and r["card_volumes"].get(n, 0) >= cfg["exchange"]["card_fallback_min_volume"])
+    print(f"Cards using NeverSink fallback (no price, low volume): {card_fallbacks}")
+    print(f"Unpriced cards kept unknown (trade volume >= threshold): {card_active_unknown}")
     print(f"Currency from reference tiers: {sum(1 for n in r['ref_currency'] if n not in prices)}")
     print(f"Unique bases: {len(ubases)}  ({count(t for t, *_ in ubases.values())})")
     jack = sorted(((b, v) for b, v in ubases.items() if v[0] == 'variable'), key=lambda kv: -kv[1][2])
