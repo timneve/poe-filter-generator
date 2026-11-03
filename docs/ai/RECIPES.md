@@ -10,7 +10,8 @@
 | New hand rule | `rules/top.filter` (before prices) or `rules/bottom.filter` (after). Tag `Hide # league_start` if it should show at league start |
 | New toggle section in top rules | wrap in `# BEGIN key` / `# END key`, handle in `hand_rules` (expects exactly one section) |
 | New config key | add commented default in `config.toml`, read with `cfg.get(...)` default, add to `apply_league_start` if LS should change it, document in `README.md` + `docs/ai/CONFIG.md` |
-| New price source / poe.ninja type | add to `EXCHANGE_TYPES` / `STASH_STACKABLE_TYPES` / `UNIQUE_TYPES`; `SHAPE` entry; `empty_data()` in tests picks it up automatically |
+| New price source / poe.ninja type | build warns / `LiveCache.test_every_ninja_category_handled` fails on a new poe.ninja category. Put it in exactly one of `EXCHANGE_TYPES` / `STASH_STACKABLE_TYPES` / `UNIQUE_TYPES` / `BASE_TYPES` (priced) / `CHECK_TYPES` (only tested: add a drop model to `LiveCache.ninja_drop`) / `SKIPPED_TYPES` (reason); `SHAPE` entry for stackables; `empty_data()` / `load_cache` pick it up automatically |
+| New cluster enchant | `test_valuable_ninja_items_visible` fails: add poe.ninja text -> in-game node name to `CLUSTER_NODES` (node names are checked against NeverSink's reference for valuable ones) |
 | New emitted section | write `emit_x(cfg, ...)` returning `section(...) + block(...)...`, insert in `build_text` list at the right priority |
 | New filter condition | add to `filtersim._match` (+ `NUMERIC`/`BOOL` map) first |
 | Campaign build module | copy `rules/leveling/rf.filter`, edit, set `[leveling] build` |
@@ -49,6 +50,10 @@ class Synthetic(unittest.TestCase):    # setUp: cfg copy, fixed chaos tiers, EV 
 - `reference/*.filter` are huge; grep, don't read. Parsed by tag (`%D<n>`, `%H<n>`, `$tier->...`).
 - `wiki_uniques.json` fetch failure -> old cache or no boss skipping (warning on stderr).
 - Windows: read/write files with `encoding="utf-8"`.
+- poe.ninja ClusterJewel `levelRequired` = ilvl bucket start (`CLUSTER_ILVL`), `variant` = "N passives", `name` = enchant text (not the filter's `EnchantmentPassiveNode` name: `CLUSTER_NODES`).
+- poe.ninja SkillGem lines are per level/quality/corrupt variant; only uncorrupted level 1 (q0 / q20) can drop. Alternate gems (transfigured "Cyclone of Tumult", `gemKind` "trarthus" "Heavy Strike of Trarthus"; trade type has a `discriminator`, see `alt_gem`): the name is NOT a BaseType (BaseType = plain gem) and the game rejects the whole filter, so `price_gems` skips them; blue `TransfiguredGem True` block instead. `gemKind` "exceptional" (Empower etc.) are normal BaseTypes.
+- `ninja_categories` scrapes poe.ninja's site JS (sidebar config, `type:`...`url:`); cached `cache/ninja_categories.json` a day. Layout change -> warning only.
+- Any poe.ninja value test: `LiveCache.test_valuable_ninja_items_visible` (>= `SAFETY_DIVINE`, >= `uniques.min_listings`), maps exempt (`MAP_TYPES`, hidden by `rules/bottom.filter` on purpose).
 
 ## PoE2 gotchas
 

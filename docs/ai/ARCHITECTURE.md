@@ -17,13 +17,13 @@ main()
 | Key | Shape | Source |
 |---|---|---|
 | `exchange[T]` | `{core:{primary,rates:{divine}}, items:[{id,name}], lines:[{id,primaryValue,volumePrimaryValue}]}` | poe.ninja exchange, T in `EXCHANGE_TYPES` |
-| `stash[T]` | `{lines:[{name,baseType,chaosValue,listingCount,count,variant,links,levelRequired,itemType}]}` | poe.ninja stash, T in `STASH_STACKABLE_TYPES + UNIQUE_TYPES + ["BaseType"]` |
+| `stash[T]` | `{lines:[{name,baseType,chaosValue,listingCount,count,variant,links,levelRequired,itemType}]}` (gems also `gemLevel,gemQuality,corrupted,metadata.gemKind`) | poe.ninja stash, T in `STASH_TYPES` = `STASH_STACKABLE_TYPES + UNIQUE_TYPES + BASE_TYPES + CHECK_TYPES` |
 | `nomap` | `{unique name: reason}` | wiki: can't drop in normal map (boss/encounter/recipe) |
 | `wiki_bases` | `{base: {unique names}}` | wiki drop-enabled uniques per base |
 | `content` | `{module: {base: {names}}}` | wiki restricted uniques matching `[content.X].sources` |
 | `drop_anywhere` | `{names}` | wiki enabled + not restricted |
 
-Cache files: `cache/<league>/ex_<T>.json`, `st_<T>.json`, `cache/wiki_uniques.json`, `cache/index-state.json`. PoE2: `cache/poe2/...`.
+Cache files: `cache/<league>/ex_<T>.json`, `st_<T>.json`, `cache/wiki_uniques.json`, `cache/index-state.json`, `cache/ninja_categories.json` (`ninja_categories`: poe.ninja sidebar types; `main` -> `check_ninja_categories` warns on any not in `NINJA_TYPES`). PoE2: `cache/poe2/...`.
 
 ## `build_text` steps
 
@@ -34,7 +34,9 @@ Cache files: `cache/<league>/ex_<T>.json`, `st_<T>.json`, `cache/wiki_uniques.js
    - `price_unique_bases` -> `{base: (tier, cheapest, best, best_name, ev_or_None)}`
    - `price_foulborn_bases` -> `{base: (tier, cheapest, best, label)}`
    - `price_linked_jackpots` -> `{links: {bases}}` (5L/6L unique >= jackpot)
-   - `price_crafting_bases` -> `[(tier, ilvl_min, ilvl_max|None, influence|None, base, chaos)]`
+   - `price_crafting_bases` -> `[(tier, ilvl_min, ilvl_max|None, influence|None, base, chaos)]` (feeds `BASE_TYPES`: BaseType + Flask)
+   - `price_clusters` -> `{(tier, base, passives, ilvl_lo, ilvl_hi|None, node|None): chaos}` (ClusterJewel, `CLUSTER_ILVL` buckets, `CLUSTER_NODES` enchant -> node; unknown enchant -> variable, no node cond)
+   - `price_gems` -> `{(tier, q20): {names}}` (SkillGem/ImbuedGem, uncorrupted level 1, q0 / q20 variants; `alt_gem` lines skipped)
    - `reference_card_tiers` / `reference_currency_tiers` -> fallback tiers parsed from `reference/*.filter`
 5. Emit, concatenated in this order (first non-`Continue` match wins in game):
 
@@ -48,16 +50,19 @@ Cache files: `cache/<league>/ex_<T>.json`, `st_<T>.json`, `cache/wiki_uniques.js
 | 6 | `hand_rules("top")` | `rules/top.filter` (+ `# BEGIN/END show_5_links/show_6_links/show_mirrored/show_gold` sections toggled; Awakened + 20% gem Shows) |
 | 6b | `emit_overquality` | `[overquality]` (before recipes: keeps its alert) |
 | 6c | `emit_vendor_recipes` | `[vendor_recipes.*]`: per `any` condition: `recipe_floor` blocks (better crafting bases / `[overrides]`, own style, + recipe conds), then the recipe block (`bases`: `Rarity < Unique`; `conds`: + `rarity`), then for `bases` a `Rarity Unique` block minus bases whose ubases/fbases tier ranks better (tier = floor); `BASE_SHAPE` icon. Before leveling / price Hides so cheap ingredients still show |
+| 6d | `emit_cluster_prices` | `price_clusters` Show blocks (Rarity <= Rare, ilvl bucket, EnchantmentPassiveNum, BaseType, EnchantmentPassiveNode), tier style. Before leveling: beats build-module jewel Hides |
 | 7 | `emit_leveling` | NeverSink campaign rules + build module, all `AreaLevel <= area_level_max` |
 | 8 | `emit_overrides` | `[overrides]` (wrapped by `campaign_unhide`) |
 | 10 | `emit_stackables` | singles + stack-size lift blocks (wrapped by `campaign_unhide`) |
 | 11 | `emit_uniques` | unique/foulborn/linked/maps + `emit_corrupted_uniques`; `variable_classes` Class block right after the top tier; content rescue (faded) block after Foulborn catch-all, before hidden normal tiers |
 | 12 | `emit_crafting_bases` | ilvl/influence blocks |
 | 13 | `emit_rares` | per `RARE_GROUPS` group (`rares.weapons/armour/jewellery` tier lists): NeverSink `$type->rr*` base-tier blocks from `league.filter`, uncommented, + `Class ==` group classes with `rares.show` true; style = `rares.text_color` only; `"all"` = one class block per group |
+| 13b | `emit_clusters` | enabled blocks of `reference/league.filter` `CLUSTER_SECTIONS` ([2805] eco .. [[2900]]) verbatim, border/bg stripped, Hides -> `HIDDEN_STYLE` |
+| 13c | `emit_gems` | `price_gems` Show blocks (q20 first), then blue `TransfiguredGem True` |
 | 14 | `hand_rules("bottom")` | maps, gem Hide, hide gear, blue safety net |
 
 6. Post-process whole text: `hidden_game_colours` (hidden blocks keep game rarity colour), `maximize_item_sizes`.
-7. Return `r = {tiers, prices, divine, ubases, fbases, linked, cbases, ref_cards, ref_currency, card_volumes}`.
+7. Return `r = {tiers, prices, divine, ubases, fbases, linked, cbases, ref_cards, ref_currency, card_volumes, clusters, gems}`.
 
 ## Tiers
 
@@ -82,27 +87,27 @@ Cache files: `cache/<league>/ex_<T>.json`, `st_<T>.json`, `cache/wiki_uniques.js
 
 ## Icon shapes (`SHAPE`)
 
-Star = uniques + tink, Square = unique maps, Circle = currency/cards, Hexagon = fragments/scarabs, Diamond = bases/unknown (`BASE_SHAPE`), Moon = league stackables. Shape in config styles is replaced by code.
+Star = uniques + tink, Square = unique maps, Circle = currency/cards, Hexagon = fragments/scarabs, Kite = splinters (`SPLINTER_SHAPE`, by name via `shape_of`), Diamond = bases/unknown (`BASE_SHAPE`), Moon = league stackables. Shape in config styles is replaced by code.
 
 ## Function index (grep `def name`)
 
-- Fetch: `fetch_json`, `detect_league`, `fetch_all`, `fetch_wiki_uniques`, `non_map_drops`, `wiki_unique_bases`, `content_bases`, `content_policy`, `no_map_drop`
-- Price: `Tiers`, `exchange_divine`, `apply_divine_tiers`, `price_stackables`, `card_trade_volumes`, `jackpot_chaos`, `never_hide_floor`, `small_loot`, `min_shown_rank`, `shown_unique_tiers`, `unique_drop_weights`, `price_unique_bases`, `price_foulborn_bases`, `price_linked_jackpots`, `price_crafting_bases`, `reference_card_tiers`, `reference_currency_tiers`
+- Fetch: `fetch_json`, `detect_league`, `fetch_all`, `ninja_categories`, `check_ninja_categories`, `fetch_wiki_uniques`, `non_map_drops`, `wiki_unique_bases`, `content_bases`, `content_policy`, `no_map_drop`
+- Price: `Tiers`, `exchange_divine`, `apply_divine_tiers`, `price_stackables`, `card_trade_volumes`, `jackpot_chaos`, `never_hide_floor`, `small_loot`, `min_shown_rank`, `shown_unique_tiers`, `unique_drop_weights`, `price_unique_bases`, `price_foulborn_bases`, `price_linked_jackpots`, `price_crafting_bases`, `price_clusters`, `neversink_cluster_nodes`, `alt_gem`, `price_gems`, `reference_card_tiers`, `reference_currency_tiers`
 - Emit helpers: `q(names)` quoted sorted list, `block(action, conds, style, comment)`, `hidden`, `style_for`, `action_for`, `section`
-- Emit: see table above (incl. `emit_rares`); leveling helpers `league_start_unused_whites`, `build_magic_weapons`, `campaign_unhide`, `rarities_of`, `hidden_game_colours`, `maximize_item_sizes`, `campaign_only`, `campaign_icon_sound`
+- Emit: see table above (incl. `emit_rares`, `emit_cluster_prices`, `emit_clusters`, `emit_gems`; `section_heads` = NeverSink section number -> line); leveling helpers `league_start_unused_whites`, `build_magic_weapons`, `campaign_unhide`, `rarities_of`, `hidden_game_colours`, `maximize_item_sizes`, `campaign_only`, `campaign_icon_sound`
 - Main: `load_cfg`, `split_tiers` (config fractions -> `tiers_divine`, `tiers` at `FALLBACK_DIVINE`), `apply_league_start`, `hand_rules`, `build_text`, `main`
-- Constants at top: `FALLBACK_DIVINE`, `TOGGLE_OFF`, `EXCHANGE_TYPES`, `STASH_STACKABLE_TYPES`, `UNIQUE_TYPES`, `CURRENCY_CLASSES`, `GEAR_CLASSES`, `RARE_GROUPS`, `HIDDEN_STYLE`, `SHAPE`, `PINNED_TOP_STACKABLES`; mid-file: `LEVELING_SECTIONS`, `VENDOR_CLASSES`, `NORMAL_HIDE_CLASSES`, `WEAPON_CLASSES`
+- Constants at top: `FALLBACK_DIVINE`, `TOGGLE_OFF`, `EXCHANGE_TYPES`, `STASH_STACKABLE_TYPES`, `UNIQUE_TYPES`, `BASE_TYPES`, `CHECK_TYPES` (fetched, only tested), `SKIPPED_TYPES` (not fetched, reason), `NINJA_TYPES` (all), `STASH_TYPES`, `CURRENCY_CLASSES`, `GEAR_CLASSES`, `RARE_GROUPS`, `HIDDEN_STYLE`, `SHAPE`, `SPLINTER_SHAPE`, `PINNED_TOP_STACKABLES`; mid-file: `CLUSTER_SECTIONS`, `CLUSTER_ILVL`, `CLUSTER_NODES`, `LEVELING_SECTIONS`, `VENDOR_CLASSES`, `NORMAL_HIDE_CLASSES`, `WEAPON_CLASSES`
 
 ## filtersim.py
 
 - `parse(text) -> [Block(action, comment, line_no, conds, style, cont)]`
 - `evaluate(blocks, item) -> (deciding_block|None, style_lines)`; `visible(blocks, item)`.
-- Item dict keys: `rarity, basetype, class, influence[], mods[], socket_group` + `NUMERIC` values (`stack, ilvl, quality, links, corrupted_mods, sockets, drop_level, width, height, area_level` (default 83), `armour, evasion, es`) + `BOOL` values (`corrupted, mirrored, identified, foulborn`). PoE2: `gem_level, waystone_tier, unid_tier` + bools `enchanted, twice_corrupted, vaal_unique, vaal_unique_mod, always_show`. Missing = 0/False.
-- Modelled conditions: Class, BaseType, Rarity, numeric (`NUMERIC`), bool (`BOOL`), SocketGroup, HasExplicitMod (incl. `>=N` count form), HasInfluence. Anything else -> `NotImplementedError`.
+- Item dict keys: `rarity, basetype, class, influence[], mods[], socket_group` + `NUMERIC` values (`stack, ilvl, quality, links, corrupted_mods, sockets, drop_level, width, height, area_level` (default 83), `armour, evasion, es, cluster_passives`) + `BOOL` values (`corrupted, mirrored, identified, foulborn, transfigured`) + `TEXT` names (`class, basetype, cluster_node`). PoE2: `gem_level, waystone_tier, unid_tier` + bools `enchanted, twice_corrupted, vaal_unique, vaal_unique_mod, always_show`. Missing = 0/False.
+- Modelled conditions: Class, BaseType, EnchantmentPassiveNode (`TEXT`), Rarity, numeric (`NUMERIC`), bool (`BOOL`), SocketGroup, HasExplicitMod (incl. `>=N` count form), HasInfluence. Anything else -> `NotImplementedError`.
 
 ## report.py
 
-`write(cfg, data, text, r, league, path)`: meta incl. `tier_strip()` (tier chaos + div fraction + hidden/quiet + `look()` of the tier's `[style.*]` lines (quiet merged), header chips styled like in-game) and `unique_tier_strip()` (`[uniques] show` toggles + small_loot floor -> "Unique tiers" Shown / Hidden vertical lists in `#utiers`); `collect()` replays every priced item through filtersim -> rows; `content_modules()` per `[content.*]` module: its bases dropped as unID uniques through filtersim + content uniques' prices (payload `content`, rendered in `#cm` as one collapsed `<details>` per module, above "Hidden, worth a look"); `vendor_recipes()` per `[vendor_recipes.*]` (off ones still list) drops each base x `any` condition x rarity (normal .. unID unique; `conds` recipes: `recipe_sample()` item from the conditions on a `RECIPE_BASE` example base, per `rarity`) through the built filter (payload `vendor`, rendered in `#vr` one `<details>` per recipe, below content modules); `browser_rules()` serializes blocks for the in-browser "Check an item" tool; injects JSON into `PAGE` (`__DATA__`, `__LEAGUE__`). Edit HTML/JS inside `PAGE`. `icon(name)` inlines `assets/<name>.png` as a data URI into `__CHAOS__` / `__DIVINE__` (JS `CI` / `DI` img snippets used instead of "c" / "div").
+`write(cfg, data, text, r, league, path)`: meta incl. `tier_strip()` (tier chaos + div fraction + hidden/quiet + `look()` of the tier's `[style.*]` lines (quiet merged), header chips styled like in-game) and `unique_tier_strip()` (`[uniques] show` toggles + small_loot floor -> "Unique tiers" Shown / Hidden vertical lists in `#utiers`); `collect()` replays every priced item through filtersim -> rows; `content_modules()` per `[content.*]` module: its bases dropped as unID uniques through filtersim + content uniques' prices (payload `content`, rendered in `#cm` as one collapsed `<details>` per module, above "Hidden, worth a look"); `vendor_recipes()` per `[vendor_recipes.*]` (off ones still list) drops each base x `any` condition x rarity (normal .. unID unique; `conds` recipes: `recipe_sample()` item from the conditions on a `RECIPE_BASE` example base, per `rarity`) through the built filter (payload `vendor`, rendered in `#vr` one `<details>` per recipe, below content modules); `browser_rules()` serializes blocks for the in-browser "Check an item" tool (EnchantmentPassiveNode -> uncertain: pasted enchant text isn't the node name); injects JSON into `PAGE` (`__DATA__`, `__LEAGUE__`). Edit HTML/JS inside `PAGE`. `icon(name)` inlines `assets/<name>.png` as a data URI into `__CHAOS__` / `__DIVINE__` (JS `CI` / `DI` img snippets used instead of "c" / "div").
 
 ## PoE2 (`build_filter_poe2.py`)
 

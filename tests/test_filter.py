@@ -34,7 +34,7 @@ FIXED_TIERS = {"top": 125, "high": 25, "mid": 5, "minor": 2, "low": 1, "brown": 
 def empty_data(divine=400):
     ex = {t: {"core": {"primary": "chaos", "rates": {"divine": 1 / divine}}, "items": [], "lines": []}
           for t in bf.EXCHANGE_TYPES}
-    st = {t: {"lines": []} for t in bf.STASH_STACKABLE_TYPES + bf.UNIQUE_TYPES + ["BaseType"]}
+    st = {t: {"lines": []} for t in bf.STASH_TYPES}
     return {"exchange": ex, "stash": st}
 
 
@@ -81,6 +81,23 @@ class Synthetic(unittest.TestCase):
         self.assertTrue(rules[0]["continue"])
         self.assertEqual(rules[0]["conditions"][0]["values"], ["Unique"])
         self.assertEqual(rules[1]["conditions"][0]["values"], ["Shagreen Boots"])
+
+    def test_transfigured_gem_name_not_emitted(self):
+        # "Cyclone of Tumult" is no BaseType: the game rejects the whole filter
+        self.data["stash"]["SkillGem"] = {"lines": [
+            {"name": "Cyclone of Tumult", "gemLevel": 1, "chaosValue": 5000, "listingCount": 50,
+             "metadata": {"gemKind": "transfigured"},
+             "tradeFilter": {"query": {"type": {"option": "Cyclone", "discriminator": "alt_x"}}}},
+            {"name": "Heavy Strike of Trarthus", "gemLevel": 1, "chaosValue": 5000, "listingCount": 50,
+             "metadata": {"gemKind": "trarthus"},
+             "tradeFilter": {"query": {"type": {"option": "Heavy Strike", "discriminator": "alt_y"}}}},
+            {"name": "Faster Casting Support", "gemLevel": 1, "chaosValue": 5000, "listingCount": 50}]}
+        text, _ = bf.build_text(self.cfg, self.data, "Test")
+        self.assertNotIn('"Cyclone of Tumult"', text)
+        self.assertNotIn('"Heavy Strike of Trarthus"', text)
+        self.assertIn('"Faster Casting Support"', text)
+        cyclone = {"class": "Skill Gems", "basetype": "Cyclone", "transfigured": True}
+        self.assertTrue(fs.visible(fs.parse(text), cyclone))
 
     def test_report_vendor_recipes(self):
         for rec in self.cfg["vendor_recipes"].values():
@@ -1338,6 +1355,20 @@ class Synthetic(unittest.TestCase):
             rec["tier"] = "hide"
             self.build()
 
+    def test_ninja_type_lists_disjoint(self):
+        # each poe.ninja category handled in exactly one way
+        self.assertEqual(len(bf.NINJA_TYPES), len(set(bf.NINJA_TYPES)))
+
+    def test_cluster_jewels_neversink_eco_tiers(self):
+        blocks, _ = self.build()
+        large = lambda ilvl, n, node: {"class": "Jewels", "basetype": "Large Cluster Jewel", "rarity": "Normal",
+                                       "ilvl": ilvl, "cluster_passives": n, "cluster_node": node}
+        self.assertTrue(fs.visible(blocks, large(84, 12, "Minion Damage")))    # [2805] eco tier
+        self.assertTrue(fs.visible(blocks, large(84, 8, "Fire Damage")))       # [2806] optimal ilvl 84
+        self.assertFalse(fs.visible(blocks, large(70, 9, "Attack Damage")))    # [2806] junk Hide
+        b, _ = fs.evaluate(blocks, large(70, 9, "Attack Damage"))
+        self.assertIn("cluster", b.comment)
+
     def test_mirrored_item_rule_config_toggle(self):
         item = {"class": "Rings", "basetype": "Iron Ring", "rarity": "Rare", "mirrored": True}
         self.cfg["vendor_recipes"]["grasping_mail"]["enabled"] = False
@@ -1370,13 +1401,16 @@ def load_cache(d, cfg):
     wiki = ROOT / "cache" / "wiki_uniques.json"
     rows = json.loads(wiki.read_text(encoding="utf-8")) if wiki.exists() else []
     return {"exchange": {t: rd(f"ex_{t}.json") for t in bf.EXCHANGE_TYPES},
-            "stash": {t: rd(f"st_{t}.json") for t in bf.STASH_STACKABLE_TYPES + bf.UNIQUE_TYPES + ["BaseType"]},
+            "stash": {t: rd(f"st_{t}.json") for t in bf.STASH_TYPES},
             "nomap": bf.non_map_drops(rows, cfg), "wiki_bases": bf.wiki_unique_bases(rows),
             "content": bf.content_bases(rows, cfg),
             "drop_anywhere": {r["name"] for r in rows if r["enabled"] and not r["restricted"]}}
 
 
 CACHE = latest_cache()
+
+# Shown in the game's Maps class, which rules/bottom.filter hides on purpose (user choice)
+MAP_TYPES = {"Map", "BlightedMap", "BlightRavagedMap", "ValdoMap", "UniqueMap"}
 
 
 @unittest.skipIf(CACHE is None, "no price cache, run build_filter.py once")
@@ -1389,6 +1423,7 @@ class LiveCache(unittest.TestCase):
         cls.data = load_cache(CACHE, cls.cfg)
         text, cls.r = bf.build_text(cls.cfg, cls.data, CACHE.name)
         cls.blocks = fs.parse(text)
+        cls.cluster_nodes = bf.neversink_cluster_nodes((ROOT / "reference/league.filter").read_text(encoding="utf-8"))
 
     def assert_all_visible(self, items, what):
         hidden = [(label, fs.evaluate(self.blocks, it)[0]) for label, it in items
@@ -1511,6 +1546,67 @@ class LiveCache(unittest.TestCase):
                     "influence": infl.split("/") if infl else []}
             items.append((f"{name} ilvl{lo} {infl or ''} ({chaos:.0f}c)", item))
         self.assert_all_visible(items, "valuable crafting bases")
+
+    def ninja_drop(self, t, line):
+        """poe.ninja line of a BASE_TYPES / CHECK_TYPES feed -> the item as it drops in a map,
+        None when it can't drop like that. Unknown feed -> fails: add it here."""
+        name, base = line["name"], line.get("baseType")
+        if t in bf.BASE_TYPES:
+            infl = line.get("variant")
+            if infl and "/" in infl or line.get("count", 0) < self.cfg["bases"]["min_samples"]:
+                return None  # dual influence: Awakener's Orb crafts only; thin sample: not a price
+            return {"class": NINJA_CLASS.get(line.get("itemType")), "basetype": name, "rarity": "Rare",
+                    "ilvl": line.get("levelRequired", 0), "influence": infl.split("/") if infl else []}
+        if t == "ClusterJewel":
+            self.assertIn(name, bf.CLUSTER_NODES, f"new cluster enchant {name!r}: add it to CLUSTER_NODES")
+            self.assertIn(bf.CLUSTER_NODES[name], self.cluster_nodes,
+                          f"valuable cluster {name!r}: check its in-game EnchantmentPassiveNode name "
+                          f"{bf.CLUSTER_NODES[name]!r} (NeverSink's reference doesn't use it)")
+            # price covers its ilvl bucket (1/50/68/75/84+); below 68 it drops in the campaign
+            ilvl = line.get("levelRequired", 0)
+            return {"class": "Jewels", "basetype": base, "rarity": "Normal", "ilvl": ilvl,
+                    "area_level": ilvl if ilvl < 68 else 83, "cluster_node": bf.CLUSTER_NODES[name],
+                    "cluster_passives": int(line["variant"].split()[0])}
+        if t in ("SkillGem", "ImbuedGem"):
+            # ground gems: uncorrupted level 1, at most 20% quality
+            if line.get("corrupted") or line.get("gemLevel", 1) != 1 or line.get("gemQuality", 0) > 20:
+                return None
+            # alternate gems: BaseType is the plain gem (Cyclone of Tumult -> Cyclone)
+            alt = bf.alt_gem(line)
+            basetype = line["tradeFilter"]["query"]["type"]["option"] if alt else name
+            return {"class": "Support Gems" if name.endswith(" Support") else "Skill Gems", "basetype": basetype,
+                    "quality": line.get("gemQuality", 0), "transfigured": alt}
+        if t in ("ForbiddenJewel", "ShrineBelt"):
+            return unid_unique(base, NINJA_CLASS.get(line.get("itemType")))
+        if t == "ScryingOrb":
+            return {"basetype": base, "class": "Stackable Currency"}
+        if t == "IncursionTemple":
+            return {"basetype": base, "class": "Misc Map Items"}
+        self.fail(f"poe.ninja feed {t}: no drop model in LiveCache.ninja_drop")
+
+    def test_valuable_ninja_items_visible(self):
+        # every confident poe.ninja value >= SAFETY_DIVINE of the feeds not priced into the
+        # filter (NeverSink / hand rules decide), as it drops, must be visible. Maps excepted:
+        # rules/bottom.filter hides the Maps class on purpose.
+        floor = SAFETY_DIVINE * self.r["divine"]
+        items = []
+        for t in [t for t in bf.BASE_TYPES + bf.CHECK_TYPES if t not in MAP_TYPES]:
+            for line in self.data["stash"][t]["lines"]:
+                if line["chaosValue"] < floor or line.get("listingCount", 0) < self.cfg["uniques"]["min_listings"]:
+                    continue
+                item = self.ninja_drop(t, line)
+                if item is not None:
+                    label = f"{t}: {line['name']} [{line.get('variant') or ''}] ilvl{line.get('levelRequired', '')} ({line['chaosValue']:.0f}c)"
+                    items.append((label, item))
+        self.assertGreater(len(items), 20)
+        self.assert_all_visible(items, "valuable poe.ninja items")
+
+    def test_every_ninja_category_handled(self):
+        # poe.ninja's sidebar (scraped by build_filter.check_ninja_categories) vs our type lists
+        cached = ROOT / "cache" / "ninja_categories.json"
+        if not cached.exists():
+            self.skipTest("no cache/ninja_categories.json, run build_filter.py once")
+        self.assertFalse(set(json.loads(cached.read_text(encoding="utf-8"))) - set(bf.NINJA_TYPES))
 
     def test_filter_fully_modelled(self):
         # every condition in the built filter is understood by the simulator

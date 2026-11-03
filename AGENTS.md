@@ -13,7 +13,7 @@ no network in tests. Player-facing behavior: `README.md`. Read only the doc you 
 
 | File | Lines | Role |
 |---|---|---|
-| `build_filter.py` | ~1400 | PoE1: fetch -> price -> emit filter text -> write + report. Entry `main()`; `build_text()` = no-network core |
+| `build_filter.py` | ~1800 | PoE1: fetch (every poe.ninja category, `NINJA_TYPES`) -> price -> emit filter text -> write + report. Entry `main()`; `build_text()` = no-network core |
 | `config.toml` | ~690 | PoE1 settings, heavily commented. Source of truth for tiers/styles/toggles |
 | `unique_tiers.toml` | ~200 | unique name -> drop-rarity tier 0..5 (for `[uniques.ev]` drop weights) |
 | `rules/top.filter` / `rules/bottom.filter` | 66 / 42 | Hand-written blocks before / after price rules |
@@ -23,7 +23,7 @@ no network in tests. Player-facing behavior: `README.md`. Read only the doc you 
 | `assets/chaos.png`, `assets/divine.png` | - | Currency icons, inlined into the report as data URIs by `report.icon()` |
 | `report_poe2.py` | ~130 | Writes `out/report_poe2.html`: tier values in ex, rates, priced items |
 | `build_filter_poe2.py` + `config_poe2.toml` | ~340 / 40 | PoE2, separate: poe.ninja exchange prices tiered in divines, NeverSink PoE2 export appended below |
-| `tests/test_filter.py` | ~1200 | `Synthetic` (fake data) + `LiveCache` (replays `cache/`) |
+| `tests/test_filter.py` | ~1600 | `Synthetic` (fake data) + `LiveCache` (replays `cache/`, every poe.ninja feed) |
 | `tests/test_filter_poe2.py` | ~210 | PoE2 synthetic (fake reference) + `Poe2LiveCache` (replays `cache/poe2/`) |
 | `reference/*.filter` | big | NeverSink/FilterBlade exports. Parsed at build (`league.filter`, `regular-neversink.filter`; PoE2: `league-filterblade-poe2.filter` appended whole). Don't read whole; grep |
 | `cache/`, `out/` | gitignored | poe.ninja/wiki JSON cache; generated filter + report. Never edit `out/` |

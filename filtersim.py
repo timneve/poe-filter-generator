@@ -15,13 +15,16 @@ NUMERIC = {"StackSize": "stack", "ItemLevel": "ilvl", "Quality": "quality",
            "LinkedSockets": "links", "CorruptedMods": "corrupted_mods", "Sockets": "sockets",
            "DropLevel": "drop_level", "Width": "width", "Height": "height", "AreaLevel": "area_level",
            "BaseArmour": "armour", "BaseEvasion": "evasion", "BaseEnergyShield": "es",
+           "EnchantmentPassiveNum": "cluster_passives",
            # PoE2
            "GemLevel": "gem_level", "WaystoneTier": "waystone_tier",
            "UnidentifiedItemTier": "unid_tier"}
+# Name conditions: "==" exact, else substring. EnchantmentPassiveNode = cluster jewel enchant
+TEXT = {"Class": "class", "BaseType": "basetype", "EnchantmentPassiveNode": "cluster_node"}
 # Missing item values. area_level: items are dropped in a map unless a test says otherwise.
 DEFAULTS = {"area_level": 83}
 BOOL = {"Corrupted": "corrupted", "Mirrored": "mirrored", "Identified": "identified",
-        "Foulborn": "foulborn",
+        "Foulborn": "foulborn", "TransfiguredGem": "transfigured",
         # PoE2
         "AnyEnchantment": "enchanted", "TwiceCorrupted": "twice_corrupted",
         "IsVaalUnique": "vaal_unique", "HasVaalUniqueMod": "vaal_unique_mod",
@@ -71,8 +74,8 @@ def _cmp(a, op, b):
 
 
 def _match(item, key, op, vals, no):
-    if key in ("Class", "BaseType"):
-        have = item.get("class" if key == "Class" else "basetype") or ""
+    if key in TEXT:
+        have = item.get(TEXT[key]) or ""
         hit = any(have == v for v in vals) if op == "==" else any(v in have for v in vals)
         return not hit if op in ("!", "!=") else hit
     if key == "Rarity":

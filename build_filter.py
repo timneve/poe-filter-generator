@@ -37,14 +37,26 @@ UA = {"User-Agent": "price-filter-builder/1.0 (personal loot filter script)"}
 EXCHANGE_TYPES = [
     "Currency", "Fragment", "Scarab", "Essence", "Fossil", "Resonator", "Oil",
     "DeliriumOrb", "Tattoo", "Omen", "DivinationCard", "Artifact", "Runegraft",
-    "AllflameEmber", "Astrolabe",
+    "AllflameEmber", "Astrolabe", "Ducat", "EnshroudingCrystal", "DjinnCoin",
 ]
 # Stash (listing-priced) types that are plain BaseType items, not uniques
-STASH_STACKABLE_TYPES = ["Invitation", "Vial", "Wombgift"]
+STASH_STACKABLE_TYPES = ["Invitation", "Vial", "Wombgift", "Corpse", "Incubator", "Memory"]
 UNIQUE_TYPES = [
     "UniqueWeapon", "UniqueArmour", "UniqueAccessory", "UniqueFlask",
-    "UniqueJewel", "UniqueMap", "UniqueTincture",
+    "UniqueJewel", "UniqueMap", "UniqueTincture", "UniqueRelic",
 ]
+# Crafting-base feeds (base + ilvl, BaseType also influence): price_crafting_bases
+BASE_TYPES = ["BaseType", "Flask"]
+# Fetched but not priced here: tests/test_filter.py replays their valuable items through the
+# filter (clusters = NeverSink eco tiers, gems / maps = hand rules, rest = blue safety net).
+CHECK_TYPES = ["ClusterJewel", "SkillGem", "ImbuedGem", "ForbiddenJewel", "ShrineBelt", "ScryingOrb",
+               "IncursionTemple", "Map", "BlightedMap", "BlightRavagedMap", "ValdoMap"]
+# Never fetched: not a ground drop
+SKIPPED_TYPES = {"Beast": "captured with Bestiary nets, never a ground item"}
+# Every poe.ninja category must be in exactly one list above (ninja_categories warns at build)
+NINJA_TYPES = (EXCHANGE_TYPES + STASH_STACKABLE_TYPES + UNIQUE_TYPES + BASE_TYPES + CHECK_TYPES
+               + list(SKIPPED_TYPES))
+STASH_TYPES = STASH_STACKABLE_TYPES + UNIQUE_TYPES + BASE_TYPES + CHECK_TYPES
 # Unpriced stackable fallbacks: (classes, minimap shape)
 CURRENCY_CLASSES = [
     (["Stackable Currency", "Delve Stackable Socketable Currency"], "Circle"),
@@ -65,9 +77,11 @@ SHAPE = {
     "Fragment": "Hexagon", "Scarab": "Hexagon", "Invitation": "Hexagon",
     "DeliriumOrb": "Circle", "Tattoo": "Moon", "Omen": "Moon",
     "Runegraft": "Moon", "AllflameEmber": "Moon", "Astrolabe": "Moon", "Vial": "Moon",
-    "Wombgift": "Moon",
+    "Wombgift": "Moon", "Ducat": "Moon", "EnshroudingCrystal": "Circle", "DjinnCoin": "Moon",
+    "Corpse": "Moon", "Incubator": "Hexagon", "Memory": "Hexagon",
 }
 UNIQUE_SHAPE, BASE_SHAPE, MAP_SHAPE = "Star", "Diamond", "Square"
+SPLINTER_SHAPE = "Kite"  # any name containing "Splinter" (breach, timeless, simulacrum, ritual...)
 PINNED_TOP_STACKABLES = {"Divine Orb", "Hinekora's Lock", "Mirror of Kalandra"}
 # Normal/magic/rare stuff that gets config gear_text_color instead of rarity colour
 GEAR_CLASSES = [
@@ -124,7 +138,7 @@ def fetch_all(league, cfg, refresh):
     for t in EXCHANGE_TYPES:
         out["exchange"][t] = fetch_json(f"{NINJA}/economy/exchange/current/overview?{q(t)}",
                                         cache / f"ex_{t}.json", age, refresh)
-    for t in STASH_STACKABLE_TYPES + UNIQUE_TYPES + ["BaseType"]:
+    for t in STASH_TYPES:
         out["stash"][t] = fetch_json(f"{NINJA}/economy/stash/current/item/overview?{q(t)}",
                                      cache / f"st_{t}.json", age, refresh)
     wiki = fetch_wiki_uniques(cfg, refresh)
@@ -133,6 +147,45 @@ def fetch_all(league, cfg, refresh):
     out["content"] = content_bases(wiki, cfg)
     out["drop_anywhere"] = {r["name"] for r in wiki if r["enabled"] and not r["restricted"]}
     return out
+
+
+def ninja_categories(refresh):
+    """poe.ninja's PoE1 economy sidebar types, scraped from its site scripts (cached a day).
+    None when the page layout changed: the caller only warns."""
+    cache = ROOT / "cache" / "ninja_categories.json"
+    if not refresh and cache.exists() and time.time() - cache.stat().st_mtime < 24 * 3600:
+        return json.loads(cache.read_text(encoding="utf-8"))
+    get = lambda url: urllib.request.urlopen(urllib.request.Request(url, headers=UA), timeout=30).read().decode("utf-8")
+    todo = re.findall(r"//assets\.poe\.ninja/_astro/([\w.-]+\.mjs)", get("https://poe.ninja/poe1/economy"))
+    seen, types = set(), None
+    while todo and len(seen) < 1000 and types is None:
+        name = todo.pop()
+        if name in seen:
+            continue
+        seen.add(name)
+        js = get(f"https://assets.poe.ninja/_astro/{name}")
+        if "availableViews:[" in js and "type:`DivinationCard`" in js:
+            types = sorted(set(re.findall(r"type:`(\w+)`,url:`", js)))
+        todo += re.findall(r"\./(a\.[\w-]+\.mjs)", js)
+    if types:
+        cache.write_text(json.dumps(types), encoding="utf-8")
+    return types
+
+
+def check_ninja_categories(refresh):
+    try:
+        types = ninja_categories(refresh)
+    except Exception as e:  # noqa: BLE001 - site scrape, never fatal
+        print(f"WARNING: could not read poe.ninja category list: {e}", file=sys.stderr)
+        return
+    if types is None:
+        print("WARNING: poe.ninja category list not found in its site scripts", file=sys.stderr)
+        return
+    new = sorted(set(types) - set(NINJA_TYPES))
+    if new:
+        print(f"WARNING: poe.ninja categories not handled by this filter: {', '.join(new)}. "
+              "Add each to EXCHANGE/STASH_STACKABLE/UNIQUE/BASE/CHECK/SKIPPED_TYPES in build_filter.py",
+              file=sys.stderr)
 
 
 def fetch_wiki_uniques(cfg, refresh):
@@ -685,7 +738,7 @@ def price_crafting_bases(data, cfg, tiers, divine_chaos):
     min_rank = tiers.rank(b["min_tier"])
     jackpot = jackpot_chaos(cfg, divine_chaos)
     by_base = {}  # (name, infl) -> [(ilvl, chaos, confident)]
-    for line in data["stash"]["BaseType"].get("lines", []):
+    for line in (l for t in BASE_TYPES for l in data["stash"].get(t, {}).get("lines", [])):
         infl = line.get("variant")
         if infl and "/" in infl and not b["include_dual_influence"]:
             continue
@@ -768,6 +821,10 @@ def style_for(cfg, tier, shape=BASE_SHAPE):
     return [" ".join(l.split()[:3] + [shape]) if l.startswith("MinimapIcon") else l for l in lines]
 
 
+def shape_of(name, item_type):
+    return SPLINTER_SHAPE if "Splinter" in name else SHAPE.get(item_type, BASE_SHAPE)
+
+
 def action_for(cfg, tier):
     return "Hide" if hidden(cfg, tier) else "Show"
 
@@ -806,7 +863,7 @@ def emit_overrides(cfg, prices):
     for name, tier in cfg.get("overrides", {}).items():
         if name in PINNED_TOP_STACKABLES:
             continue
-        shape = SHAPE.get(prices.get(name, (0, None))[1], BASE_SHAPE)
+        shape = shape_of(name, prices.get(name, (0, None))[1])
         groups.setdefault((tier, shape), []).append(name)
     if not groups:
         return ""
@@ -858,7 +915,7 @@ def emit_stackables(cfg, tiers, prices, ref_currency, ref_cards, card_volumes):
     for name, (v, t) in prices.items():
         if name in PINNED_TOP_STACKABLES or name in overridden or v <= 0:
             continue
-        own, shape = tiers.of(v), SHAPE.get(t, BASE_SHAPE)
+        own, shape = tiers.of(v), shape_of(name, t)
         sl = small_loot(cfg)
         if sl and t in sl[1] and v < sl[0]:
             singles.setdefault(("hide", shape), []).append(name)  # doesn't stack: wrist saver
@@ -1140,6 +1197,190 @@ def emit_rares(cfg, ref_text):
     return section("Endgame rares: NeverSink base tiers (rares.*)") + out if out else ""
 
 
+def section_heads(lines):
+    """NeverSink section number -> line index (last match: the first ones are the TOC)."""
+    heads = {}
+    for i, l in enumerate(lines):
+        m = re.match(r"#\s+\[\[?(\d{4})\]\]?", l)
+        if m:
+            heads[m.group(1)] = i
+    return heads
+
+
+# NeverSink cluster jewel sections: [2805] eco-based (enchant x passives x ilvl), [2806] random
+CLUSTER_SECTIONS = ("2805", "2900")
+# poe.ninja ClusterJewel levelRequired = ilvl bucket start -> bucket end (None = no cap)
+CLUSTER_ILVL = {1: 49, 50: 67, 68: 74, 75: 83, 84: None}
+# poe.ninja cluster enchant text -> in-game EnchantmentPassiveNode name. Names NeverSink's
+# reference doesn't use are unchecked; tests fail when a valuable enchant maps to one.
+CLUSTER_NODES = {
+    # Large
+    "10% increased Attack Damage": "Attack Damage",
+    "10% increased Elemental Damage": "Elemental Damage",
+    "10% increased Spell Damage": "Spell Damage",
+    "12% increased Attack Damage while Dual Wielding": "Attack Damage while Dual Wielding",
+    "12% increased Attack Damage while holding a Shield": "Attack Damage while holding a Shield",
+    "12% increased Chaos Damage": "Chaos Damage",
+    "12% increased Cold Damage": "Cold Damage",
+    "12% increased Damage with Bows, 12% increased Damage Over Time with Bow Skills": "Bow Damage",
+    "12% increased Damage with Two Handed Weapons": "Damage with Two Handed Weapons",
+    "12% increased Fire Damage": "Fire Damage",
+    "12% increased Lightning Damage": "Lightning Damage",
+    "12% increased Physical Damage": "Physical Damage",
+    "Axe Attacks deal 12% increased Damage with Hits and Ailments, "
+    "Sword Attacks deal 12% increased Damage with Hits and Ailments": "Axe and Sword Damage",
+    "Claw Attacks deal 12% increased Damage with Hits and Ailments, "
+    "Dagger Attacks deal 12% increased Damage with Hits and Ailments": "Dagger and Claw Damage",
+    "Minions deal 10% increased Damage": "Minion Damage",
+    "Staff Attacks deal 12% increased Damage with Hits and Ailments, "
+    "Mace or Sceptre Attacks deal 12% increased Damage with Hits and Ailments": "Mace and Staff Damage",
+    "Wand Attacks deal 12% increased Damage with Hits and Ailments": "Wand Damage",
+    # Medium
+    "10% increased Area Damage": "Area Damage",
+    "10% increased Damage over Time": "Damage over Time",
+    "10% increased Damage while affected by a Herald": "Damage while you have a Herald",
+    "10% increased Effect of Non-Damaging Ailments": "Effect of Non-Damaging Ailments",
+    "10% increased Life Recovery from Flasks, 10% increased Mana Recovery from Flasks": "Life and Mana recovery from Flasks",
+    "10% increased Projectile Damage": "Projectile Damage",
+    "12% increased Brand Damage": "Brand Damage",
+    "12% increased Burning Damage": "Fire Damage over Time",
+    "12% increased Chaos Damage over Time": "Chaos Damage over Time",
+    "12% increased Cold Damage over Time": "Cold Damage over Time",
+    "12% increased Physical Damage over Time": "Physical Damage over Time",
+    "12% increased Totem Damage": "Totem Damage",
+    "12% increased Trap Damage, 12% increased Mine Damage": "Trap and Mine Damage",
+    "15% increased Critical Strike Chance": "Critical Chance",
+    "6% increased Flask Effect Duration": "Flask Duration",
+    "Channelling Skills deal 12% increased Damage": "Channelling Skill Damage",
+    "Exerted Attacks deal 20% increased Damage": "Exerted Attack Damage",
+    "Minions deal 10% increased Damage while you are affected by a Herald": "Minion Damage while you have a Herald",
+    "Minions have 12% increased maximum Life": "Minion Life",
+    # Small
+    "+12% to Chaos Resistance": "Chaos Resistance",
+    "+15% to Cold Resistance": "Cold Resistance",
+    "+15% to Fire Resistance": "Fire Resistance",
+    "+15% to Lightning Resistance": "Lightning Resistance",
+    "+2% Chance to Block Attack Damage": "Chance to Block Attack Damage",
+    "+4% chance to Suppress Spell Damage": "Chance to Suppress Spell Damage",
+    "15% increased Armour": "Armour",
+    "15% increased Evasion Rating": "Evasion",
+    "2% Chance to Block Spell Damage": "Chance to Block Spell Damage",
+    "2% increased Effect of your Curses": "Curse Effect",
+    "4% increased maximum Life": "Life",
+    "6% increased Mana Reservation Efficiency of Skills": "Reservation Efficiency",
+    "6% increased maximum Energy Shield": "Energy Shield",
+    "6% increased maximum Mana": "Mana",
+}
+
+
+def neversink_cluster_nodes(ref_text):
+    """EnchantmentPassiveNode names the reference filter uses (= confirmed in-game names)."""
+    return set(re.findall(r'"([^"]+)"', "\n".join(re.findall(r"EnchantmentPassiveNode == (.*)", ref_text))))
+
+
+def price_clusters(data, cfg, tiers):
+    """Confident poe.ninja cluster prices in a shown tier ->
+    {(tier, base, passives, ilvl_lo, ilvl_hi, node or None): chaos}. Each price covers only its
+    own ilvl bucket. Enchant missing from CLUSTER_NODES: node None (no node condition, blue)."""
+    out = {}
+    for line in data["stash"].get("ClusterJewel", {}).get("lines", []):
+        if line.get("listingCount", 0) < cfg["uniques"]["min_listings"]:
+            continue
+        tier = tiers.of(line["chaosValue"])
+        node = CLUSTER_NODES.get(line["name"])
+        if tier == "hide" or hidden(cfg, tier):
+            continue
+        if node is None:
+            tier = "variable"
+        lo = line.get("levelRequired", 0)
+        key = (tier, line["baseType"], int(line["variant"].split()[0]), lo, CLUSTER_ILVL.get(lo), node)
+        out[key] = max(out.get(key, 0), line["chaosValue"])
+    return out
+
+
+def emit_cluster_prices(cfg, tiers, prices):
+    """Cluster jewels worth a shown tier (price_clusters), tier style. Before leveling: a
+    valuable campaign cluster beats the build module's jewel Hide."""
+    groups = {}
+    for (tier, base, n, lo, hi, node), _ in prices.items():
+        groups.setdefault((tier, base, n, lo, hi), set()).add(node)
+    out = ""
+    for (tier, base, n, lo, hi), nodes in sorted(groups.items(), key=lambda kv: (tiers.rank(kv[0][0]), -kv[0][3])):
+        conds = ["Rarity <= Rare", f"ItemLevel >= {lo}"] + ([f"ItemLevel <= {hi}"] if hi else [])
+        conds += [f"EnchantmentPassiveNum {n}", f"BaseType == {q([base])}"]
+        if None not in nodes:
+            conds.append(f"EnchantmentPassiveNode == {q(nodes)}")
+        out += block("Show", conds, style_for(cfg, tier), f"cluster {tier} (poe.ninja)")
+    return section("Cluster jewels: poe.ninja prices (enchant x passives x ilvl bucket)") + out if out else ""
+
+
+def emit_clusters(ref_text):
+    """Remaining normal/magic/rare cluster jewels: the enabled blocks of reference/league.filter's
+    cluster sections as the FilterBlade export has them. Borders / backgrounds stripped; Hide
+    blocks get HIDDEN_STYLE."""
+    out, lines = "", ref_text.splitlines()
+    heads = section_heads(lines)
+    first, after = CLUSTER_SECTIONS
+    if first not in heads or after not in heads:
+        raise ValueError(f"cluster section [{first}] not found in reference/league.filter")
+    i, end = heads[first], heads[after]
+    while i < end:
+        m = re.match(r"(Show|Hide)\b\s*#?\s*(.*)$", lines[i])
+        i += 1
+        if not m:
+            continue
+        body = []
+        while i < end and lines[i].strip() and not lines[i].startswith("#"):
+            body.append(lines[i].strip())
+            i += 1
+        style = [l for l in body if re.match(r"(Set|Play|Minimap|Disable|Enable|Custom)", l)
+                 and not l.startswith(("SetBorderColor", "SetBackgroundColor"))]
+        conds = [l for l in body if not re.match(r"(Set|Play|Minimap|Disable|Enable|Custom)", l)]
+        out += block(m.group(1), conds, HIDDEN_STYLE if m.group(1) == "Hide" else style,
+                     f"cluster {m.group(2)} (NeverSink)")
+    return section("Cluster jewels: NeverSink economy tiers (reference/league.filter [2805]-[2806])") + out
+
+
+def alt_gem(line):
+    """Alternate gem (transfigured "Cyclone of Tumult", "Heavy Strike of Trarthus"): poe.ninja's
+    name is no BaseType, the trade type has a discriminator (alt_x/y/z) on the plain gem."""
+    kind = ((line.get("tradeFilter") or {}).get("query") or {}).get("type")
+    return isinstance(kind, dict) and bool(kind.get("discriminator"))
+
+
+def price_gems(data, cfg, tiers):
+    """Ground-drop gem prices: uncorrupted level 1 variant, "1" (any quality) and "1/20"
+    (Quality >= 20), confident only -> {(tier, q20): {names}} for shown tiers. Alternate gems
+    (alt_gem) skipped: their name in BaseType makes the game reject the filter, see emit_gems."""
+    out = {}
+    for t in ("SkillGem", "ImbuedGem"):
+        for line in data["stash"].get(t, {}).get("lines", []):
+            if line.get("corrupted") or line.get("gemLevel", 1) != 1 \
+                    or alt_gem(line) \
+                    or line.get("listingCount", 0) < cfg["uniques"]["min_listings"]:
+                continue
+            q20 = line.get("gemQuality", 0) >= 20
+            if line.get("gemQuality", 0) not in (0, 20):
+                continue
+            tier = tiers.of(line["chaosValue"])
+            if tier != "hide" and not hidden(cfg, tier):
+                out.setdefault((tier, q20), set()).add(line["name"])
+    return out
+
+
+def emit_gems(cfg, tiers, prices):
+    """Gems worth a shown tier as they drop (price_gems), before rules/bottom.filter hides the
+    rest. Quality >= 20 blocks first. Then NeverSink's "TransfiguredGem True" show, blue:
+    poe.ninja prices transfigured gems by name, the filter BaseType may be the plain gem."""
+    out = ""
+    for (tier, q20), names in sorted(prices.items(), key=lambda kv: (not kv[0][1], tiers.rank(kv[0][0]))):
+        conds = ['Class == "Skill Gems" "Support Gems"'] + (["Quality >= 20"] if q20 else [])
+        out += block("Show", conds + [f"BaseType == {q(names)}"], style_for(cfg, tier), f"gem {tier} (poe.ninja)")
+    out += block("Show", ['Class == "Skill Gems" "Support Gems"', "TransfiguredGem True"],
+                 style_for(cfg, "variable"), "transfigured gem (value per transfiguration)")
+    return section("Gems: poe.ninja level 1 prices") + out
+
+
 def league_start_unused_whites(cfg):
     """league_start + [leveling] build: white crafting bases the build never uses (the build
     module's Hide blocks without an AreaLevel upper limit, made Rarity Normal) stay hidden in maps.
@@ -1292,11 +1533,7 @@ def emit_leveling(cfg, ref_text):
         return ""
     s, area = lv.get("strictness", 2), lv.get("area_level_max", 67)
     lines = ref_text.splitlines()
-    heads = {}  # section number -> line index (last match: the first ones are the TOC)
-    for i, l in enumerate(lines):
-        m = re.match(r"#\s+\[\[?(\d{4})\]\]?", l)
-        if m:
-            heads[m.group(1)] = i
+    heads = section_heads(lines)
 
     build = lv.get("build")
     out = section(f"Leveling (build {build or 'none'}, NeverSink strictness {s}, AreaLevel <= {area} only)")
@@ -1470,6 +1707,8 @@ def build_text(cfg, data, league):
     card_ref_text = (ROOT / "reference/regular-neversink.filter").read_text(encoding="utf-8")
     ref_cards = reference_card_tiers(cfg, card_ref_text)
     ref_currency = reference_currency_tiers(cfg, ref_text)
+    clusters = price_clusters(data, cfg, tiers)
+    gems = price_gems(data, cfg, tiers)
 
     header = (f"# Price filter - generated {datetime.now():%Y-%m-%d %H:%M}"
               + ("   LEAGUE START (almost nothing hidden)" if cfg.get("league_start") else "") + "\n"
@@ -1486,6 +1725,7 @@ def build_text(cfg, data, league):
         hand_rules(cfg, "top"),
         emit_overquality(cfg),  # before vendor recipes: a 30% RGB item keeps its overquality alert
         emit_vendor_recipes(cfg, tiers, ubases, fbases, cbases),
+        emit_cluster_prices(cfg, tiers, clusters),
         emit_leveling(cfg, ref_text),
         campaign_unhide(cfg, emit_overrides(cfg, prices)),
         campaign_unhide(cfg, emit_stackables(cfg, tiers, prices, ref_currency, ref_cards, card_volumes)),
@@ -1494,13 +1734,15 @@ def build_text(cfg, data, league):
                      valuable_content_bases(data, cfg, tiers)),
         emit_crafting_bases(cfg, tiers, cbases),
         emit_rares(cfg, ref_text),
+        emit_clusters(ref_text),
+        emit_gems(cfg, tiers, gems),
         hand_rules(cfg, "bottom"),
     ])
     text = hidden_game_colours(text)
     text = maximize_item_sizes(text)
     return text, {"tiers": tiers, "prices": prices, "divine": divine, "ubases": ubases,
                   "fbases": fbases, "linked": linked, "cbases": cbases, "ref_cards": ref_cards,
-            "ref_currency": ref_currency, "card_volumes": card_volumes}
+            "ref_currency": ref_currency, "card_volumes": card_volumes, "clusters": clusters, "gems": gems}
 
 
 def main():
@@ -1512,6 +1754,7 @@ def main():
     cfg = load_cfg()
     league = detect_league(cfg, args)
     print(f"League: {league}")
+    check_ninja_categories(args.refresh)
     data = fetch_all(league, cfg, args.refresh)
     text, r = build_text(cfg, data, league)
     tiers, prices, divine, ubases, cbases = r["tiers"], r["prices"], r["divine"], r["ubases"], r["cbases"]

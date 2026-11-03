@@ -421,6 +421,7 @@ variable_jackpot_only = true
 # Unique item classes always blue "variable", whatever their price tier (normal + Foulborn);
 # only a base priced top (every unique on it >= 1 div) keeps its tink. [] = off.
 variable_classes = ["Jewels", "Abyss Jewels"]
+# Listings a poe.ninja price needs (uniques, listing-priced stackables, cluster jewels, gems)
 min_listings = 10
 include_replicas = false
 # Base with no priced uniques (new / unknown): tier name, "hide" or "unknown"
@@ -717,7 +718,7 @@ bases = []           # exact BaseType, e.g. "Prismatic Jewel"
 # Minimap icons: size 1 (medium) everywhere, colour = text colour. Only tink gets size 0 (big).
 # Icon SHAPE is set by build_filter.py per category (shape in styles below is replaced):
 #   Star = uniques + tink, Square = unique maps, Circle = currency-like stackables/cards,
-#   Hexagon = fragments/scarabs, Diamond = bases / recipes / unknown,
+#   Hexagon = fragments/scarabs, Kite = splinters (name contains "Splinter"), Diamond = bases / recipes / unknown,
 #   Moon = league-specific stackables without a more fitting category.
 # Rule: no SetBorderColor / SetBackgroundColor except top (tink). Borders are
 # cleared for everything by a default block, so only add them on purpose.

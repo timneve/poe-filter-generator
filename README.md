@@ -98,12 +98,16 @@ other bases in the Shields class are larger. Vendor Shows take priority over cam
 `reference/pohx-campaign.filter` is Pohx's FilterBlade filter, reference only.
 - `rules/top.filter` - hand rules before price rules (quest items, gold, 6L)
 - `rules/bottom.filter` - hand rules after (maps, gems, hide gear, blue safety net)
+- `reference/league.filter` cluster sections [2805]-[2806] are copied in as enabled there
 - `reference/league.filter` - old FilterBlade/NeverSink filter, reference only
 - `cache/` - downloaded prices, `out/` - built filter (also copied to My Games/Path of Exile)
 
 ## Price sources
-- Stackables (currency, cards, scarabs, essences, fossils, oils, omens, tattoos, fragments, ...):
-  poe.ninja Currency Exchange data. Stack sizes count (10x 0.5c = 5c tier).
+- Every poe.ninja PoE1 category is handled (`NINJA_TYPES` in `build_filter.py`). Each build
+  reads poe.ninja's category list and warns when a new one appears; tests fail on it too.
+- Stackables (currency, cards, scarabs, essences, fossils, oils, omens, tattoos, fragments,
+  ducats, enshrouding crystals, corpses, incubators, memories, ...): poe.ninja Currency
+  Exchange / listing data. Stack sizes count (10x 0.5c = 5c tier).
 - Currency shards use one twentieth of the finished currency's price rather than sparse shard
   quotes; configured splinters use the finished item price divided by the completion count.
 - Divination-card quotes are not used because the available poe.ninja exchange data does not
@@ -155,6 +159,16 @@ other bases in the Shields class are larger. Vendor Shows take priority over cam
   `[bases]` requires both `min_listings` and `min_samples`; raise these thresholds to ignore
   prices with too little supporting market data. A confident listing prices only its own ilvl
   range; a cheaper higher-ilvl listing does not floor it.
+- Flask bases (poe.ninja Flasks feed) are priced like crafting bases.
+- Cluster jewels (normal/magic/rare): poe.ninja price per base x passive count x enchant x
+  ilvl bucket (1-49, 50-67, 68-74, 75-83, 84+) shows it in its price tier, also in the campaign
+  (beats the build module's jewel Hide). The rest uses NeverSink's economy cluster tiers as
+  enabled in `reference/league.filter` ([2805]-[2806]); its junk clusters stay hidden.
+- Gems: level 1 uncorrupted poe.ninja price (quality 20 separately) shows valuable gems
+  (Greater Multistrike, Eclipse, transfigured ...) in their tier. Transfigured gems always
+  show (blue, NeverSink does the same); the rest stays hidden by `rules/bottom.filter`.
+- Not used: Beasts (captured, never a ground drop). Maps (incl. Blighted / Valdo foil maps)
+  stay hidden by `rules/bottom.filter` on purpose.
 - Endgame rares (`rares.*`, top of `config.toml`): poe.ninja has no rare prices, so ilvl 68+
   rares use NeverSink's FilterBlade base tiers (`t1` best .. `t5`). Separate tier lists for
   `rares.weapons`, `rares.armour` and `rares.jewellery` (amulets, rings, belts); `"all"` = every
@@ -168,7 +182,9 @@ Blue item in game = value unknown or variable. Add it to `[overrides]` or a rule
 `python -m unittest discover tests` - checks nothing valuable gets hidden. Synthetic tests
 check the pricing rules; live tests build the filter from `cache/` and replay every priced
 unique (unidentified, >= 1 div), stackable, card and crafting base through
-`filtersim.py` (a small filter evaluator). Run after changing config or rules.
+`filtersim.py` (a small filter evaluator), plus every other poe.ninja feed (clusters, gems,
+flasks, forbidden jewels, relics, scrying orbs, temples; maps excepted): anything >= 1 div with
+enough listings must be visible as it drops. Run after changing config or rules.
 
 ## Report
 Each build writes `out/report.html`. Open it in a browser. The header shows 1 div in chaos and each

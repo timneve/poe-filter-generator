@@ -25,7 +25,9 @@ NINJA_CLASS = {
     "Life Flask": "Life Flasks", "Jewel": "Jewels", "Cluster Jewel": "Jewels", "Tincture": "Tinctures",
 }
 STACK_CLASS = {"DivinationCard": "Divination Cards", "Fragment": "Map Fragments",
-               "Scarab": "Map Fragments", "Invitation": "Misc Map Items", "Wombgift": "Wombgifts"}
+               "Scarab": "Map Fragments", "Invitation": "Misc Map Items", "Wombgift": "Wombgifts",
+               "Corpse": "Corpses", "Incubator": "Incubators", "Memory": "Memories"}
+BASE_FEEDS = ("BaseType", "Flask")  # = build_filter.BASE_TYPES (no import: build_filter imports us)
 ASSETS = Path(__file__).parent / "assets"
 # in-game default text colours when no rule sets one
 DEFAULT_TEXT = {"Unique": "175 96 37", "Rare": "255 255 119", "Magic": "136 136 255"}
@@ -34,6 +36,8 @@ DEFAULT_TEXT = {"Unique": "175 96 37", "Rare": "255 255 119", "Magic": "136 136 
 def unique_class(line, t):
     if t == "UniqueMap":
         return "Maps"
+    if t == "UniqueRelic":
+        return "Relics"
     return NINJA_CLASS.get(line.get("itemType"), "Jewels" if t == "UniqueJewel" else None)
 
 
@@ -118,7 +122,7 @@ def collect(cfg, data, blocks, r):
     # so hidden ones (dual influence, outlier-floored) show up too
     b = cfg["bases"]
     top = max(cfg["tiers"].values())
-    for line in data["stash"]["BaseType"].get("lines", []):
+    for line in (l for t in BASE_FEEDS for l in data["stash"].get(t, {}).get("lines", [])):
         if line["chaosValue"] < top or line.get("listingCount", 0) < b["min_listings"] \
                 or line.get("count", 0) < b["min_samples"]:
             continue
@@ -425,7 +429,7 @@ const NUM_FIELDS={
  StackSize:"stack",ItemLevel:"ilvl",Quality:"quality",LinkedSockets:"links",
  CorruptedMods:"corrupted_mods",Sockets:"sockets",DropLevel:"drop_level",
  Width:"width",Height:"height",AreaLevel:"area_level",BaseArmour:"armour",
- BaseEvasion:"evasion",BaseEnergyShield:"es"
+ BaseEvasion:"evasion",BaseEnergyShield:"es",EnchantmentPassiveNum:"cluster_passives"
 };
 const BOOL_FIELDS={Corrupted:"corrupted",Mirrored:"mirrored",Identified:"identified",Foulborn:"foulborn"};
 function parseCopiedItem(raw,areaLevel,corruptedMods,extra){
@@ -447,6 +451,7 @@ function parseCopiedItem(raw,areaLevel,corruptedMods,extra){
  };
  const readNumber=(pattern,field)=>{const m=raw.match(pattern);if(m)item[field]=Number(m[1])};
  readNumber(/^\s*Item Level:\s*(\d+)/im,"ilvl");
+ readNumber(/^\s*Adds (\d+) Passive Skills/im,"cluster_passives");
  readNumber(/^\s*Stack Size:\s*(\d+)(?:\s*\/\s*\d+)?/im,"stack");
  readNumber(/^\s*Quality:\s*\+?(\d+)\s*%/im,"quality");
  const sock=raw.match(/^\s*Sockets:\s*(.+)$/im);
@@ -486,6 +491,7 @@ function matchesCondition(item,c){
   return value===undefined?null:compare(value,c.op,Number(vals[0]));
  }
  if(c.key in BOOL_FIELDS)return Boolean(item[BOOL_FIELDS[c.key]])===(vals[0]==="True");
+ if(c.key==="EnchantmentPassiveNode")return null; // enchant text != node name: can't tell
  if(c.key==="SocketGroup")return vals.some(x=>(item.socket_group||"").includes(x));
  if(c.key==="HasExplicitMod")return vals.some(x=>item.mods.some(m=>m.includes(x)));
  if(c.key==="HasInfluence"){
