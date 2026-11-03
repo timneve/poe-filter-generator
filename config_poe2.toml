@@ -1,0 +1,33 @@
+# PoE2 price filter config. Edit, then run: python build_filter_poe2.py
+league = "auto"
+output_name = "pricefilter_poe2"
+output_dirs = ["~/Documents/My Games/Path of Exile 2"]
+cache_minutes = 60
+tiers_follow_divine = true
+hide_tiers = ["brown", "dust"]
+quiet_tiers = ["low"]
+
+[tiers]
+top = { div = 1.0, chaos = 125.0 }
+high = { div = 0.25, chaos = 25.0 }
+mid = { div = 0.0625, chaos = 5.0 }
+minor = { div = 0.015625, chaos = 2.0 }
+low = { chaos = 1.0 }
+brown = { chaos = 0.25 }
+dust = { chaos = 0.05 }
+
+[exchange]
+types = ["Currency", "Runes"]
+min_volume = 5.0
+max_stack = 40
+
+[gear]
+# Keep campaign gear visible; hide ordinary normal/magic gear in endgame areas.
+hide_normal_magic_after_area = 65
+classes = [
+  "Amulets", "Belts", "Body Armours", "Boots", "Bows", "Bucklers", "Charms",
+  "Claws", "Crossbows", "Foci", "Gloves", "Helmets", "Life Flasks", "Mana Flasks",
+  "One Hand Axes", "One Hand Maces", "One Hand Swords", "Quarterstaves", "Quivers",
+  "Rings", "Sceptres", "Shields", "Spears", "Staves", "Two Hand Axes",
+  "Two Hand Maces", "Two Hand Swords", "Wands", "Warstaves",
+]
