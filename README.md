@@ -2,8 +2,20 @@
 
 PoE1 loot filter where visibility = poe.ninja price. Python 3.11+, no dependencies.
 
-Run `update.bat` (or `python build_filter.py --refresh`), then in game pick `pricefilter`
-(Options -> Game -> Item Filter) and press reload after updates.
+## Setup (Windows)
+
+1. Install Python 3.11 or newer from [python.org](https://www.python.org/downloads/). During
+   setup, enable **Add Python to PATH**.
+2. Clone this repository and open a terminal in the `poe-filter` folder.
+3. Run `update.bat` for PoE1, or `update_poe2.bat` for PoE2. The first run needs an internet
+   connection to download current price data. No additional Python packages are required.
+4. In Path of Exile, open **Options -> Game -> Item Filter**, select `pricefilter` (PoE1) or
+   `pricefilter_poe2` (PoE2), and reload after future updates.
+
+The generated filters are saved under `out/`. By default, each script also copies its filter
+to the corresponding Path of Exile folder under `Documents\My Games` when that folder exists.
+You can run the Python scripts directly instead of the batch files:
+`python build_filter.py --refresh` or `python build_filter_poe2.py --refresh`.
 
 - `config.toml` - tiers (chaos), variable line (divine), confidence limits, overrides, styles
 - Visible item labels use maximum font size 45; explicit content-module always-show overrides
