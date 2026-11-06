@@ -5,27 +5,36 @@ no network in tests. Player-facing behavior: `README.md`. Read only the doc you 
 
 | Need | Read |
 |---|---|
+| **How every item gets its tier (all pricing / visibility systems)** - read before any pricing change | `docs/ai/TIERING.md` |
 | Pipeline, data shapes, function index, filter block order | `docs/ai/ARCHITECTURE.md` |
 | What a `config.toml` key does + which function reads it | `docs/ai/CONFIG.md` |
 | How to do common changes, gotchas, test patterns | `docs/ai/RECIPES.md` |
+| NeverSink -> own modules: system, rules, migration checklist | `docs/ai/MODULES.md` |
 
 ## Files (size = read cost)
 
 | File | Lines | Role |
 |---|---|---|
-| `build_filter.py` | ~1800 | PoE1: fetch (every poe.ninja category, `NINJA_TYPES`) -> price -> emit filter text -> write + report. Entry `main()`; `build_text()` = no-network core |
+| `build_filter.py` | ~2600 | PoE1: fetch (every poe.ninja category, `NINJA_TYPES`) -> price -> emit filter text -> write + report. Entry `main()`; `build_text()` = no-network core |
 | `config.toml` | ~690 | PoE1 settings, heavily commented. Source of truth for tiers/styles/toggles |
+| `modules.toml` | ~100+ | per-block on/off of our rule modules (FilterBlade-style options), `[<module>.blocks]` |
+| `rules/modules/*.filter` | - | Our rule modules (imported once from NeverSink, then ours). See `docs/ai/MODULES.md` |
+| `tools/import_neversink.py` | ~160 | Make / refresh a module from `reference/league.filter` sections (owns the NeverSink parser `parse_ref_blocks`) |
+| `tools/import_fallback_tiers.py` + `fallback_tiers.toml` | ~80 / ~880 | NeverSink currency / card group per name (fallback when poe.ninja has no confident price); tool makes the TOML once, build reads the TOML |
+| `tools/league_start.py` | ~300 | League start as real values: `start` (backup to `league_start/backup/`, gitignored, then writes `build_filter.league_start_values` into config.toml / modules.toml as text, comments kept), `status`, `restore [KEY]`, `finish`; `--root` for tests. Player guide `docs/LEAGUE_START.md` |
 | `unique_tiers.toml` | ~200 | unique name -> drop-rarity tier 0..5 (for `[uniques.ev]` drop weights) |
 | `rules/top.filter` / `rules/bottom.filter` | 66 / 22 | Hand-written blocks before / after price rules |
 | `rules/leveling/rf.filter` | 156 | Build module for campaign (`[leveling] build = "rf"`) |
-| `filtersim.py` | ~120 | Mini filter evaluator (tests + report), PoE1 + PoE2 conditions. Unknown condition -> raises |
+| `filtersim.py` | ~140 | Mini filter evaluator (tests + report), PoE1 + PoE2 + every `reference/league.filter` condition. Unknown condition -> raises |
 | `report.py` | ~480 | Writes `out/report.html` (mostly an embedded HTML/JS `PAGE` string) |
 | `assets/chaos.png`, `assets/divine.png` | - | Currency icons, inlined into the report as data URIs by `report.icon()` |
 | `report_poe2.py` | ~130 | Writes `out/report_poe2.html`: tier values in ex, rates, priced items |
 | `build_filter_poe2.py` + `config_poe2.toml` | ~340 / 40 | PoE2, separate: poe.ninja exchange prices tiered in divines, NeverSink PoE2 export appended below |
-| `tests/test_filter.py` | ~1600 | `Synthetic` (fake data) + `LiveCache` (replays `cache/`, every poe.ninja feed) |
+| `tests/test_filter.py` | ~2750 | `Synthetic` (fake data) + `LiveCache` (replays `cache/`, every poe.ninja feed) |
 | `tests/test_filter_poe2.py` | ~210 | PoE2 synthetic (fake reference) + `Poe2LiveCache` (replays `cache/poe2/`) |
-| `reference/*.filter` | big | NeverSink/FilterBlade exports. Parsed at build (`league.filter`, `regular-neversink.filter`; PoE2: `league-filterblade-poe2.filter` appended whole). Don't read whole; grep |
+| `tests/test_league_start.py` | ~200 | `tools/league_start.py` on temp copies: comments kept, start-written files == `league_start = true` (same filter text, Synthetic + live cache), status / restore round trip, double start refused |
+| `tests/test_parity.py` | ~330 | `Parity`: items league.filter shows must be shown by ours or explained (cache + per-block corpus); `NoReference`: build reads no `reference/` |
+| `reference/*.filter` | big | NeverSink/FilterBlade exports. PoE1 build never reads them (only `tools/import_*.py` + tests); PoE2 build appends `league-filterblade-poe2.filter` whole. Don't read whole; grep |
 | `cache/`, `out/` | gitignored | poe.ninja/wiki JSON cache; generated filter + report. Never edit `out/` |
 
 ## Hard rules
@@ -36,6 +45,7 @@ no network in tests. Player-facing behavior: `README.md`. Read only the doc you 
 - Docs stay current, same change as the code (task not done until docs match):
   - config key added/removed/renamed/LS-affected -> `docs/ai/CONFIG.md`
   - function, emitter, filter block order, `data`/`r` shape, constant, file added/removed -> `docs/ai/ARCHITECTURE.md` (+ file table here)
+  - tier / visibility decision added or changed (any item kind) -> `docs/ai/TIERING.md`
   - new workflow, test helper or gotcha learned -> `docs/ai/RECIPES.md`
   - player-visible behavior -> `README.md`
   - Keep docs terse; reference functions by name, not line numbers. Wrong doc = fix it when seen.
@@ -50,6 +60,10 @@ no network in tests. Player-facing behavior: `README.md`. Read only the doc you 
   unconfident -> blue, never hidden or guessed. Confident price in a config-hidden tier -> hidden
   (exact Hide before any blue catch-all).
 - Crafting bases priced per exact base + influence + ilvl range; need `min_listings` AND `min_samples`; each confident price covers only its own ilvl range (higher ilvl does not floor lower). Keep separate from unique pricing.
+- No hidden settings (user pref): every key / per-item option the code reads must be written out in
+  `config.toml` with its default value, so a reader sees all they CAN toggle. Optional per-name tables
+  (e.g. `[content.<mod>.drops]`) list every known name (default `"price"`). New key -> add it there too.
+  Tests that use fake data clear such full lists in `Synthetic.setUp`.
 - Check generated filter visibility (via `filtersim`) in tests, not just intermediate tier dicts.
 - Syntax reference: https://www.pathofexile.com/item-filter/about
 

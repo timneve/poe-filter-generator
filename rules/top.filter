@@ -1,47 +1,24 @@
 # ===== rules/top.filter : hand-written rules, checked BEFORE price rules =====
 # Edit freely. Standard PoE filter syntax.
 
-# Quest / lab / heist targets
+# Quest items (heist targets, lab / incursion items: module misc, emit_misc)
 Show
-	Class == "Quest Items" "Labyrinth Items" "Labyrinth Trinkets" "Incursion Items" "Heist Targets" "Pantheon Souls"
+	Class == "Quest Items" "Pantheon Souls"
 	SetFontSize 45
 	PlayAlertSound 3 300
 	PlayEffect Green
 	MinimapIcon 1 Green Pentagon
 
-# BEGIN show_gold
-# Big gold stacks only
-Show
-	BaseType == "Gold"
-	StackSize >= 3001
-	SetFontSize 45
-	SetTextColor 255 212 87
-	SetBackgroundColor 0 0 0 0
-	PlayEffect Yellow
-	MinimapIcon 1 Yellow Cross
-
-# Small gold: shown in the campaign (respec, gambling), hidden in maps
-Hide # league_start
-	BaseType == "Gold"
-	AreaLevel >= 68
-	SetFontSize 35
-
-Show
-	BaseType == "Gold"
-	SetFontSize 35
-	SetTextColor 255 212 87
-	SetBackgroundColor 0 0 0 0
-	DisableDropSound True
-# END show_gold
+# Gold: emit_gold (config.toml show_gold + modules.toml [misc.blocks] gold.*), not here
 
 # Linked items (configured in config.toml)
 # BEGIN show_6_links
 Show
 	LinkedSockets 6
 	SetFontSize 45
-	SetTextColor 255 0 0 255
-	SetBorderColor 255 0 0 255
-	SetBackgroundColor 255 255 255 255
+	SetTextColor red
+	SetBorderColor red
+	SetBackgroundColor tink_bg
 	PlayAlertSound 6 300
 	PlayEffect Red
 	MinimapIcon 0 Red Star
@@ -51,9 +28,9 @@ Show
 Show
 	LinkedSockets 5
 	SetFontSize 45
-	SetTextColor 255 0 0 255
-	SetBorderColor 255 0 0 255
-	SetBackgroundColor 255 255 255 255
+	SetTextColor red
+	SetBorderColor red
+	SetBackgroundColor tink_bg
 	PlayAlertSound 6 300
 	PlayEffect Red
 	MinimapIcon 0 Red Star
@@ -77,7 +54,7 @@ Show
 	Class == "Skill Gems" "Support Gems"
 	BaseType "Awakened" "Enlighten" "Empower" "Enhance"
 	SetFontSize 45
-	SetTextColor 255 0 0 255
+	SetTextColor red
 	PlayAlertSound 1 300
 	PlayEffect Red
 	MinimapIcon 1 Red Diamond
@@ -86,6 +63,6 @@ Show
 	Class == "Skill Gems" "Support Gems"
 	Quality >= 20
 	SetFontSize 45
-	SetTextColor 20 240 240
+	SetTextColor cyan
 	PlayEffect Grey
 	MinimapIcon 1 Cyan Diamond

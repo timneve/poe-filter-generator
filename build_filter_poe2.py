@@ -12,6 +12,8 @@ import urllib.request
 from datetime import datetime
 from pathlib import Path
 
+from build_filter import apply_palette
+
 ROOT = Path(__file__).resolve().parent
 NINJA = "https://poe.ninja/poe2/api"
 UA = {"User-Agent": "price-filter-builder/1.0 (personal loot filter script)"}
@@ -30,24 +32,25 @@ LEVELED_FEEDS = {"UncutGems"}
 LEVELED = re.compile(r"^(.*) \(Level (\d+)\)$")
 HIDDEN_STYLE = ["SetFontSize 18", "DisableDropSound True"]
 STYLES = {
-    "top": ["SetFontSize 45", "SetTextColor 255 0 0 255", "SetBorderColor 255 0 0 255",
-            "SetBackgroundColor 255 255 255 255", "PlayAlertSound 6 300", "PlayEffect Red",
+    "top": ["SetFontSize 45", "SetTextColor red", "SetBorderColor red",
+            "SetBackgroundColor tink_bg", "PlayAlertSound 6 300", "PlayEffect Red",
             "MinimapIcon 0 Red Star"],
-    "high": ["SetFontSize 45", "SetTextColor 255 0 0 255", "PlayAlertSound 1 300",
+    "high": ["SetFontSize 45", "SetTextColor red", "PlayAlertSound 1 300",
              "PlayEffect Red", "MinimapIcon 1 Red Circle"],
-    "mid": ["SetFontSize 45", "SetTextColor 255 190 0", "PlayAlertSound 2 300",
+    "mid": ["SetFontSize 45", "SetTextColor yellow", "PlayAlertSound 2 300",
             "PlayEffect Yellow", "MinimapIcon 1 Yellow Circle"],
-    "minor": ["SetFontSize 40", "SetTextColor 215 215 215 255", "PlayAlertSound 2 300",
+    "minor": ["SetFontSize 40", "SetTextColor white", "PlayAlertSound 2 300",
               "PlayEffect White", "MinimapIcon 1 White Circle"],
-    "low": ["SetFontSize 35", "SetTextColor 215 215 215 255", "PlayAlertSound 2 300",
+    "low": ["SetFontSize 35", "SetTextColor white", "PlayAlertSound 2 300",
             "PlayEffect White", "MinimapIcon 1 White Circle"],
-    "brown": ["SetFontSize 30", "SetTextColor 210 178 134 255", "DisableDropSound True"],
-    "dust": ["SetFontSize 25", "SetTextColor 210 178 134 255", "DisableDropSound True"],
+    "brown": ["SetFontSize 30", "SetTextColor brown", "DisableDropSound True"],
+    "dust": ["SetFontSize 25", "SetTextColor brown", "DisableDropSound True"],
     "unknown": ["SetFontSize 40", "PlayAlertSound 2 300", "PlayEffect Blue",
                 "MinimapIcon 1 Blue Diamond"],
 }
-QUIET_STYLE = ["SetTextColor 210 178 134 255", "PlayEffect Grey",
+QUIET_STYLE = ["SetTextColor brown", "PlayEffect Grey",
                "MinimapIcon 2 Grey Circle", "DisableDropSound True"]
+# reference export's tink blocks (white background, numbers: before apply_palette)
 TINK_BACKGROUND = "SetBackgroundColor 255 255 255 255"
 GOLD_HIDE = 'Hide # gold (show_gold = false)\n\tBaseType == "Gold"\n' + "".join(f"\t{line}\n" for line in HIDDEN_STYLE)
 
@@ -310,12 +313,17 @@ def build_text(cfg, data, league, reference_text):
         out.append(GOLD_HIDE)
     out.append("\n# ===== NeverSink PoE2 rules (gear, uniques, waystones, unpriced items) =====\n\n")
     out.append(reference_body(reference_text))
-    return maximize_item_sizes("".join(out)), {"prices": prices, "tiers": tiers, "deferred": deferred}
+    return apply_palette(cfg, maximize_item_sizes("".join(out))), {"prices": prices, "tiers": tiers, "deferred": deferred}
 
 
 def load_cfg():
+    """config_poe2.toml + the shared colour palette (config.toml [colors], unless set here)."""
     with (ROOT / "config_poe2.toml").open("rb") as f:
-        return tomllib.load(f)
+        cfg = tomllib.load(f)
+    if "colors" not in cfg:
+        with (ROOT / "config.toml").open("rb") as f:
+            cfg["colors"] = tomllib.load(f)["colors"]
+    return cfg
 
 
 def load_reference(cfg):

@@ -8,6 +8,10 @@ cache_minutes = 60
 # this NeverSink/FilterBlade PoE2 export. Borders/backgrounds are stripped except on its tink tier.
 reference = "reference/league-filterblade-poe2.filter"
 
+# Colours: the shared palette in config.toml (colors.*), same names / values as PoE1. Every
+# colour in the filter is one of them; the NeverSink export snaps to the nearest. A [colors]
+# table here would replace it for PoE2 only.
+
 # hide_tiers:  priced but hidden (e.g. add "low" late league, drop "brown" at league start).
 # quiet_tiers: shown, brown text, grey beam/icon, no sound (keeps font size).
 hide_tiers = ["brown", "dust"]

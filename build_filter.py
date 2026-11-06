@@ -5,7 +5,7 @@ Usage:  python build_filter.py [--refresh] [--league NAME]
 Layout of the generated filter:
   defaults                  no borders, gear text colour (Continue blocks)
   rules/top.filter          hand-written (quest items, gold, 6L, ...)
-  leveling                  NeverSink campaign rules from reference/, AreaLevel <= 67 only
+  leveling                  build module + module leveling (campaign rules), AreaLevel <= 67 only
   overrides                 config [overrides]
   exchange stackables       currency, cards, scarabs, ... (stack-size aware)
   uniques                   tiered by CHEAPEST unique on the base, + variable bases;
@@ -14,6 +14,7 @@ Layout of the generated filter:
   rules/bottom.filter       hand-written (gems, hide gear, blue safety net)
 """
 import argparse
+import copy
 import html
 import json
 import math
@@ -62,11 +63,15 @@ CURRENCY_CLASSES = [
     (["Stackable Currency", "Delve Stackable Socketable Currency"], "Circle"),
     (["Map Fragments", "Misc Map Items"], "Hexagon"),
     (["Wombgifts"], "Moon"),
+    (["Corpses"], "Moon"),  # league.filter [4106] restex: unpriced corpses shown (bottom.filter hides the rest)
 ]
 HIDDEN_STYLE = ["SetFontSize 18", "DisableDropSound True"]
+# Set*Color lines: a config [colors] name, or numbers (NeverSink copies: snapped to the palette)
+COLOR_LINE = re.compile(r"^(\s*Set(?:Text|Border|Background)Color) +([a-z_]+|[\d ]+?) *$", re.M)
+# palette entries that are never text (nearest-colour snapping for SetTextColor skips them)
+NON_TEXT_COLORS = ("tink_bg", "content_bg", "clear")
 # rules/top.filter toggle sections: text used instead of the section when the toggle is off
-TOGGLE_OFF = {"show_gold": 'Hide # gold (show_gold = false)\n\tBaseType == "Gold"\n\tSetFontSize 18\n'
-                           '\tDisableDropSound True\n\n'}
+TOGGLE_OFF = {}  # (gold: emit_gold)
 # Divine price (chaos) assumed until poe.ninja's is known; tier thresholds are divine fractions.
 FALLBACK_DIVINE = 150
 # Minimap icon shape = item category, colour/size = price tier.
@@ -236,6 +241,8 @@ def non_map_drops(rows, cfg):
     for r in rows:
         if not r["enabled"]:
             out[r["name"]] = "no longer drops"
+        elif r["name"].startswith("Replica "):  # Heist Curio Displays only (wiki flag sometimes missing)
+            out[r["name"]] = "Replica: Heist only"
         elif r["restricted"] and not any(k in r["source"].lower() for k in keep):
             out[r["name"]] = r["source"].strip(" |") or "drop restricted (upgrade / recipe / encounter)"
     for name, drops in u.get("map_drop", {}).items():
@@ -400,7 +407,8 @@ def price_stackables(data, cfg, tiers):
     for t in UNIQUE_TYPES:
         for line in data["stash"][t].get("lines", []):
             listings = line.get("listingCount", 0)
-            if listings < cfg["uniques"]["min_listings"]:
+            # card rewards are unlinked: a 5/6-link line (often a troll listing) must not price the card
+            if listings < cfg["uniques"]["min_listings"] or line.get("links"):
                 continue
             name = line["name"]
             total, count = exact_item_prices.get(name, (0.0, 0))
@@ -482,8 +490,30 @@ def unique_drop_weights(data, cfg):
     return {n: ev["tier_weights"][str(t)] / count[t] for n, t in tier_of.items()}
 
 
-def price_unique_bases(data, cfg, tiers, divine_chaos):
+def unique_vendor_values(cfg, prices):
+    """unique name -> chaos it vendors for: [vendor_recipes.*] entries with `uniques` (enabled),
+    reward stackable price x reward_count (Harbinger uniques -> Fracturing Shard). A recipe whose
+    reward has no price adds nothing."""
+    out = {}
+    for rec in cfg.get("vendor_recipes", {}).values():
+        if not rec.get("enabled") or not rec.get("uniques"):
+            continue
+        reward = prices.get(rec["reward"])
+        if not reward:
+            continue
+        value = reward[0] * rec.get("reward_count", 1)
+        for n in rec["uniques"]:
+            out[n] = max(out.get(n, 0), value)
+    return out
+
+
+def price_unique_bases(data, cfg, tiers, divine_chaos, ev_detail=None, vendor=None):
     """base -> (tier, cheapest_chaos, best_chaos, best_name, ev_chaos or None).
+    vendor (unique_vendor_values): name -> guaranteed vendor value. Each of its poe.ninja
+    variants counts at least that much (cheapest, best, EV); unlisted / thin it counts as a
+    confident price of exactly that (never unknown).
+    ev_detail (dict, optional) gets base -> [(name, drop share 0..1, avg chaos or None, drop tier)]
+    for the report: what each unique on the base adds to the EV.
 
     [uniques.ev] on: a base with drop-anywhere uniques is tiered by the expected value of one
     unidentified drop (drop weights x price, see unique_drop_weights). Tier toggled off in
@@ -491,6 +521,7 @@ def price_unique_bases(data, cfg, tiers, divine_chaos):
     its cheapest unique's tier is off: "variable" (worth it on average, most drops are junk).
     The rest below.
 
+    Tier = [uniques] base_price ("lowest" default / "highest") confident unique on the base.
     cheapest only from confident prices (>= min_listings), per unique its cheapest variant.
     best from any listing and the BEST variant: the variant can't be seen unidentified, so a
     jackpot roll (Voices 1 passive, Mageblood) makes the base worth checking. Linked lines
@@ -500,6 +531,7 @@ def price_unique_bases(data, cfg, tiers, divine_chaos):
     enabled content modules instead price their restricted uniques normally.
     """
     u = cfg["uniques"]
+    vendor = vendor or {}
     content = content_policy(data.get("content", {}), cfg)
     content_prices = content["price_names"]
     confident, any_listed = {}, {}  # (base, name) -> cheapest variant / best variant
@@ -524,17 +556,30 @@ def price_unique_bases(data, cfg, tiers, divine_chaos):
             if listings < 1:
                 continue
             key = (base, name)
+            chaos = max(line["chaosValue"], vendor.get(name, 0))
             if not boss:
-                any_listed[key] = max(any_listed.get(key, 0), line["chaosValue"])
+                any_listed[key] = max(any_listed.get(key, 0), chaos)
                 v = variants.setdefault(key, [0, 0])
-                v[0] += line["chaosValue"] * listings
+                v[0] += chaos * listings
                 v[1] += listings
             if listings >= u["min_listings"] and name not in content["excluded_names"] and not boss:
-                confident[key] = min(confident.get(key, math.inf), line["chaosValue"])
+                confident[key] = min(confident.get(key, math.inf), chaos)
+    # vendor value known: thin / unlisted ones are worth exactly that
+    for base, name in seen | {(b, n) for b, ns in data.get("wiki_bases", {}).items() for n in ns}:
+        if name in vendor and name not in content["excluded_names"]                 and (not no_map_drop(data, name) or name in content_prices):
+            key = (base, name)
+            confident.setdefault(key, vendor[name])
+            any_listed.setdefault(key, vendor[name])
+            variants.setdefault(key, [vendor[name], 1])
 
-    cheap_by_base, best_by_base = {}, {}
+    mode = u.get("base_price", "lowest")
+    if mode not in ("lowest", "highest"):
+        raise ValueError(f'[uniques] base_price must be "lowest" or "highest", got {mode!r}')
+    pick = min if mode == "lowest" else max
+    cheap_by_base, priced_by_base, best_by_base = {}, {}, {}
     for (base, name), v in confident.items():
         cheap_by_base[base] = min(cheap_by_base.get(base, math.inf), v)
+        priced_by_base[base] = pick(priced_by_base.get(base, v), v)
     for (base, name), v in any_listed.items():
         best_by_base[base] = max(best_by_base.get(base, (0, "")), (v, name))
 
@@ -553,7 +598,7 @@ def price_unique_bases(data, cfg, tiers, divine_chaos):
             unknown.setdefault(base, set()).add(name)
     for base, names in data.get("wiki_bases", {}).items():
         for name in names:
-            if (base, name) not in seen | linked and name not in excluded_content \
+            if (base, name) not in seen | linked | confident.keys() and name not in excluded_content \
                     and (not no_map_drop(data, name) or name in content_prices) \
                     and not (name.startswith("Replica ") and not u["include_replicas"]):
                 unknown.setdefault(base, set()).add(name)
@@ -575,6 +620,12 @@ def price_unique_bases(data, cfg, tiers, divine_chaos):
             other = max(((v, n) for (b, n), v in any_listed.items() if b == base and n not in weights),
                         default=(0, ""))
             ev_by_base[base] = (value / total, chase, other)
+            if ev_detail is not None:
+                ev_detail[base] = sorted(
+                    ((n, weights[n] / total,
+                      variants[(base, n)][0] / variants[(base, n)][1] if (base, n) in variants else None,
+                      cfg["unique_tiers"].get(n, ev["default_tier"])) for n in names),
+                    key=lambda x: -x[1])
 
     for base, (value, chase, other) in ev_by_base.items():
         cheapest = cheap_by_base.get(base)
@@ -595,7 +646,7 @@ def price_unique_bases(data, cfg, tiers, divine_chaos):
         if base in ev_by_base:
             continue
         best = best_by_base.get(base, (0, ""))
-        tier = tiers.of(cheapest)
+        tier = tiers.of(priced_by_base[base])  # base_price: cheapest or priciest confident unique
         # known >= top tier stays a tink; only cheaper bases with a big unique go "variable"
         if best[0] >= jackpot and tier != tiers.names[0]:
             tier = "variable"
@@ -633,20 +684,31 @@ def price_unique_bases(data, cfg, tiers, divine_chaos):
     return result
 
 
-def valuable_content_bases(data, cfg, tiers):
+def valuable_content_bases(data, cfg, tiers, foulborn=False):
     """Enabled-module bases worth the faded show: base -> its most valuable content unique's
-    confident price (cheapest variant), kept only when that price's tier is a shown unique tier."""
+    confident price (cheapest variant), kept only when that price's tier is a shown unique tier.
+    foulborn=True: same for the Foulborn versions ("Foulborn " + content unique; listings
+    summed over variants vs foulborn.min_listings, shown = up to foulborn.min_tier / small_loot)."""
     rescue = content_policy(data.get("content", {}), cfg)["rescue"]
-    shown = shown_unique_tiers(cfg, tiers)
-    value = {}
+    if foulborn:
+        floor = min_shown_rank(cfg, tiers, cfg["foulborn"]["min_tier"])
+        shown = {t for t in tiers.names if tiers.rank(t) <= floor and not hidden(cfg, t)}
+        min_listings = cfg["foulborn"]["min_listings"]
+    else:
+        shown, min_listings = shown_unique_tiers(cfg, tiers), cfg["uniques"]["min_listings"]
+    value, listings = {}, {}
     for t in UNIQUE_TYPES:
         for line in data["stash"][t].get("lines", []):
             base, name = line.get("baseType"), line["name"]
-            if name in rescue.get(base, ()) and not line.get("links") \
-                    and line.get("listingCount", 0) >= cfg["uniques"]["min_listings"]:
+            if name.startswith("Foulborn ") != foulborn or line.get("links"):
+                continue
+            n = line.get("listingCount", 0)
+            if name[9 if foulborn else 0:] in rescue.get(base, ()) and n >= (1 if foulborn else min_listings):
                 value.setdefault(base, {})
                 value[base][name] = min(value[base].get(name, math.inf), line["chaosValue"])
-    return {b: max(v.values()) for b, v in value.items() if tiers.of(max(v.values())) in shown}
+                listings[base, name] = listings.get((base, name), 0) + n
+    value = {b: [c for n, c in v.items() if listings[b, n] >= min_listings] for b, v in value.items()}
+    return {b: max(v) for b, v in value.items() if v and tiers.of(max(v)) in shown}
 
 
 def price_foulborn_bases(data, cfg, tiers, divine_chaos):
@@ -764,36 +826,20 @@ def price_crafting_bases(data, cfg, tiers, divine_chaos):
     return out
 
 
-def reference_card_tiers(cfg, text):
-    """card -> our tier, from the regular NeverSink divination-card groups."""
-    mapping = cfg["exchange"]["reference_card_tiers"]
-    out = {}
-    for blk in re.split(r"\n(?=(?:Show|Hide|Minimal)\b)", text):
-        m = re.search(r"\$type->divination \$tier->(\S+)", blk.split("\n", 1)[0])
-        if (not m or m.group(1) not in mapping
-                or re.search(r"^\s*StackSize\b", blk, re.M)):
-            continue
-        for conds in re.findall(r"^\s*BaseType ==? (.*)$", blk, re.M):
-            for name in re.findall(r'"([^"]+)"', conds):
-                out.setdefault(name, mapping[m.group(1)])  # first (best) tier wins
-    return out
+def fallback_tiers(cfg, kind):
+    """kind "currency" (currency, corpses, vials: NeverSink tier number "1".."9") or "cards"
+    (NeverSink card group "t1".."t5") -> {name: our tier}, from fallback_tiers.toml (made by
+    tools/import_fallback_tiers.py; cfg["fallback_tiers"]) via config.toml
+    [exchange.reference_currency_tiers] / [exchange.reference_card_tiers]. Fallback while
+    poe.ninja has no confident price (league start, thin cards). Unmapped group: skipped."""
+    mapping = cfg["exchange"].get("reference_currency_tiers" if kind == "currency" else "reference_card_tiers", {})
+    return {name: mapping[g] for name, g in cfg["fallback_tiers"][kind].items() if g in mapping}
 
 
-def reference_currency_tiers(cfg, text):
-    """currency name -> our tier, from NeverSink's currency tiers (t1 best .. t9) in
-    reference/league.filter, by tier number; corpses and vials too (stash-priced, same
-    t1.. scale). Fallback while poe.ninja has no confident price (league start).
-    Stack-size blocks skipped; first (best) tier wins."""
-    mapping = cfg["exchange"].get("reference_currency_tiers", {})
-    out = {}
-    for blk in re.split(r"\n(?=(?:Show|Hide|Minimal)\b)", text):
-        m = re.search(r"\$type->(?:currency|corpses|vials)\S* \$tier->t(\d+)", blk.split("\n", 1)[0])
-        if not m or m.group(1) not in mapping or re.search(r"^\s*StackSize", blk, re.M):
-            continue
-        for conds in re.findall(r"^\s*BaseType == (.*)$", blk, re.M):
-            for name in re.findall(r'"([^"]+)"', conds):
-                out.setdefault(name, mapping[m.group(1)])
-    return out
+def fallback_groups(cfg, kind):
+    """{name: NeverSink group} as in fallback_tiers.toml (for group-keyed options, e.g.
+    [exchange.reference_currency_stacks])."""
+    return cfg["fallback_tiers"][kind]
 
 
 # ---------------------------------------------------------------- emitting
@@ -840,7 +886,7 @@ def section(title):
 def emit_defaults(cfg):
     # Continue blocks: style applies, later blocks can still override or hide
     out = section("Defaults: no borders, gear text colour (config.toml gear_text_color)")
-    out += block("Show", [], ["SetFontSize 45", "SetBorderColor 0 0 0 0", "Continue"],
+    out += block("Show", [], ["SetFontSize 45", "SetBorderColor clear", "Continue"],
                  "maximum item size; no borders unless a style sets one")
     # campaign ([leveling] on): gear keeps its rarity colour
     lv = cfg.get("leveling", {})
@@ -854,11 +900,16 @@ def emit_defaults(cfg):
 
 
 def emit_pinned_stackables(cfg):
-    return section("Pinned top-tier stackables") + "".join(
+    """Divine / Mirror / Hinekora's Lock (PINNED_TOP_STACKABLES, fixed) and every item of a
+    config.toml always_top_classes class (Reliquary keys, priced or not): top tier, first
+    block, never hidden (beats [overrides], prices, modules)."""
+    classes = cfg.get("always_top_classes", [])
+    return section("Pinned top-tier stackables + always_top_classes") + "".join(
         block("Show", [f"BaseType == {q([name])}"], style_for(cfg, "top", SHAPE["Currency"]),
               f"pinned {name} (always tink)")
         for name in sorted(PINNED_TOP_STACKABLES)
-    )
+    ) + "".join(block("Show", [f"Class == {q([c])}"], style_for(cfg, "top", SHAPE["Fragment"]),
+                      f"always top {c} (config.toml always_top_classes)") for c in classes)
 
 
 def emit_overrides(cfg, prices):
@@ -876,38 +927,153 @@ def emit_overrides(cfg, prices):
     return out
 
 
-def emit_overquality(cfg):
-    settings = cfg.get("overquality", {})
-    classes = [
-        "Amulets", "Belts", "Body Armours", "Boots", "Bows", "Claws", "Daggers",
-        "Gloves", "Helmets", "One Hand Axes", "One Hand Maces", "One Hand Swords",
-        "Quivers", "Rings", "Rune Daggers", "Sceptres", "Shields", "Staves",
-        "Thrusting One Hand Swords", "Two Hand Axes", "Two Hand Maces", "Two Hand Swords",
-        "Wands", "Warstaves",
-    ]
-    tiers = [
-        (30, "quality_30", ["SetFontSize 45", "PlayEffect Red", "MinimapIcon 0 Red Diamond",
-                            "SetTextColor 255 0 0 255", "PlayAlertSound 6 300",
-                            "SetBorderColor 255 0 0 255", "SetBackgroundColor 255 255 255 255"]),
-        (27, "quality_27", ["SetFontSize 45", "PlayAlertSound 3 300", "PlayEffect Blue",
-                            "MinimapIcon 2 Blue Diamond", "SetTextColor 255 255 255 255"]),
-        (21, "quality_21", ["SetFontSize 45", "PlayAlertSound 3 300", "PlayEffect Blue",
-                            "MinimapIcon 2 Blue Diamond", "SetTextColor 255 255 255 255"]),
-    ]
-    out = section("Overquality gear (config.toml [overquality])")
-    for quality, key, style in tiers:
-        if settings.get(key, False):
-            out += block("Show", ["Mirrored False", "Corrupted False", f"Quality >= {quality}",
-                                  f"Class == {q(classes)}"], style, f"overquality {quality}%+")
-    return out
+# Module gear_special (rules/modules/gear_special.filter, made with:
+#   tools/import_neversink.py gear_special 0302:0600 0901:0902
+#     --config-key "crafting->qualityperfection\.anyoverquality(perf|high)?=config.toml [overquality]"
+#     --config-key "s0500_1=price (stackables)" --config-key "s0500_[234]=config.toml [vendor_recipes.grasping_mail]"
+#     --config-key "s0500_5=price (uniques)")
+# [0302] influenced rares, [[0400]] eldritch (Exarch / Eater implicits), [[0500]] exotic bases
+# (heist / ritual / Kalandra / talisman / Grasping Mail / Stygian / Cord Belt ...), [0901]
+# perfection + overquality. [[0500]]'s five untagged FilterBlade "Conditional Entry" blocks are
+# decided elsewhere (Stacked Deck: stackable price, breach rings: [vendor_recipes.grasping_mail],
+# unique Opal Ring / Abyssal Axe: unique price): their modules.toml value says where, no block.
+GEAR_SPECIAL_TOP_SECTIONS = [("0302", "0600")]
+PERFECTION_SECTION = ("0901", "0902")
+# [0901] overquality blocks, on / off from config.toml [overquality] quality_<N>
+OVERQUALITY_KEYS = {"crafting->qualityperfection.anyoverqualityperf": 30,
+                    "crafting->qualityperfection.anyoverqualityhigh": 27,
+                    "crafting->qualityperfection.anyoverquality": 21}
 
 
-def emit_forbidden_tome(cfg):
-    if not cfg.get("hide_forbidden_tome", False):
+def module_elsewhere(b):
+    """module_blocks driven for keys decided by another system (the modules.toml value names it:
+    price, a [vendor_recipes.*] entry): no block."""
+    return ""
+
+
+def overquality_driven(cfg):
+    """[0901] overquality blocks from config.toml [overquality] quality_30 / 27 / 21 (not
+    league_start). 30% = our top-tier (tink) style via style_for, incl. its border / background
+    (the one tier allowed them); 27% / 21% league.filter's style. Uniques left to price."""
+    oq = cfg.get("overquality", {})
+    top = max(cfg["tiers"], key=cfg["tiers"].get)
+
+    def driven(b):
+        quality = OVERQUALITY_KEYS.get(b["key"])
+        if quality is None:
+            return module_elsewhere(b)
+        if not oq.get(f"quality_{quality}", False):
+            return ""
+        style = style_for(cfg, top) if quality == 30 else b["style"]
+        return block("Show", b["conds"] + ["Rarity <= Rare"], style,
+                     f"overquality {quality}%+ (module gear_special {b['key']}, config.toml [overquality])")
+    return driven
+
+
+def emit_priced_bases_first(cfg, tiers, entries):
+    """Copy of the crafting-base Shows (emit_crafting_bases: confident poe.ninja base + influence +
+    ilvl price at a shown tier, or jackpot -> variable) before the gear_special / crafting module
+    Shows: a priced base keeps its price tier there (price = source of truth). No Hides: a base
+    priced below [bases] min_tier is not decided by price, so module Shows apply to it
+    (league.filter behaviour). After id_mods / flasks / perfection / exotics: an identified
+    good-mod, fractured or strand item keeps that look (it says more than the base price); before
+    vendor recipes (same tier as their recipe_floor copy)."""
+    if not entries or not any(cfg.get(m, {}).get("enabled", True) for m in ("gear_special", "crafting")):
         return ""
-    return section("Config visibility toggles") + block(
-        "Hide", ['BaseType == "Forbidden Tome"'], HIDDEN_STYLE, "Forbidden Tome (config.toml hide_forbidden_tome)"
-    )
+    # bases below [leveling] unused_whites_min_tier wait for emit_crafting_bases (after its unused-white Hides)
+    floor = tiers.rank(cfg.get("leveling", {}).get("unused_whites_min_tier") or cfg["bases"]["min_tier"])
+    groups = {}
+    for tier, lo, hi, infl, name, _ in entries:
+        if (tier == "variable" or tiers.rank(tier) <= floor) and not hidden(cfg, tier):
+            groups.setdefault((tier, lo, hi, infl), []).append(name)
+    out = ""
+    for tier, lo, hi, infl in sorted(groups, key=lambda k: (k[0] != "variable", tiers.rank(k[0]), -k[1], k[3] or "")):
+        span = f"{lo}-{hi}" if hi else f"{lo}+"
+        out += block("Show", crafting_conds(lo, hi, infl, groups[(tier, lo, hi, infl)]), style_for(cfg, tier),
+                     f"base {tier} ilvl{span} {infl or 'plain'} (priced, before gear modules)")
+    return section("Priced crafting bases, before the gear modules (poe.ninja base prices)") + out if out else ""
+
+
+def emit_gear_special(cfg):
+    """[0302] influenced rares, [[0400]] eldritch, [[0500]] exotic bases: module gear_special.
+    league.filter has it before [0600] id mods; ours comes after id_mods / flasks / perfection /
+    exotics and emit_priced_bases_first (all Shows, only style differs): id-mod / exotic info and
+    a base price beat an influence / base-type look. Uniques never match: every block is Rarity
+    Normal / Magic / Rare. Before vendor recipes (league.filter: [[0500]] before [1400])."""
+    if not cfg.get("gear_special", {}).get("enabled", True):
+        return ""
+    return (section("Influenced / eldritch / exotic bases (config.toml [gear_special], modules.toml [gear_special.blocks])")
+            + module_blocks(cfg, "gear_special", "gear", sections=GEAR_SPECIAL_TOP_SECTIONS,
+                            driven=module_elsewhere))
+
+
+def emit_perfection(cfg):
+    """[0901] perfection / overquality: module gear_special, the 3 any-gear overquality blocks
+    from config.toml [overquality] (overquality_driven). league.filter: after id mods / flasks,
+    before [0902] exotics; before vendor recipes (a 30% RGB item keeps its alert). Rarity <= Rare
+    added: a unique stays priced. [gear_special] enabled = false: only the [overquality] blocks
+    (own option, independent of the module switch)."""
+    if not cfg.get("gear_special", {}).get("enabled", True):
+        driven = overquality_driven(cfg)
+        out = "".join(driven(b) for b in load_module("gear_special") if b["key"] in OVERQUALITY_KEYS)
+        return section("Overquality gear (config.toml [overquality])") + out if out else ""
+    not_unique = {b["key"]: ["Rarity <= Rare"] for b in load_module("gear_special")
+                  if b["section"] == PERFECTION_SECTION[0]}
+    return (section("Perfection / overquality (config.toml [gear_special] + [overquality], modules.toml [gear_special.blocks])")
+            + module_blocks(cfg, "gear_special", "perfection", sections=[PERFECTION_SECTION],
+                            extra_conds=not_unique, driven=overquality_driven(cfg)))
+
+
+# Module crafting (rules/modules/crafting.filter, made with:
+#   tools/import_neversink.py crafting 1400:1500 2300:2500 2601:2602
+#     --config-key "socketslinks\.(rgb\w+)=config.toml [vendor_recipes.chromatic]"
+#     --config-key "socketslinks\.6sockets\w*=config.toml [vendor_recipes.jeweller]"
+#     --config-key "endgamergb\.\w+=config.toml [vendor_recipes.chromatic]")
+# [1401] 5-links, [2301] early endgame crafting, [2302] crafting matrix (ilvl 83-86 bases),
+# [[2400]] chancing bases, [2601] RGB ([[2600]] animated weapons: module rares). The RGB /
+# 6-socket blocks are vendor recipes: [vendor_recipes.chromatic] / [vendor_recipes.jeweller]
+# (tier floor) cover them (any size / area level), so no module block.
+LINK_SECTION = ("1400", "1500")
+ENDGAME_CRAFTING_SECTIONS = [("2300", "2302"), ("2400", "2500")]
+# Not unlocked by league_start (LS_KEEP_SECTIONS): [2302] has an empty FilterBlade tier (t1_83 = every ilvl 83+
+# base); [2601] keys are all vendor recipes (no block either way).
+NO_LS_CRAFTING_SECTIONS = [("2302", "2400"), ("2601", "2602")]
+
+
+def emit_links(cfg):
+    """[1401] 5-links (leveling, 5L 6S, endgame): module crafting. league.filter: after [1300]
+    (emit_exotics), before [1500] bases, so before vendor recipes. rules/top.filter show_5_links
+    (tink, any rarity incl. uniques) is a different rule and stays first."""
+    if not cfg.get("crafting", {}).get("enabled", True):
+        return ""
+    return (section("Linked gear (config.toml [crafting], modules.toml [crafting.blocks])")
+            + module_blocks(cfg, "crafting", "links", sections=[LINK_SECTION], driven=module_elsewhere))
+
+
+def emit_endgame_crafting(cfg):
+    """[[2300]] crafting projects + matrix, [[2400]] chancing, [2601] RGB (vendor recipe: no
+    block): module crafting. league.filter: after the rare gear tiers ([2201], emit_rares),
+    before emit_rare_hide_layer ([[2600]] animated weapons, [2602] remaining rares, [[2700]];
+    [2601] has no block, so its place before [[2600]] doesn't matter). Priced bases decided
+    earlier (emit_priced_bases_first)."""
+    if not cfg.get("crafting", {}).get("enabled", True):
+        return ""
+    return (section("Endgame crafting / chancing bases (config.toml [crafting], modules.toml [crafting.blocks])")
+            + module_blocks(cfg, "crafting", "crafting", sections=ENDGAME_CRAFTING_SECTIONS)
+            + module_blocks(cfg, "crafting", "crafting",
+                            sections=NO_LS_CRAFTING_SECTIONS, driven=module_elsewhere))
+
+
+def emit_visibility_toggles(cfg):
+    """Config hides that beat any price: hide_forbidden_tome, show_contracts = false
+    (every Heist contract, any rarity; quest contracts are Quest Items, untouched)."""
+    out = ""
+    if cfg.get("hide_forbidden_tome", False):
+        out += block("Hide", ['BaseType == "Forbidden Tome"'], HIDDEN_STYLE,
+                     "Forbidden Tome (config.toml hide_forbidden_tome)")
+    if not cfg.get("show_contracts", True):
+        out += block("Hide", ['Class == "Contracts"'], HIDDEN_STYLE, "Heist contracts (config.toml show_contracts)")
+    return section("Config visibility toggles") + out if out else ""
 
 
 def emit_stackables(cfg, tiers, prices, ref_currency, ref_cards, card_volumes):
@@ -928,15 +1094,22 @@ def emit_stackables(cfg, tiers, prices, ref_currency, ref_cards, card_volumes):
         if t == "DivinationCard":
             max_stack = ex["card_rewards"][name][2]
         else:
-            max_stack = ex.get("splinters", {}).get(name, [None, ex["max_stack"]])[1]
+            max_stack = ex.get("splinters", {}).get(name, [None, ex.get("big_stacks", {}).get(name, ex["max_stack"])])[1]
         for tname, thr in tiers.list:
             if tiers.rank(tname) >= tiers.rank(own):
                 continue
             need = math.ceil(thr / v - 1e-9)  # exact: stack value >= tier threshold
             if need <= max_stack:
                 stacks.setdefault((tname, need, shape), []).append(name)
+        n = ex.get("show_stacks", {}).get(name)  # forced stack Show: before the hidden tiers' blocks
+        if n and hidden(cfg, tiers.of(v * n)):
+            stacks.setdefault((ex["show_stacks_tier"], n, shape), []).append(name)
 
     out = section("Stackables (Currency Exchange prices)")
+    forced = sorted(n for n in ex.get("show_stacks", {}) if n not in prices and n not in overridden)
+    out += "".join(block(action_for(cfg, ex["show_stacks_tier"]), [f"StackSize >= {ex['show_stacks'][n]}", f"BaseType == {q([n])}"],
+                         style_for(cfg, ex["show_stacks_tier"], "Circle"), f"{n} stack (config.toml [exchange.show_stacks])")
+                   for n in forced)
     for tname in tiers.names:
         for (t, n, shape), names in sorted(stacks.items(), key=lambda kv: (kv[0][1], kv[0][2])):
             if t == tname:
@@ -954,17 +1127,21 @@ def emit_stackables(cfg, tiers, prices, ref_currency, ref_cards, card_volumes):
             return block("Hide", [f"Class == {q(classes)}"], HIDDEN_STYLE, f"unpriced {label}")
         return block(action_for(cfg, setting), [f"Class == {q(classes)}"], style_for(cfg, setting, shape), f"unpriced {label}")
 
-    def reference(ref, conds, label):
-        # unpriced names at their NeverSink reference tier
+    def reference(ref, conds, label, source="reference"):
+        # unpriced names at their NeverSink reference tier (or [exchange.unpriced_tiers])
         groups = {}
         for name, tier in ref.items():
             if name not in prices and name not in overridden:
                 groups.setdefault(tier, []).append(name)
         return "".join(block(action_for(cfg, tier), conds + [f"BaseType == {q(groups[tier])}"],
-                             style_for(cfg, tier, "Circle"), f"unpriced {label}, reference tier {tier}")
+                             style_for(cfg, tier, "Circle"), f"unpriced {label}, {source} tier {tier}")
                        for tier in ["variable"] + tiers.names + ["unknown", "hide"] if groups.get(tier))
 
+    # fixed tiers for known-cheap stackables, before (and regardless of) unpriced_currency
+    out += reference(ex.get("unpriced_tiers", {}), [], "currency", "config")
     if ex["unpriced_currency"] == "reference":
+        out += fallback_stacks(cfg, ref_currency, prices, fallback_groups(cfg, "currency"),
+                               ex.get("reference_currency_stacks", {}), [], "currency")
         out += reference(ref_currency, [], "currency")
     for classes, shape in CURRENCY_CLASSES:
         setting = "unknown" if ex["unpriced_currency"] == "reference" else ex["unpriced_currency"]
@@ -973,6 +1150,9 @@ def emit_stackables(cfg, tiers, prices, ref_currency, ref_cards, card_volumes):
         name: tier for name, tier in ref_cards.items()
         if card_volumes.get(name, 0) < ex["card_fallback_min_volume"]
     }
+    card_stack = ex.get("card_fallback_stack", 0)
+    out += fallback_stacks(cfg, card_fallbacks, prices, {n: "card" for n in card_fallbacks}, {"card": card_stack},
+                           ['Class == "Divination Cards"'], "cards")
     out += reference(card_fallbacks, ['Class == "Divination Cards"'], "cards")
     unknown_card_style = [line for line in style_for(cfg, "unknown", "Circle")
                           if not line.startswith("PlayAlertSound")]
@@ -980,6 +1160,22 @@ def emit_stackables(cfg, tiers, prices, ref_currency, ref_cards, card_volumes):
     out += block(action_for(cfg, "unknown"), ['Class == "Divination Cards"'],
                  unknown_card_style, "unpriced cards (no reliable buy-order quote)")
     return out
+
+
+def fallback_stacks(cfg, ref, prices, groups, stack_of, conds, label):
+    """league.filter's stack Shows for unpriced items whose fallback tier hides them (cards
+    "exstack" x3, [3901] currency t5 x5 / t6 x14): StackSize >= stack_of[group] -> Show in
+    [exchange] fallback_stack_tier. Priced / overridden names: their price decides (stack blocks)."""
+    overridden = set(cfg.get("overrides", {}))
+    by_stack = {}
+    for name, tier in ref.items():
+        n = stack_of.get(groups.get(name), 0)
+        if n and hidden(cfg, tier) and name not in prices and name not in overridden:
+            by_stack.setdefault(n, []).append(name)
+    tier = cfg["exchange"].get("fallback_stack_tier", "low")
+    return "".join(block(action_for(cfg, tier), [f"StackSize >= {n}"] + conds + [f"BaseType == {q(names)}"],
+                         style_for(cfg, tier, "Circle"), f"unpriced {label}, hidden reference tier, stack x{n}")
+                   for n, names in sorted(by_stack.items()))
 
 
 def emit_content_overrides(cfg, content, ubases):
@@ -1019,15 +1215,24 @@ def recipe_floor(cfg, tiers, tier, bases, cbases):
     return out
 
 
+# [vendor_recipes.*] sizes: inventory size -> condition sets (FilterBlade's RGB options:
+# [1401] / [2601] rgbsmall1 + rgbsmall2, rgbmedium, rgblarge)
+RECIPE_SIZES = {"small": [["Width 2", "Height 2"], ["Width 1", "Height <= 4"]],
+                "medium": [["Width 2", "Height 3"]],
+                "large": [["Width 2", "Height 4"]]}
+
+
 def emit_vendor_recipes(cfg, tiers, ubases, fbases, cbases):
     """[vendor_recipes.<name>]: ingredients shown in the recipe's `tier` style, Diamond icon.
     Ingredients = `bases` (any rarity) or, without bases, every item matching `conds` (+ `rarity`).
+    Optional `sizes` (RECIPE_SIZES names, [] = any) and `area_level` ([min, max], [] = any) narrow
+    it (one block set per `any` condition x size).
     The tier is a floor: unique bases whose own (normal or Foulborn) tier is better are left
     out, so their unique rule wins (a tink Fugitive Ring stays a tink); better crafting bases /
     [overrides] get a copy of their own block first (recipe_floor)."""
     out = ""
     for name, rec in cfg.get("vendor_recipes", {}).items():
-        if not rec.get("enabled"):
+        if not rec.get("enabled") or rec.get("uniques"):  # `uniques`: value floor, unique_vendor_values
             continue
         tier = rec["tier"]
         if tier not in tiers.names + ["variable"]:
@@ -1043,8 +1248,14 @@ def emit_vendor_recipes(cfg, tiers, ubases, fbases, cbases):
         else:
             items, uniques = [f"Rarity {' '.join(rec['rarity'])}"] if rec.get("rarity") else [], []
         floor = recipe_floor(cfg, tiers, tier, bases, cbases)
-        for cond in rec.get("any") or [""]:
-            extra = cls + conds + ([cond] if cond else [])
+        unknown = set(rec.get("sizes", [])) - set(RECIPE_SIZES)
+        if unknown:
+            raise ValueError(f"[vendor_recipes.{name}] sizes: unknown {sorted(unknown)}, use {list(RECIPE_SIZES)}")
+        sizes = [c for s in rec.get("sizes", []) for c in RECIPE_SIZES[s]] or [[]]
+        area = rec.get("area_level", [])
+        area = [f"AreaLevel >= {area[0]}", f"AreaLevel <= {area[1]}"] if area else []
+        for cond, size in ((c, s) for c in rec.get("any") or [""] for s in sizes):
+            extra = cls + conds + area + size + ([cond] if cond else [])
             rarity = [c for c in items if c.startswith("Rarity")]  # recipe rarities are all <= Rare
             for t, fconds, fstyle, label in floor:
                 own = [c for c in fconds if not (rarity and c.startswith("Rarity"))]
@@ -1056,7 +1267,7 @@ def emit_vendor_recipes(cfg, tiers, ubases, fbases, cbases):
     return section("Vendor recipes ([vendor_recipes.*], tier = floor)") + out if out else ""
 
 
-def emit_uniques(cfg, tiers, bases, fbases, linked, map_bases, rescue=None):
+def emit_uniques(cfg, tiers, bases, fbases, linked, map_bases, rescue=None, frescue=None):
     out = section("Uniques (tier = EV of one unID drop, or cheapest unique without drop tiers; variable = gamble; 5L/6L jackpots)")
     # shown tiers first (Foulborn before normal), then corrupted-implicit rescue, then the
     # Foulborn catch-all (so no Foulborn reaches the hidden normal tiers), then hidden tiers
@@ -1089,6 +1300,12 @@ def emit_uniques(cfg, tiers, bases, fbases, linked, map_bases, rescue=None):
         out += block("Show", ["Rarity Unique", f"LinkedSockets >= {links}", f"BaseType == {q(linked[links])}"],
                      style_for(cfg, "variable", UNIQUE_SHAPE), f"linked unique jackpot {links}L")
     out += emit_corrupted_uniques(cfg)
+    out += emit_unique_exceptions(cfg)  # after the shown price tiers, before the hidden ones
+    # same faded content rescue for Foulborn, before the Foulborn hidden tiers / catch-all
+    ffaded = sorted(b for b in frescue or {} if hidden(cfg, fbases.get(b, ("hide",))[0]))
+    if ffaded:
+        out += block("Show", foul + [f"BaseType == {q(ffaded)}"], cfg["style"]["content"]["lines"],
+                     "content override show: enabled [content.*] Foulborn uniques on otherwise hidden bases")
     for tier in order:
         if tier not in shown:
             out += tier_blocks(tier, fbases, foul, "foulborn")
@@ -1103,6 +1320,22 @@ def emit_uniques(cfg, tiers, bases, fbases, linked, map_bases, rescue=None):
             out += tier_blocks(tier, bases, ["Rarity Unique"], "uniques")
     out += unpriced_blocks(cfg["uniques"]["unpriced"], ["Rarity Unique"], "unpriced uniques")
     return out
+
+
+def emit_unique_exceptions(cfg):
+    """Unique variants a per-base price can't see (module unique_exceptions = league.filter
+    [4801] / [4803] / [4804] overqual): uber Impresence / Forge swords (influence), Kaom's Heart
+    (no sockets), Tabula, synthesised, abyss-socket uniques, Vestigial, unique idols, double
+    corrupted, crucible, 27%+ quality. Shows only, inside emit_uniques after the shown price
+    tiers (a priced shown base keeps its tier style) and before the hidden tiers (the variant
+    beats its base's Hide). [4804] base lists / Foulborn = our unique / Foulborn pricing
+    (modules.toml value "config.toml [uniques] (price)": no block).
+    Refresh: python tools/import_neversink.py unique_exceptions 4801:4802 4803:4805
+    --config-key "uniques[.](multispecialhigh|multispecial|foulborn|exdust[0-9])=config.toml [uniques] (price)"
+    """
+    if not cfg.get("unique_exceptions", {}).get("enabled", True):
+        return ""
+    return module_blocks(cfg, "unique_exceptions", "unique exception", driven=module_elsewhere)
 
 
 def emit_corrupted_uniques(cfg):
@@ -1124,8 +1357,8 @@ def emit_crafting_bases(cfg, tiers, entries):
     out = section("Crafting bases (poe.ninja base prices)")
     # jackpot (variable) blocks first, before the league-start unused-white hides
     keys = sorted(groups, key=lambda k: (k[0] != "variable", tiers.rank(k[0]), -k[1], k[3] or ""))
-    unused = league_start_unused_whites(cfg)
-    floor = tiers.rank(cfg["bases"].get("config_min_tier", cfg["bases"]["min_tier"]))
+    unused = unused_white_hides(cfg)
+    floor = tiers.rank(cfg.get("leveling", {}).get("unused_whites_min_tier") or cfg["bases"]["min_tier"])
     for tier, lo, hi, infl in keys:
         if unused and tier != "variable" and tiers.rank(tier) > floor:
             out, unused = out + unused, ""
@@ -1143,77 +1376,113 @@ def crafting_conds(lo, hi, infl, names):
     return conds + [f"HasInfluence {infl.split('/')[0] if infl else 'None'}", f"BaseType == {q(names)}"]
 
 
-def emit_rares(cfg, ref_text):
-    """Endgame rares by NeverSink base tier, per RARE_GROUPS group (rares.weapons / armour /
-    jewellery = tier list). poe.ninja has no rare prices, so the "$type->rr... $tier->tN" blocks
-    (commented out in the Very Strict reference) are copied back on, each limited to its group's
-    classes with rares.show.<class> true (missing = true), styled only by rares.text_color (muted yellow; no sound /
-    beam / icon). "all" = every rare of the group. Only ilvl >= rares.min_ilvl.<group> (68 floor)."""
-    rc = cfg.get("rares", {})
-    if not rc.get("enabled", True):
+# NeverSink endgame rare sections, module rules/modules/rares.filter, made with:
+#   tools/import_neversink.py rares 1700:2300 2600:2601 2602:2800 --config-key "rr(->\w+)?\.t\d=config.toml [rares]"
+# [[1700]] decorators (Continue) + talismans, [[1800]] veiled, [[1900]] breach rings, [[2000]]
+# conditional hides, [[2100]] amulet / ring / belt tiers, [[2200]] droplevel hides, [2201] gear
+# tiers (emit_rares) | [[2600]] animated weapons, [2602] remaining rares t5, [[2700]] hide layer 1
+# (emit_rare_hide_layer)
+RARE_SECTIONS = ("1700", "2300")
+RARE_ANIMATED_SECTION = ("2600", "2601")
+RARE_HIDE_LAYER_SECTIONS = ("2602", "2800")
+RARE_TIER_KEY = re.compile(r"rr(->\w+)?\.t\d")  # base-tier Shows, decided by config.toml [rares]
+
+
+def emit_rares(cfg):
+    """Endgame rares [[1700]]-[2201]: module rares, per-block toggles in modules.toml [rares.blocks].
+    After the crafting bases, like league.filter ([1500] economy bases first): a priced base or
+    jackpot base is decided before any rare Hide here (id_mods / exotics / flasks / recipes /
+    uniques too). The NeverSink base-tier Shows (keys "rr...tN", value "config.toml [rares]")
+    are made by rare_tier_blocks from config.toml [rares], not by modules.toml / league_start."""
+    if not cfg.get("rares", {}).get("enabled", True):
         return ""
+    return (section("Endgame rares (config.toml [rares], modules.toml [rares.blocks])")
+            + module_blocks(cfg, "rares", "rare", sections=[RARE_SECTIONS], driven=rare_tier_blocks(cfg),
+                            restyle=rare_decorator_style(cfg)))
+
+
+def rare_decorator_style(cfg):
+    """module_blocks restyle: [[1700]] decorator blocks ("decorators->...") get rares.text_color
+    instead of NeverSink's yellow (calm look, like the base-tier Shows); none set = no colour."""
+    color = cfg.get("rares", {}).get("text_color")
+
+    def restyle(key, style):
+        if not key.startswith("decorators->"):
+            return style
+        return [s for s in style if not s.startswith("SetTextColor")] + ([f"SetTextColor {color}"] if color else [])
+    return restyle
+
+
+def emit_rare_hide_layer(cfg):
+    """[[2600]] animated-weapon Shows (RARE_ANIMATED_SECTION, off; NOT turned on by league_start:
+    they'd show every normal / magic weapon), [2602] remaining rares (rr.t5) + [[2700]] hide
+    layer (normal / magic gear in maps, rares ilvl 68+), module rares. league.filter has
+    [[2300]] crafting, [[2400]] chancing, [2601] RGB between emit_rares and this: their emitters
+    go before this one ([2601] RGB then sits before [[2600]]: both Shows, only style differs)."""
+    if not cfg.get("rares", {}).get("enabled", True):
+        return ""
+    return (section("Endgame rares: animated weapons, remaining, hide layer (modules.toml [rares.blocks])")
+            + module_blocks(cfg, "rares", "rare", sections=[RARE_ANIMATED_SECTION])
+            + module_blocks(cfg, "rares", "rare", sections=[RARE_HIDE_LAYER_SECTIONS],
+                            driven=rare_tier_blocks(cfg)))
+
+
+def rare_tier_blocks(cfg):
+    """module_blocks driven for the rares "rr" base-tier blocks (poe.ninja has no rare prices):
+    one block "rr->amuring.t1" / "rr.t2" ... -> a Show per RARE_GROUPS group whose rares.<group>
+    list has that tier, limited to the group's classes with rares.show.<class> true (missing =
+    true), ItemLevel >= rares.min_ilvl.<group> (68 floor), styled only by rares.text_color.
+    "all" = one Show for every rare of the group, at the first rr block. Generic gear tiers (no
+    Class line) never cover jewellery. rares.base_tiers false: none."""
+    rc = cfg.get("rares", {})
     show = rc.get("show", {})
     unknown = set(show) - {c for classes in RARE_GROUPS.values() for c in classes}
     if unknown:
         raise ValueError(f"rares.show: unknown class {sorted(unknown)}, use one of {RARE_GROUPS}")
     hide = {c for c, on in show.items() if not on}
     style = [f"SetTextColor {rc['text_color']}"] if rc.get("text_color") else []
-    ref = []  # (type, tier, conds without Class, classes or None)
-    lines = ref_text.splitlines()
-    for i, l in enumerate(lines):
-        m = re.match(r"#?Show\b.*\$type->(rr\S*)\s+\$tier->(\w+)", l)
-        if not m:
-            continue
-        conds, classes = [], None
-        for body in lines[i + 1:]:
-            body = body.lstrip("#").strip()
-            word = (body.split() or [""])[0]
-            if not re.fullmatch(r"[A-Z][A-Za-z]+", word) or word in ("Show", "Hide"):
-                break
-            if word == "Class":
-                classes = re.findall(r'"([^"]+)"', body)
-            elif not body.startswith(("Set", "Play", "Minimap", "Disable")):
-                conds.append(body)
-        ref.append((m.group(1), m.group(2), conds, classes))
+    first = next(b["key"] for b in load_module("rares") if RARE_TIER_KEY.fullmatch(b["key"]))
 
-    out = ""
-    for group, group_classes in RARE_GROUPS.items():
-        wanted = rc.get(group, [])
-        allowed = [c for c in group_classes if c not in hide]
-        ilvl = f"ItemLevel >= {max(68, rc.get('min_ilvl', {}).get(group, 68))}"  # NeverSink's endgame floor
-        if not wanted or not allowed:
-            continue
-        if "all" in wanted:
-            out += block("Show", [ilvl, "Rarity Rare", f"Class == {q(allowed)}"], style,
-                         f"rare {group}, any base (rares.{group} all)")
-            continue
-        for kind, tier, conds, classes in ref:
+    def emit(b):
+        if not RARE_TIER_KEY.fullmatch(b["key"]):
+            raise ValueError(f"modules.toml [rares.blocks] {b['key']!r}: only rr tier keys can be config-driven")
+        if not rc.get("base_tiers", True):
+            return ""
+        tier = b["key"].rsplit(".", 1)[1]
+        classes = next((re.findall(r'"([^"]+)"', c) for c in b["conds"] if c.startswith("Class")), None)
+        out = ""
+        for group, group_classes in RARE_GROUPS.items():
+            wanted = rc.get(group, [])
+            allowed = [c for c in group_classes if c not in hide]
+            ilvl = f"ItemLevel >= {max(68, rc.get('min_ilvl', {}).get(group, 68))}"  # NeverSink's endgame floor
+            if not wanted or not allowed:
+                continue
+            if "all" in wanted:
+                if b["key"] == first:
+                    out += block("Show", [ilvl, "Rarity Rare", f"Class == {q(allowed)}"], style,
+                                 f"rare {group}, any base (rares.{group} all)")
+                continue
             if classes is None and group == "jewellery":
                 continue  # generic gear tiers: armour / weapon bases only
             shown = [c for c in allowed if classes is None or c in classes]
             if tier in wanted and shown:
-                conds = [ilvl if c.startswith("ItemLevel >=") else c for c in conds]
+                conds = [ilvl if c.startswith("ItemLevel >=") else c for c in b["conds"] if not c.startswith("Class")]
                 out += block("Show", conds + [f"Class == {q(shown)}"], style,
-                             f"rare {group} {kind} {tier} (NeverSink base tier)")
-    return section("Endgame rares: NeverSink base tiers (rares.*)") + out if out else ""
+                             f"rare {group} {b['key']} (NeverSink base tier, module rares)")
+        return out
+    return emit
 
 
-def section_heads(lines):
-    """NeverSink section number -> line index (last match: the first ones are the TOC)."""
-    heads = {}
-    for i, l in enumerate(lines):
-        m = re.match(r"#\s+\[\[?(\d{4})\]\]?", l)
-        if m:
-            heads[m.group(1)] = i
-    return heads
-
-
-# NeverSink cluster jewel sections: [2805] eco-based (enchant x passives x ilvl), [2806] random
+# Module jewels (rules/modules/jewels.filter, made with: tools/import_neversink.py jewels
+# 2801:2802 2803:2900; [2802] leveling stays with emit_leveling): [2801] special, [2803] abyss,
+# [2804] generic; cluster sections [2805] eco-based (enchant x passives x ilvl), [2806] random
+JEWEL_SECTIONS = ("2801", "2805")
 CLUSTER_SECTIONS = ("2805", "2900")
+CLUSTER_ECO_SECTION = ("2805", "2806")
 # poe.ninja ClusterJewel levelRequired = ilvl bucket start -> bucket end (None = no cap)
 CLUSTER_ILVL = {1: 49, 50: 67, 68: 74, 75: 83, 84: None}
-# poe.ninja cluster enchant text -> in-game EnchantmentPassiveNode name. Names NeverSink's
-# reference doesn't use are unchecked; tests fail when a valuable enchant maps to one.
+# poe.ninja cluster enchant text -> in-game EnchantmentPassiveNode name (= RePoE cluster_jewels
+# "name"). Tests check valuable ones against NeverSink's reference + test VERIFIED_CLUSTER_NODES.
 CLUSTER_NODES = {
     # Large
     "10% increased Attack Damage": "Attack Damage",
@@ -1274,9 +1543,11 @@ CLUSTER_NODES = {
 }
 
 
-def neversink_cluster_nodes(ref_text):
-    """EnchantmentPassiveNode names the reference filter uses (= confirmed in-game names)."""
-    return set(re.findall(r'"([^"]+)"', "\n".join(re.findall(r"EnchantmentPassiveNode == (.*)", ref_text))))
+def module_cluster_nodes():
+    """EnchantmentPassiveNode names module jewels' cluster blocks use (NeverSink's, = confirmed
+    in-game names; tests check CLUSTER_NODES against them)."""
+    return {n for b in load_module("jewels") for c in b["conds"] if c.startswith("EnchantmentPassiveNode")
+            for n in re.findall(r'"([^"]+)"', c)}
 
 
 def price_clusters(data, cfg, tiers):
@@ -1315,130 +1586,308 @@ def emit_cluster_prices(cfg, tiers, prices):
     return section("Cluster jewels: poe.ninja prices (enchant x passives x ilvl bucket)") + out if out else ""
 
 
-def neversink_blocks(ref_text, first, after, label, classes=None, off=False, only=None, drop_classes=(),
-                     unhide=None):
-    """The enabled blocks of reference/league.filter sections [first, after) as the FilterBlade
-    export has them. Borders / backgrounds stripped; Hide blocks get HIDDEN_STYLE.
-    classes: keep only these in a block's `Class ==` line (no Class line: add one), drop blocks
-    left with none. drop_classes: remove these from `Class ==`, drop blocks left with none.
-    off: also the commented-out "#Show" blocks (league start: the user turns them on in FilterBlade).
-    only: keep blocks with this condition line (e.g. "FracturedItem True").
-    unhide: conds -> extra conds; Hide blocks become Show with their own style + those conds,
-    Show blocks are dropped (the user turning a hidden FilterBlade rule on)."""
-    out, lines = "", ref_text.splitlines()
-    heads = section_heads(lines)
-    if first not in heads or after not in heads:
-        raise ValueError(f"section [{first}] or [{after}] not found in reference/league.filter")
-    i, end = heads[first], heads[after]
-    while i < end:
-        m = re.match(r"(Show|Hide)\b\s*#?\s*(.*)$", lines[i])
-        commented = False
-        if not m and off:
-            m = re.match(r"#(Show)\b\s*#?\s*#?\s*(.*)$", lines[i])
-            commented = bool(m)
-        i += 1
-        if not m:
-            continue
-        body = []
-        while i < end and lines[i].strip() and not re.match(r"#?(Show|Hide|Minimal)\b", lines[i]):
-            line = lines[i]
-            if line.startswith("#"):
-                line = line[1:]
-                if not commented or not line.strip() or line.lstrip()[0] in "#-=":
-                    break
-            body.append(line.strip())
-            i += 1
-        style = [l for l in body if re.match(r"(Set|Play|Minimap|Disable|Enable|Custom)", l)
-                 and not l.startswith(("SetBorderColor", "SetBackgroundColor"))]
-        conds = [l for l in body if not re.match(r"(Set|Play|Minimap|Disable|Enable|Custom)", l)]
-        if only and only not in conds:
-            continue
-        cls = next((c for c in conds if c.startswith("Class")), None)
-        if classes is not None and not cls:
-            conds.append(f"Class == {q(classes)}")
-        elif classes is not None or (drop_classes and cls):
-            kept = [c for c in re.findall(r'"([^"]+)"', cls)
-                    if (classes is None or c in classes) and c not in drop_classes]
-            if not kept:
-                continue
-            conds = [f"Class == {q(kept)}" if c is cls else c for c in conds]
-        if unhide:
-            if m.group(1) == "Hide":
-                out += block("Show", conds + unhide(conds), style, f"{label} {m.group(2)} (NeverSink, unhidden)")
-            continue
-        out += block(m.group(1), conds, HIDDEN_STYLE if m.group(1) == "Hide" else style,
-                     f"{label} {m.group(2)} (NeverSink)")
+STYLE_RE = re.compile(r"(Set|Play|Minimap|Disable|Enable|Custom)")
+
+
+def _transform_block(action, conds, style, comment, classes=None, only=None, drop_classes=(), unhide=None,
+                     source="NeverSink"):
+    """One module block -> filter text ("" = dropped), after the module_blocks options."""
+    conds = list(conds)
+    if only and only not in conds:
+        return ""
+    cls = next((c for c in conds if c.startswith("Class")), None)
+    if classes is not None and not cls:
+        conds.append(f"Class == {q(classes)}")
+    elif classes is not None or (drop_classes and cls):
+        kept = [c for c in re.findall(r'"([^"]+)"', cls)
+                if (classes is None or c in classes) and c not in drop_classes]
+        if not kept:
+            return ""
+        conds = [f"Class == {q(kept)}" if c is cls else c for c in conds]
+    if unhide:
+        if action == "Hide":
+            return block("Show", conds + unhide(conds), style, f"{comment} ({source}, unhidden)")
+        return ""
+    return block(action, conds, HIDDEN_STYLE if action == "Hide" else style, f"{comment} ({source})")
+
+
+MODULES_DIR = ROOT / "rules/modules"
+
+
+def load_module(name):
+    """rules/modules/<name>.filter -> [{action, key, section, conds, style, tags}]. Our own rule
+    files (first made by tools/import_neversink.py). Block header "Show # <key> [tags]" (tags =
+    NeverSink strictness markers "%D3" / "%H2" / "!utility_layer"), section lines
+    "# [NNNN] title"; on/off per key lives in modules.toml."""
+    out, section, cur = [], None, None
+    for line in (MODULES_DIR / f"{name}.filter").read_text(encoding="utf-8").splitlines():
+        h = re.match(r"#\s+\[\[?(\d{4})\]\]?", line)
+        m = re.match(r"(Show|Hide)\s+#\s*(\S+)(.*)", line)
+        if h:
+            section, cur = h.group(1), None
+        elif m:
+            cur = {"action": m.group(1), "key": m.group(2), "section": section, "conds": [], "style": [],
+                   "tags": m.group(3).split()}
+            out.append(cur)
+        elif cur is not None and line.strip() and not line.lstrip().startswith("#"):
+            l = line.strip()
+            cur["style" if STYLE_RE.match(l) else "conds"].append(l)
+        elif not line.strip():
+            cur = None
     return out
 
 
-def emit_clusters(ref_text):
-    """Remaining normal/magic/rare cluster jewels: NeverSink's cluster sections."""
-    first, after = CLUSTER_SECTIONS
-    return (section("Cluster jewels: NeverSink economy tiers (reference/league.filter [2805]-[2806])")
-            + neversink_blocks(ref_text, first, after, "cluster"))
+def module_on(cfg, name, key):
+    """Block toggle from modules.toml [<name>.blocks] (league_start: apply_league_start has set
+    the off Shows true, LS_KEEP_SECTIONS aside). Missing key = error (no hidden settings)."""
+    blocks = cfg["modules"][name]["blocks"]
+    if key not in blocks:
+        raise KeyError(f"modules.toml [{name}.blocks] has no {key!r} (run tools/import_neversink.py)")
+    return blocks[key]
 
 
-# NeverSink flask / tincture sections: [0803] identified magic mods, [1303] fractured (flask
-# classes only), [[2500]] endgame quality / ilvl
-FLASK_SECTIONS = [("0803", "0900"), ("1303", "1304"), ("2500", "2600")]
+def module_blocks(cfg, name, label, sections=None, classes=None, only=None, drop_classes=(), unhide=None,
+                  extra_conds=None, driven=None, restyle=None):
+    """Filter text of rules/modules/<name>.filter blocks turned on in modules.toml.
+    sections: (first, after) ranges of section numbers to keep (None = all). extra_conds:
+    {key: [condition lines]} added to that block (e.g. "Rarity <= Rare": uniques stay priced).
+    driven: block -> text, for keys whose modules.toml value is a string (set by config.toml,
+    e.g. rares rr tiers; importer --config-key); such a key without driven = error.
+    restyle: (key, style lines) -> style lines (e.g. rares decorators: our text colour).
+    Borders / backgrounds were dropped by the importer; Hide blocks get HIDDEN_STYLE.
+    classes: keep only these in a block's `Class ==` line (no Class line: add one), drop blocks
+    left with none. drop_classes: remove these from `Class ==`, drop blocks left with none.
+    only: keep blocks with this condition line (e.g. "FracturedItem True").
+    unhide: conds -> extra conds; Hide blocks become Show with their own style + those conds,
+    Show blocks are dropped (the user turning a hidden FilterBlade rule on)."""
+    out = ""
+    for b in load_module(name):
+        if sections and not any(first <= (b["section"] or "") < after for first, after in sections):
+            continue
+        if isinstance(module_on(cfg, name, b["key"]), str):
+            if driven is None:
+                raise ValueError(f"modules.toml [{name}.blocks] {b['key']!r}: string value needs an emitter")
+            out += driven(b)
+            continue
+        if not module_on(cfg, name, b["key"]):
+            continue
+        conds = b["conds"] + (extra_conds or {}).get(b["key"], [])
+        style = restyle(b["key"], b["style"]) if restyle else b["style"]
+        out += _transform_block(b["action"], conds, style, f"{label} {b['key']}",
+                                classes, only, drop_classes, unhide, source=f"module {name}")
+    return out
+
+
+def emit_jewels(cfg):
+    """Normal / magic / rare jewels: module jewels ([2801] special corrupted / uncorrupted-mod,
+    [2803] abyss, [2804] generic, [2805]-[2806] cluster eco tiers + random), per-block toggles in
+    modules.toml. league.filter's place: after rares ([[2700]]), before heist. Priced cluster
+    jewels (emit_cluster_prices), priced jewel bases (emit_crafting_bases), ID-mod / fractured
+    jewels and the campaign ([2802], emit_leveling) are decided earlier.
+    league_start turns every Show on except [2805] (LS_KEEP_SECTIONS): its off blocks are FilterBlade's empty
+    economy tiers (no EnchantmentPassiveNode list) that would tink every enchant."""
+    if not cfg.get("jewels", {}).get("enabled", True):
+        return ""
+    eco, rest = CLUSTER_ECO_SECTION, (CLUSTER_ECO_SECTION[1], CLUSTER_SECTIONS[1])
+    return (section("Jewels + cluster jewels (config.toml [jewels], modules.toml [jewels.blocks])")
+            + module_blocks(cfg, "jewels", "jewel", sections=[JEWEL_SECTIONS])
+            + module_blocks(cfg, "jewels", "cluster", sections=[eco])
+            + module_blocks(cfg, "jewels", "cluster", sections=[rest]))
+
+
+# NeverSink [[2900]] heist cloak / brooch / gear / tool (module rules/modules/heist.filter, made
+# with: tools/import_neversink.py heist 2900:3000)
+
+
+def emit_heist(cfg):
+    """Normal / magic / rare heist gear by base tier: module heist, per-block toggles in
+    modules.toml. Right after jewels as in league.filter ([[2900]] after [2806]); priced
+    crafting bases and ID-mod / fractured heist gear are decided earlier."""
+    if not cfg.get("heist", {}).get("enabled", True):
+        return ""
+    return (section("Heist gear (config.toml [heist], modules.toml [heist.blocks])")
+            + module_blocks(cfg, "heist", "heist"))
+
+
+# Module misc (rules/modules/misc.filter, made with: tools/import_neversink.py misc 0100:0300
+# 4500:4800 4900:5000 --config-key "6l\..*=config.toml show_6_links (rules/top.filter)"):
+# [0100] 6L overrides (FilterBlade off; config.toml show_6_links decides, rules/top.filter's
+# 6L Show is a superset, so no module block is emitted), [0200] gold stack tiers, [4500] heist
+# targets, [4600] enshrouded gear, [4700] idols, [4900] Maven's invitations / lab / incursion items
+GOLD_SECTION = ("0200", "0300")
+MISC_BEFORE_UNIQUES = ("4500", "4800")
+MISC_AFTER_UNIQUES = ("4900", "5000")
+GOLD_MAP_AREA_LEVEL = 68  # show_gold: stacks below gold_min_stack hidden from this area level (maps)
+GOLD_SMALL_STYLE = ["SetFontSize 35", "SetTextColor gold", "DisableDropSound True"]
+
+
+def emit_gold(cfg):
+    """Gold. config.toml show_gold false = one Hide for all gold. true = gold_min_stack decides
+    (one source of truth): module misc [0200] keys are config-driven (modules.toml string
+    values): gold.stack3 = its style for StackSize >= gold_min_stack, gold.anyother = one Hide
+    for smaller stacks in maps (AreaLevel >= GOLD_MAP_AREA_LEVEL; none with gold_min_stack <= 1 or show_small_gold,
+    e.g. league start: small stacks keep the small look), the other
+    tier Hides emit nothing; then a small Show for the rest (campaign gold, show_gold's promise).
+    Independent of [misc] enabled. League.filter's place ([[0200]] first): before
+    rules/top.filter, no earlier block matches gold."""
+    out = section("Gold (config.toml show_gold, gold_min_stack)")
+    if not cfg.get("show_gold"):
+        return out + block("Hide", ['BaseType == "Gold"'], HIDDEN_STYLE, "gold (show_gold = false)")
+    n = cfg["gold_min_stack"]
+
+    def driven(b):
+        if b["key"] == "gold.stack3":
+            return block("Show", [f"StackSize >= {n}", 'BaseType == "Gold"'], b["style"],
+                         f"gold >= {n} (config.toml gold_min_stack)")
+        if b["key"] == "gold.anyother" and n > 1 and not cfg.get("show_small_gold"):
+            return block("Hide", ['BaseType == "Gold"', f"AreaLevel >= {GOLD_MAP_AREA_LEVEL}"], HIDDEN_STYLE,
+                         f"gold < {n} in maps (config.toml gold_min_stack)")
+        return ""
+    out += module_blocks(cfg, "misc", "misc", sections=[GOLD_SECTION], driven=driven)
+    return out + block("Show", ['BaseType == "Gold"'], GOLD_SMALL_STYLE, "gold: rest (campaign)")
+
+
+def emit_misc(cfg, sections):
+    """Module misc questlike / event items, league.filter's style, per-block toggles in
+    modules.toml. MISC_BEFORE_UNIQUES ([4500] heist targets, [4600] enshrouded gear, [4700]
+    idols): after special maps, before uniques as in league.filter ("override uniques": a
+    heist target / enshrouded item of unique rarity keeps this look; neither is priced by
+    poe.ninja; only Shows, so no jackpot is hidden). MISC_AFTER_UNIQUES ([4900] Maven's
+    invitations, lab / incursion items): right after uniques; a poe.ninja price or the
+    unpriced Map Fragments / Misc Map Items fallback (stackables) decides invitations / Maven's
+    currency first."""
+    if not cfg.get("misc", {}).get("enabled", True):
+        return ""
+    return (section(f"Misc items [{sections[0]}]-[{sections[1]}] (config.toml [misc], modules.toml [misc.blocks])")
+            + module_blocks(cfg, "misc", "misc", sections=[sections]))
+
+
+# Flask / tincture rules: [0803] identified magic mods, [1303] fractured (flask classes only),
+# [[2500]] endgame quality / ilvl ([2501]-[2505])
+#   (module rules/modules/flasks.filter, made with: tools/import_neversink.py flasks 0803:0900 1303:1304 2500:2600)
 FLASK_CLASSES = ["Hybrid Flasks", "Life Flasks", "Mana Flasks", "Utility Flasks", "Tinctures"]
 
 
-def emit_flasks(cfg, ref_text):
-    """Normal / magic flasks + tinctures NeverSink shows: good identified mods, fractured,
-    overquality, corrupted 30%. Before vendor recipes: a 21% flask keeps this look over glassblower."""
+def emit_flasks(cfg):
+    """Normal / magic flasks + tinctures: good identified mods, fractured, overquality,
+    corrupted 30%. Module flasks, Class narrowed to FLASK_CLASSES (its [1303] copy = the flask
+    part of league.filter's fractured rules; gear part: emit_exotics). Before vendor recipes:
+    a 21% flask keeps this look over glassblower. Flask classes overlap no id_mods / exotics
+    block, so its place among them does not matter."""
     if not cfg.get("flasks", {}).get("enabled", True):
         return ""
-    out = "".join(neversink_blocks(ref_text, first, after, "flask", FLASK_CLASSES, cfg.get("league_start"))
-                  for first, after in FLASK_SECTIONS)
-    return section("Flasks + tinctures: NeverSink rules (config.toml [flasks])") + out
+    return (section("Flasks + tinctures (config.toml [flasks], modules.toml [flasks.blocks])")
+            + module_blocks(cfg, "flasks", "flask", classes=FLASK_CLASSES))
 
 
-# NeverSink exotic gear sections: [0902] memory strands, [[1100]] exotic mods (fractured
-# blocks only: fractured + veiled / incursion / delve), [1303] fractured (flasks: emit_flasks)
-EXOTIC_SECTIONS = [("0902", "1000", None), ("1100", "1200", "FracturedItem True"), ("1303", "1304", None)]
+# Exotic gear rules: [0902] memory strands, [[1100]] exotic mods (1101 veiled, 1102 incursion,
+# 1103 necropolis, 1104 bestiary, 1105 delve / mercenary / warband / essence), [[1200]] exotic
+# classes (imbued, synthesised, voidstones, trinkets, fishing rods, pieces, quest items) +
+# [1201] relics, [[1300]] variations (1301 corruptions, 1302 abyss sockets, 1303 fractured
+# (flasks: emit_flasks), 1304 enchanted, 1305 crucible)
+#   (module rules/modules/exotics.filter, made with: tools/import_neversink.py exotics 0902:1000 1100:1400)
+# Blocks with no Rarity line that can catch a poe.ninja-priced unique: unique stays priced
+# (emit_uniques, jackpot / blue rules), the block shows only normal / magic / rare.
+EXOTIC_NOT_UNIQUE = {"artefact->misc.anyimbued": ["Rarity <= Rare"],
+                     "artefact->misc.fishingrods": ["Rarity <= Rare"]}
 
 
-def emit_exotics(cfg, ref_text):
-    """Memory-stranded + fractured gear as reference/league.filter has them (its own style).
-    league_start: also the blocks commented out there. Before vendor recipes / bases / rares."""
+def emit_exotics(cfg):
+    """Memory-stranded, exotic-mod, exotic-class and exotic-variation gear: module exotics
+    (league.filter's own style). After id_mods like league.filter ([0600]-[0802] before
+    [0902]-[1300]; [1000] corrupted id mods never meet [0902], which needs Corrupted False),
+    before vendor recipes / crafting bases / stackables / uniques / rares: all Shows, nothing
+    priced loses (EXOTIC_NOT_UNIQUE; [1201] relics are normal / magic / rare only)."""
     if not cfg.get("exotics", {}).get("enabled", True):
         return ""
-    out = "".join(neversink_blocks(ref_text, first, after, "exotic", off=cfg.get("league_start"),
-                                   only=only, drop_classes=FLASK_CLASSES)
-                  for first, after, only in EXOTIC_SECTIONS)
-    return section("Memory strands + fractured: NeverSink rules (config.toml [exotics])") + out
+    return (section("Exotic gear (config.toml [exotics], modules.toml [exotics.blocks])")
+            + module_blocks(cfg, "exotics", "exotic", drop_classes=FLASK_CLASSES,
+                            extra_conds=EXOTIC_NOT_UNIQUE))
 
 
-# NeverSink map sections: [0301] influenced (Zana / Elder / conqueror), [3201] unique maps
+# NeverSink identified-mod sections: [[0600]] combinations (+ [0617] veiled exceptions),
+# [[0700]] dual mods, [0801] top value, [0802] uncorrupted mods ([0803] flasks: emit_flasks),
+# [[1000]] corrupted items with good mods
+#   (module rules/modules/id_mods.filter, made with: tools/import_neversink.py id_mods 0600:0803 1000:1100)
+
+
+def emit_id_mods(cfg):
+    """Identified magic / rare gear with good mods (HasExplicitMod): module id_mods, per-block
+    toggles in modules.toml. Before vendor recipes / crafting bases / rares, like league.filter:
+    a good identified rare beats any base Hide."""
+    if not cfg.get("id_mods", {}).get("enabled", True):
+        return ""
+    return (section("Identified mods (config.toml [id_mods], modules.toml [id_mods.blocks])")
+            + module_blocks(cfg, "id_mods", "idmod", drop_classes=FLASK_CLASSES))
+
+
+# Module maps (rules/modules/maps.filter, made with: tools/import_neversink.py maps 0301:0302
+# 3201:3300 3302:3600): [0301] influenced (Zana / Elder / conqueror), [3201] unique maps
 # (uniques.hide_maps), [3202]-[3204] Valdo / Nightmare / Shaper guardian / blighted / Vaal
-# Temple / enchanted / implicit, [3302] normal map tiers (Hide in league.filter)
-SPECIAL_MAP_SECTIONS = [("0301", "0302"), ("3202", "3300")]
+# Temple / enchanted / implicit, [3302] normal map tiers (Hide in league.filter), [[3400]]
+# pseudo-map items (heist contracts / blueprints, logbooks, charts, sanctum research),
+# [[3500]] misc map items (reliquary keys, Chronicle of Atzoatl, Inscribed Ultimatum)
+# [3202] Valdo / Nightmare / Shaper guardian first: shown even corrupted ([maps] corrupted_min_tier)
+NIGHTMARE_MAP_SECTION = ("3202", "3203")
+SPECIAL_MAP_SECTIONS = [("0301", "0302"), ("3203", "3300")]
 UNIQUE_MAP_SECTION = ("3201", "3202")
 MAP_PROGRESSION_SECTION = ("3302", "3400")
+MAP_ITEM_SECTION = ("3400", "3600")
+# module maps Hide blocks a config.toml toggle overrides: key -> cfg -> True = block off
+MAP_ITEM_CONFIG_OVERRIDES = {
+    "heist->contract.handpicked": lambda cfg: cfg.get("show_contracts", True),
+    "exoticmap->sanctum.ilvl83": lambda cfg: not cfg.get("hide_forbidden_tome", False),
+    "exoticmap->sanctum.any": lambda cfg: not cfg.get("hide_forbidden_tome", False),
+}
 
 
-def emit_special_maps(cfg, ref_text):
-    """Special maps as reference/league.filter shows them (its own style). Before uniques:
-    league.filter puts them first; a Valdo / implicit map can't fall into a unique Hide.
-    uniques.hide_maps: league.filter's [3201] (corrupted unique maps shown, rest hidden)."""
-    off = cfg.get("league_start")
-    sections = ([UNIQUE_MAP_SECTION] if cfg["uniques"].get("hide_maps") else []) + SPECIAL_MAP_SECTIONS
-    out = "".join(neversink_blocks(ref_text, first, after, "map", off=off) for first, after in sections)
-    return section("Special maps: NeverSink rules (reference/league.filter [0301], [3201]-[3204])") + out
+def emit_special_maps(cfg):
+    """Special maps + map-like items: module maps, league.filter's own style, per-block toggles
+    in modules.toml. Before uniques: league.filter puts them first; a Valdo / implicit map
+    can't fall into a unique Hide, unique contracts / blueprints keep their [3400] look.
+    uniques.hide_maps: [3201] (corrupted unique maps shown, rest hidden).
+    [maps] corrupted_min_tier: after Valdo / Nightmare / Shaper guardian, Hide non-unique
+    corrupted maps below that tier (before influenced / blighted / 8-mod / implicit / progression).
+    [3400]-[3500] map items: after stackables, so a poe.ninja price (Voidborn Reliquary Key) or
+    the unpriced Map Fragments / Misc Map Items fallback (blue) decides first; show_contracts /
+    hide_forbidden_tome Hides come before everything, and those toggles beat the module's own
+    contract / Sanctum Research Hides (MAP_ITEM_CONFIG_OVERRIDES)."""
+    if not cfg.get("maps", {}).get("enabled", True):
+        return ""
+    mod = lambda *secs: module_blocks(cfg, "maps", "map", sections=list(secs))
+    out = mod(UNIQUE_MAP_SECTION) if cfg["uniques"].get("hide_maps") else ""
+    out += mod(NIGHTMARE_MAP_SECTION)
+    min_tier = cfg["maps"].get("corrupted_min_tier", 0)
+    if min_tier:
+        out += block("Hide", ["Rarity <= Rare", 'Class == "Maps"', "Corrupted True",
+                              f"MapTier < {min_tier}"], HIDDEN_STYLE, "corrupted map below [maps] corrupted_min_tier")
+    out += mod(*SPECIAL_MAP_SECTIONS)
+    # explicit config.toml toggles beat module defaults: show_contracts = true drops the plain
+    # contract Hide, hide_forbidden_tome = false drops the Sanctum Research (tome) Hides
+    blocks = dict(cfg["modules"]["maps"]["blocks"])
+    for key, beaten in MAP_ITEM_CONFIG_OVERRIDES.items():
+        if key in blocks and beaten(cfg):
+            blocks[key] = False
+    items_cfg = {**cfg, "modules": {**cfg["modules"], "maps": {**cfg["modules"]["maps"], "blocks": blocks}}}
+    # Reliquary keys (relickeys*): config.toml always_top_classes, emit_pinned_stackables
+    out += module_blocks(items_cfg, "maps", "map", sections=[MAP_ITEM_SECTION], driven=module_elsewhere)
+    return section("Special maps + map items (config.toml [maps], modules.toml [maps.blocks])") + out
 
 
-def emit_map_progression(cfg, ref_text):
-    """Normal maps by tier ([maps] progression): "all" = league.filter's tier Hides turned to
-    Show, "auto" = a tier shows while AreaLevel <= its own level (campaign: all, T5 map: T5+),
-    "none" = league.filter as is (all hidden). After uniques: unique maps are priced there."""
-    first, after = MAP_PROGRESSION_SECTION
-    mode = cfg.get("maps", {}).get("progression", "none")
+def emit_map_progression(cfg):
+    """Normal maps by tier ([maps] progression): "all" = module maps' [3302] tier Hides turned
+    to Show, "auto" = a tier shows while AreaLevel <= its own level (campaign: all, T5 map: T5+),
+    "none" = as league.filter (all hidden). A tier Hide toggled off in modules.toml: that tier
+    falls to [3302] restex (pink Show). After uniques: unique maps are priced there."""
+    if not cfg.get("maps", {}).get("enabled", True):
+        return ""
+    mode = cfg["maps"].get("progression", "none")
     tier = lambda conds: int(re.search(r"\d+", next(c for c in conds if c.startswith("MapTier"))).group())
     unhide = {"all": lambda conds: [], "auto": lambda conds: [f"AreaLevel <= {67 + tier(conds)}"]}.get(mode)
-    out = neversink_blocks(ref_text, first, after, "map", unhide=unhide) if unhide else ""
-    return (section(f"Normal maps: NeverSink tiers (reference/league.filter [3302], [maps] progression = {mode})")
-            + out + neversink_blocks(ref_text, first, after, "map"))
+    secs = [MAP_PROGRESSION_SECTION]
+    out = module_blocks(cfg, "maps", "map", sections=secs, unhide=unhide) if unhide else ""
+    return (section(f"Normal maps: tiers (module maps [3302], [maps] progression = {mode})")
+            + out + module_blocks(cfg, "maps", "map", sections=secs))
 
 
 def alt_gem(line):
@@ -1452,29 +1901,54 @@ def price_gems(data, cfg, tiers):
     """Gem prices per poe.ninja variant (level / quality / corrupted: "1", "1/20", "20/20",
     "21/23c", ...), like NeverSink's leveled / quality gem rules, confident only ->
     {(tier, level, quality, corrupted): {names}}. Thin listings (below uniques.min_listings):
-    blue "variable", whatever the price (probably valuable, no exact price). Alternate gems
-    (alt_gem) skipped: their name in BaseType makes the game reject the filter, see emit_gems.
+    blue "variable", whatever the price (probably valuable, no exact price). Price capped by
+    gem_caps (never above a confident better variant); a thin variant capped into a hidden
+    tier hides (confident upper bound). Alternate gems (alt_gem) skipped: their name in BaseType makes the game reject the filter, see emit_gems.
     Confident price below [gems] min_tier (or [small_loot]'s, gems don't stack) or in a hidden
     tier: no Show, rules/bottom.filter hides it; a gem_special variant keeps tier "hide" so
     emit_gem_fallback hides it before its blue catch-all."""
     min_rank = min_shown_rank(cfg, tiers, cfg.get("gems", {}).get("min_tier", "minor"))
+    min_listings = cfg["uniques"]["min_listings"]
     out = {}
     for t in ("SkillGem", "ImbuedGem"):
-        for line in data["stash"].get(t, {}).get("lines", []):
-            listings = line.get("listingCount", 0)
-            if alt_gem(line) or not listings:
-                continue
-            tier = tiers.of(line["chaosValue"])
-            if listings < cfg["uniques"]["min_listings"]:
+        lines = [l for l in data["stash"].get(t, {}).get("lines", [])
+                 if l.get("listingCount", 0) and not alt_gem(l)]
+        caps = gem_caps(lines, min_listings)
+        for i, line in enumerate(lines):
+            cap = caps.get(i, math.inf)
+            thin = line["listingCount"] < min_listings
+            tier = tiers.of(min(line["chaosValue"], cap))
+            if tiers.rank(tier) > min_rank or hidden(cfg, tier):
+                # confident price, or a thin one capped by a confident better variant
+                tier = "hide" if not thin or cap < line["chaosValue"] else "variable"
+            elif thin:
                 tier = "variable"
-            elif tiers.rank(tier) > min_rank:
-                tier = "hide"
             if hidden(cfg, tier):
                 tier = "hide"
             level, quality = line.get("gemLevel", 1), line.get("gemQuality") or 0
             if tier != "hide" or gem_special(level, quality):
                 out.setdefault((tier, level, quality, bool(line.get("corrupted"))), set()).add(line["name"])
     return out
+
+
+def gem_caps(lines, min_listings):
+    """Price cap per line index: the cheapest confident (min_listings) strictly better variant
+    of the same gem (same corrupted, level >= and quality >=). Nobody pays more for a worse gem
+    (poe.ninja's "20" Spectral Helix at 1 div vs 9c for 20/20 = price-fix listings)."""
+    key = lambda l: (l["name"], bool(l.get("corrupted")))
+    lq = lambda l: (l.get("gemLevel", 1), l.get("gemQuality") or 0)
+    better = {}
+    for b in lines:
+        if b["listingCount"] >= min_listings:
+            better.setdefault(key(b), []).append(b)
+    caps = {}
+    for i, a in enumerate(lines):
+        (la, qa) = lq(a)
+        vals = [b["chaosValue"] for b in better.get(key(a), [])
+                if b is not a and lq(b) != (la, qa) and lq(b)[0] >= la and lq(b)[1] >= qa]
+        if vals:
+            caps[i] = min(vals)
+    return caps
 
 
 # poe.ninja gem quality variants: 0 (= below 20), 20, 23
@@ -1531,12 +2005,34 @@ def emit_gem_fallback(cfg, prices):
     return section("Gems: blue fallback for unpriced level / quality 21+") + out
 
 
-def league_start_unused_whites(cfg):
-    """league_start + [leveling] build: white crafting bases the build never uses (the build
-    module's Hide blocks without an AreaLevel upper limit, made Rarity Normal) stay hidden in maps.
-    Goes after the bases at the configured bases.min_tier, so those still show."""
+def emit_unknown_gems(cfg, data):
+    """Gems poe.ninja doesn't list at all (new exceptional supports, e.g. league.filter [3001]
+    Item Quantity / Transfusion Support): blue "variable" instead of rules/bottom.filter's gem
+    Hide (probably valuable, no price). Gems poe.ninja knows that no price / top.filter /
+    leveling rule showed are hidden here first (same as bottom.filter; [gems] show_all: not,
+    its gem Hide turns Show too). No gem feed (fetch failed / tests): nothing. Last before
+    rules/bottom.filter, so every gem rule above wins."""
+    if hidden(cfg, "variable"):
+        return ""
+    gems = 'Class == "Skill Gems" "Support Gems"'
+    known = sorted({l["name"] for t in ("SkillGem", "ImbuedGem") for l in data["stash"].get(t, {}).get("lines", [])
+                    if not alt_gem(l)})
+    if not known:  # no gem feed: nothing to tell unlisted gems apart, bottom.filter decides
+        return ""
+    out = ""
+    if not cfg.get("gems", {}).get("show_all"):
+        out += block("Hide", [gems, f"BaseType == {q(known)}"], HIDDEN_STYLE, "gem on poe.ninja, no shown price")
+    out += block(action_for(cfg, "variable"), [gems], style_for(cfg, "variable"), "gem not on poe.ninja (variable)")
+    return section("Gems: blue for gems poe.ninja doesn't list") + out
+
+
+def unused_white_hides(cfg):
+    """[leveling] build + unused_whites_min_tier (league start sets it to bases.min_tier): white
+    crafting bases the build never uses (the build module's Hide blocks without an AreaLevel
+    upper limit, made Rarity Normal) stay hidden in maps. Goes after the bases priced at that
+    tier or better, so those still show."""
     lv = cfg.get("leveling", {})
-    if not (cfg.get("league_start") and lv.get("build") and lv.get("league_start_hide_unused", True)):
+    if not (lv.get("build") and lv.get("unused_whites_min_tier")):
         return ""
     text = (ROOT / "rules" / "leveling" / f"{lv['build']}.filter").read_text(encoding="utf-8")
     out = ""
@@ -1551,8 +2047,14 @@ def league_start_unused_whites(cfg):
     return out
 
 
-# NeverSink sections copied for the campaign: (first section, section after it)
-LEVELING_SECTIONS = [("2802", "2803"), ("5000", "5406")]  # [[3800]] currency: campaign_unhide instead
+# NeverSink campaign rules: module rules/modules/leveling.filter, made with:
+#   tools/import_neversink.py leveling 2802:2803 3800:3900 5000:5406 --config-key
+#     'jewels->leveling\.\w+|currency->leveling(stacked)?\.\w+|decorators->leveling->magic\.noticeearly|(?!leveling->flasks->utility\.(quicksilver|asortedutility)$|leveling->normalmagic->minion\.minionshields$)leveling->[\w>-]+\.\w+=config.toml [leveling] strictness'
+# [2802] jewels, [[3800]] currency styles (price first: leveling_price_first), [[5000]]
+# outdated flasks, [[5100]]-[[5200]] flasks, [[5300]] rares, [[5400]] normal / magic.
+# [5406] hide-all / [5407] show-all = rules/bottom.filter. Defaults kept from before the module:
+# quicksilver / utility flask Shows true (FilterBlade has them off).
+# Strictness-driven keys (value "config.toml [leveling] strictness"): leveling_strictness_block.
 # Gear classes eligible for the campaign vendor-item size rule. Size is checked per item
 # using Width and Height, rather than the largest base in its class.
 VENDOR_CLASSES = [
@@ -1669,21 +2171,17 @@ def campaign_only(text, area):
     return "".join(out)
 
 
-def emit_leveling(cfg, ref_text):
-    """NeverSink's leveling rules from the reference filter, rebuilt at [leveling] strictness.
-
-    The reference is a Very Strict FilterBlade export with leveling off, so blocks come
-    commented out ("#Show # # %D4 ...") or as Hide. Tags: %D<n> = off at strictness >= n,
-    %H<n> = Hide at strictness >= n. Other Hides are on-switched-off Shows, except the
-    hide layers ("hidelayer" / "!utility_layer", optional magic blockers: strictness >= 3).
-    Every block gets AreaLevel <= area_level_max, gear also Rarity <= Rare.
-    """
+def emit_leveling(cfg, price_shown=None):
+    """Campaign rules, all gated AreaLevel <= area_level_max: [leveling] extras (jewellery,
+    gems, vendor fodder, magic / white hides), the build module rules/leveling/<build>.filter,
+    then module leveling (NeverSink's [2802] [[3800]] [[5000]]-[[5405]] in league.filter order,
+    per-block toggles in modules.toml [leveling.blocks], leveling_module_blocks). Placed
+    before overrides / stackables / uniques / bases: campaign Shows beat price Hides, never
+    a unique (Rarity <= Rare on gear blocks)."""
     lv = cfg.get("leveling", {})
     if not lv.get("enabled"):
         return ""
     s, area = lv.get("strictness", 2), lv.get("area_level_max", 67)
-    lines = ref_text.splitlines()
-    heads = section_heads(lines)
 
     build = lv.get("build")
     out = section(f"Leveling (build {build or 'none'}, NeverSink strictness {s}, AreaLevel <= {area} only)")
@@ -1692,7 +2190,7 @@ def emit_leveling(cfg, ref_text):
                      ["SetFontSize 40"], "jewellery, any rarity (show_jewellery)") + "\n"
     if lv.get("show_gems"):
         out += block("Show", [f"AreaLevel <= {area}", 'Class == "Skill Gems" "Support Gems"'],
-                     ["SetFontSize 40", "SetTextColor 20 240 240"], "skill / support gems (show_gems)") + "\n"
+                     ["SetFontSize 40", "SetTextColor cyan"], "skill / support gems (show_gems)") + "\n"
     text = (ROOT / "rules" / "leveling" / f"{build}.filter").read_text(encoding="utf-8") if build else ""
     # Vendor fodder goes first so it can override hide_magic_after and build-module Hides.
     # The rarity toggles let users keep only the magic or rare vendor recipe items they want.
@@ -1735,41 +2233,115 @@ def emit_leveling(cfg, ref_text):
         after = [] if build else [f"AreaLevel > {normal_after}"]
         out += block("Hide", ["Rarity Normal"] + after + [f"AreaLevel <= {area}", f"Class == {q(NORMAL_HIDE_CLASSES)}"],
                      HIDDEN_STYLE, "white gear (build whites / hide_normal_after)") + "\n"
-    for first, after in LEVELING_SECTIONS:
-        if first not in heads or after not in heads:
-            print(f"Leveling: section [{first}] not found in reference/league.filter", file=sys.stderr)
-            continue
-        i, end = heads[first], heads[after]
-        while i < end:
-            m = re.match(r"(#?)(Show|Hide)\b\s*(.*)$", lines[i])
-            i += 1
-            if not m:
-                continue
-            commented, action, tag = m.group(1) == "#", m.group(2), m.group(3)
-            body = []
-            while i < end:
-                l = lines[i][1:] if commented and lines[i].startswith("#") else lines[i]
-                word = (l.split() or [""])[0]
-                if not re.fullmatch(r"[A-Z][A-Za-z]+", word) or word in ("Show", "Hide"):
-                    break
-                body.append(l.strip())
-                i += 1
-            d, h = re.search(r"%D(\d)", tag), re.search(r"%H(\d)", tag)
-            layer = "hidelayer" in tag or "!utility_layer" in tag
-            if commented and ((d and s >= int(d.group(1))) or (layer and s < 3)):
-                continue
-            if h:
-                action = "Hide" if s >= int(h.group(1)) else "Show"
-            elif not layer:
-                action = "Show"
-            gated = any(int(n) <= area for n in re.findall(r"^AreaLevel <= (\d+)", "\n".join(body), re.M))
-            conds = [] if gated else [f"AreaLevel <= {area}"]
-            if not any(l.startswith("Rarity") or "Stackable Currency" in l for l in body):
-                conds.append("Rarity <= Rare")
-            body = [l for l in body if not l.startswith(("SetBorderColor", "SetBackgroundColor"))]
-            name = re.sub(r"\s*%[DH]\d|^[#\s]+", "", tag).strip()
-            out += block(action, conds + body, [], name) + "\n"
+    out += leveling_module_blocks(cfg, price_shown)
     return campaign_icon_sound(out, lv.get("icon_sound", "PlayAlertSound 2 300"))
+
+
+def leveling_module_blocks(cfg, price_shown=None):
+    """Module leveling ([2802] jewels, [[3800]] currency, [[5000]]-[[5405]] flasks / rares /
+    normal + magic gear), modules.toml [leveling.blocks]. Every block gets "AreaLevel <=
+    area_level_max" (unless it has a lower one) and, without a Rarity / currency line,
+    "Rarity <= Rare" (never a unique). true / false keys = FilterBlade options (league_start
+    turns their Shows on); "config.toml [leveling] strictness" keys: leveling_strictness_block
+    (league_start does not change them: strictness is the campaign preset). [[3800]] currency
+    blocks: price first (leveling_price_first with price_shown, from leveling_price_shown)."""
+    lv = cfg["leveling"]
+    area = lv.get("area_level_max", 67)
+    extra = {}
+    for b in load_module("leveling"):
+        gated = any(int(n) <= area for c in b["conds"] for n in re.findall(r"^AreaLevel <= (\d+)$", c))
+        extra[b["key"]] = ([] if gated else [f"AreaLevel <= {area}"]) + (
+            [] if any(c.startswith("Rarity") or "Stackable Currency" in c for c in b["conds"]) else ["Rarity <= Rare"])
+    driven = leveling_strictness_block(lv.get("strictness", 2), extra)
+    out = module_blocks(cfg, "leveling", "leveling", sections=[("0000", "3800")], extra_conds=extra, driven=driven)
+    for b in load_module("leveling"):
+        if b["section"] != "3800":
+            continue
+        on = module_on(cfg, "leveling", b["key"])
+        if isinstance(on, str):
+            action = leveling_strictness_action(b, lv.get("strictness", 2))
+        else:
+            action = b["action"] if on else None
+        for conds in ([] if action is None else leveling_price_first(b["conds"], price_shown or {})):
+            out += _transform_block(action, conds + extra[b["key"]], b["style"], f"leveling {b['key']}",
+                                    source="module leveling")
+    return out + module_blocks(cfg, "leveling", "leveling", sections=[("3801", "9999")], extra_conds=extra,
+                               driven=driven)
+
+
+def leveling_price_shown(cfg, tiers, prices):
+    """Priced stackable name -> smallest stack size the price rules show it at (1 = any;
+    None = never): pinned top, [overrides] at a shown tier, a confident price in a shown tier,
+    or a stack of it reaching one (as emit_stackables, up to its max stack)."""
+    ex, sl, out = cfg["exchange"], small_loot(cfg), dict.fromkeys(PINNED_TOP_STACKABLES, 1)
+    overrides = cfg.get("overrides", {})
+    out.update({n: None if hidden(cfg, tier) else 1 for n, tier in overrides.items()})
+    for name, (v, t) in prices.items():
+        if name in out:
+            continue
+        out[name] = None
+        if v <= 0 or (sl and t in sl[1] and v < sl[0]):
+            continue
+        own = tiers.of(v)
+        if not hidden(cfg, own):
+            out[name] = 1
+            continue
+        if t == "DivinationCard":
+            continue
+        max_stack = ex.get("splinters", {}).get(name, [None, ex.get("big_stacks", {}).get(name, ex["max_stack"])])[1]
+        needs = [math.ceil(thr / v - 1e-9) for tn, thr in tiers.list
+                 if not hidden(cfg, tn) and tiers.rank(tn) < tiers.rank(own)]
+        out[name] = min((n for n in needs if n <= max_stack), default=None)
+    return out
+
+
+def leveling_price_first(conds, price_shown):
+    """[[3800]] campaign currency block -> condition lists without what price rules show
+    (price_shown: name -> stack size, leveling_price_shown): those names dropped, or
+    "StackSize < n" below the stack a price tier shows. Partial BaseType (essence prefixes): unchanged unless a priced
+    name matches, then the matching priced names as exact names."""
+    bt = next(c for c in conds if c.startswith("BaseType"))
+    names = re.findall(r'"([^"]+)"', bt)
+    if not bt.startswith("BaseType =="):
+        names = [n for n in price_shown if any(n.startswith(p) for p in names)]
+        if not any(price_shown[n] for n in names):
+            return [conds]
+    floor = max((int(m) for c in conds for m in re.findall(r"^StackSize >= (\d+)$", c)), default=1)
+    groups = {}
+    for n in names:
+        need = price_shown.get(n)
+        if need is None or need > floor:
+            groups.setdefault(need, []).append(n)
+    rest = [c for c in conds if c is not bt]
+    return [rest + [f"BaseType == {q(ns)}"] + ([f"StackSize < {need}"] if need else []) for need, ns in groups.items()]
+
+
+def leveling_strictness_block(s, extra):
+    """module_blocks driven for leveling keys valued "config.toml [leveling] strictness", from
+    the block's NeverSink tag (FilterBlade strictness s, 0 soft .. 4 very strict): %D<n> = Show
+    while s < n; %H<n> = Hide from s >= n, Show below; !utility_layer (optional magic blockers)
+    = Hide from s >= 3; untagged Hide (FilterBlade's export has leveling off) = Show."""
+    def emit(b):
+        action = leveling_strictness_action(b, s)
+        if action is None:
+            return ""
+        return _transform_block(action, b["conds"] + extra[b["key"]], b["style"], f"leveling {b['key']}",
+                                source="module leveling")
+    return emit
+
+
+def leveling_strictness_action(b, s):
+    """Show / Hide / None (off) of a leveling block at strictness s, from its NeverSink tag
+    (see leveling_strictness_block)."""
+    tags = " ".join(b["tags"])
+    d, h = re.search(r"%D(\d)", tags), re.search(r"%H(\d)", tags)
+    if d:
+        return "Show" if s < int(d.group(1)) else None
+    if h:
+        return "Hide" if s >= int(h.group(1)) else "Show"
+    if "!utility_layer" in tags:
+        return "Hide" if s >= 3 else None
+    return "Show"
 
 
 def campaign_icon_sound(text, sound):
@@ -1789,6 +2361,8 @@ def load_cfg():
     cfg = split_tiers(tomllib.loads((ROOT / "config.toml").read_text(encoding="utf-8")))
     raw = tomllib.loads((ROOT / "unique_tiers.toml").read_text(encoding="utf-8"))
     cfg["unique_tiers"] = {n: int(t) for t, names in raw.items() for n in names}
+    cfg["modules"] = tomllib.loads((ROOT / "modules.toml").read_text(encoding="utf-8"))
+    cfg["fallback_tiers"] = tomllib.loads((ROOT / "fallback_tiers.toml").read_text(encoding="utf-8"))
     return apply_league_start(cfg)
 
 
@@ -1800,66 +2374,174 @@ def split_tiers(cfg):
     return cfg
 
 
-def apply_league_start(cfg):
-    """league_start = true: show (almost) everything, see config.toml."""
-    if not cfg.get("league_start"):
-        return cfg
-    lowest = min(cfg["tiers"], key=cfg["tiers"].get)
+# League start = these loosened values, ONE table for both: config.toml league_start = true
+# (apply_league_start, at load) and tools/league_start.py start (writes them into config.toml /
+# modules.toml so they can be tightened one by one). New league-start behaviour -> add it here
+# as a value (a config key if needed), never as a league_start check in an emitter.
+# Module blocks league start leaves as modules.toml has them: module -> sections.
+LS_KEEP_SECTIONS = {  # off Shows that stay off (they'd flood)
+    "rares": [RARE_ANIMATED_SECTION],      # [[2600]] animated weapons: every normal / magic weapon
+    "jewels": [CLUSTER_ECO_SECTION],       # [2805] off blocks = empty eco tiers: tink every enchant
+    "crafting": NO_LS_CRAFTING_SECTIONS,   # [2302] matrix t1_83: every ilvl 83+ base
+}
+LS_KEEP_HIDES = {  # on Hides that stay on
+    "maps": [MAP_PROGRESSION_SECTION],     # [3302] tier Hides: [maps] progression "all" turns them
+                                           # to Show in their tier style; off = generic restex look
+    "leveling": [("0000", "9999")],        # campaign preset (outdated-flask Hides; strictness keys
+                                           # are strings anyway): junk while levelling
+}
+# Config tables whose `enabled` league start turns on (rule modules + priced sections).
+LS_ENABLE_TABLES = ("bases", "rares", "id_mods", "flasks", "exotics", "gear_special", "crafting", "maps",
+                    "jewels", "heist", "misc", "unique_exceptions", "leveling")
+
+
+def league_start_values(conf, modules):
+    """Loosened league-start values: (config changes, modules changes), each {key path tuple:
+    value}. conf = config.toml dict (tiers = name -> threshold, any scale), modules =
+    modules.toml dict. Only keys that exist are listed (no hidden settings); a value equal to
+    the current one is listed too (callers diff)."""
+    lowest = min(conf["tiers"], key=conf["tiers"].get)
     shown = lambda t: lowest if t == "hide" else t
-    cfg["hide_tiers"] = []
-    cfg.setdefault("small_loot", {})["enabled"] = False
-    cfg["uniques"]["variable_jackpot_only"] = False
-    cfg["bases"]["config_min_tier"] = cfg["bases"]["min_tier"]
-    cfg["uniques"]["show"] = dict.fromkeys(cfg["tiers"], True)
+    present = lambda *path: _has(conf, path)
+    c = {("hide_tiers",): [], ("small_loot", "enabled"): False,
+         ("uniques", "variable_jackpot_only"): False, ("uniques", "hide_maps"): False,
+         ("gems", "min_tier"): lowest, ("gems", "show_all"): True,
+         ("show_5_links",): True, ("show_6_links",): True, ("show_mirrored",): True,
+         ("show_contracts",): True, ("hide_forbidden_tome",): False,
+         ("show_gold",): True, ("show_small_gold",): True,
+         ("maps", "corrupted_min_tier"): 0,
+         ("overquality", "quality_30"): True, ("overquality", "quality_27"): True,
+         ("overquality", "quality_21"): True}
+    c = {p: v for p, v in c.items() if present(*p)}
+    c.update({("uniques", "show", t): True for t in conf["uniques"].get("show", {})})
+    for sec in ("foulborn", "bases"):
+        c[(sec, "min_tier")] = lowest
     for sec in ("uniques", "foulborn", "bases"):
-        if sec != "uniques":
-            cfg[sec]["min_tier"] = lowest
-        if "unpriced" in cfg[sec]:
-            cfg[sec]["unpriced"] = shown(cfg[sec]["unpriced"])
-    cfg.setdefault("gems", {})["min_tier"] = lowest
-    cfg["uniques"]["hide_maps"] = False
-    if cfg.setdefault("maps", {}).get("progression", "none") == "none":
-        cfg["maps"]["progression"] = "all"
-    cfg["exchange"]["unpriced_currency"] = shown(cfg["exchange"]["unpriced_currency"])
-    cfg["exchange"]["reference_card_tiers"] = {k: shown(t) for k, t in cfg["exchange"]["reference_card_tiers"].items()}
-    cfg["overrides"] = {k: shown(t) for k, t in cfg.get("overrides", {}).items()}
-    for mod in cfg.get("content", {}).values():
-        mod["enabled"] = True
-    cfg.setdefault("leveling", {})["enabled"] = True
+        if "unpriced" in conf.get(sec, {}):
+            c[(sec, "unpriced")] = shown(conf[sec]["unpriced"])
+    if conf.get("maps", {}).get("progression", "none") == "none":
+        c[("maps", "progression")] = "all"
+    ex = conf["exchange"]
+    c[("exchange", "unpriced_currency")] = shown(ex["unpriced_currency"])
+    c.update({("exchange", "reference_card_tiers", k): shown(t) for k, t in ex["reference_card_tiers"].items()})
+    c.update({("exchange", "unpriced_tiers", k): shown(t) for k, t in ex.get("unpriced_tiers", {}).items()
+              if isinstance(t, str)})
+    c.update({("overrides", k): shown(t) for k, t in conf.get("overrides", {}).items()})
+    for m, mod in conf.get("content", {}).items():
+        c[("content", m, "enabled")] = True
+        c.update({("content", m, "drops", n): "price" for n, v in mod.get("drops", {}).items() if v is False})
+    c.update({("vendor_recipes", r, "enabled"): True for r, rec in conf.get("vendor_recipes", {}).items()
+              if "enabled" in rec})
+    c.update({(t, "enabled"): True for t in LS_ENABLE_TABLES if "enabled" in conf.get(t, {})})
+    c[("leveling", "enabled")] = True
+    rares = conf.get("rares", {})
+    if rares:
+        c[("rares", "base_tiers")] = True
+        c.update({("rares", g): ["all"] for g in RARE_GROUPS if g in rares})
+        c.update({("rares", "min_ilvl", g): 68 for g in rares.get("min_ilvl", {})})
+        c.update({("rares", "show", k): True for k in rares.get("show", {})})
+    lv = conf.get("leveling", {})
+    if lv.get("build") and lv.get("league_start_hide_unused", True) and not lv.get("unused_whites_min_tier"):
+        c[("leveling", "unused_whites_min_tier")] = conf["bases"]["min_tier"]  # whites the build never uses
+    m = {}
+    inside = lambda b, secs: any(first <= (b["section"] or "") < after for first, after in secs)
+    for name, table in modules.items():
+        for b in load_module(name):
+            on = table.get("blocks", {}).get(b["key"])
+            if b["action"] == "Show" and on is False and not inside(b, LS_KEEP_SECTIONS.get(name, [])):
+                m[(name, "blocks", b["key"])] = True
+            elif b["action"] == "Hide" and on is True and not inside(b, LS_KEEP_HIDES.get(name, [])):
+                m[(name, "blocks", b["key"])] = False
+    return c, m
+
+
+def _has(d, path):
+    for k in path:
+        if not isinstance(d, dict) or k not in d:
+            return False
+        d = d[k]
+    return True
+
+
+def set_path(d, path, value):
+    for k in path[:-1]:
+        d = d.setdefault(k, {})
+    d[path[-1]] = value
+
+
+def apply_league_start(cfg):
+    """league_start = true: show (almost) everything = league_start_values written into cfg
+    (same values tools/league_start.py start writes into the files). Once per cfg."""
+    if not cfg.get("league_start") or cfg.get("_league_start_applied"):
+        return cfg
+    c, m = league_start_values(cfg, cfg["modules"])
+    for path, value in c.items():
+        set_path(cfg, path, value)
+    for path, value in m.items():
+        set_path(cfg["modules"], path, value)
+    cfg["_league_start_applied"] = True
     return cfg
 
 
+def apply_palette(cfg, text):
+    """Every Set*Color line -> a config [colors] value. Name: its value (unknown -> ValueError).
+    Numbers (NeverSink copies): the nearest palette colour by RGB, text only from text colours,
+    so imported whites / reds / yellows match ours. Runs before hidden_game_colours (Alt view
+    keeps the game's rarity colours)."""
+    palette = cfg["colors"]
+    rgba = lambda v: ([int(x) for x in v.split()] + [255])[:4]
+
+    def one(m):
+        key, value = m.group(1), m.group(2)
+        if value[0].isalpha():
+            if value not in palette:
+                raise ValueError(f"unknown colour {value!r} (config.toml [colors])")
+            return f"{key} {palette[value]}"
+        text = key.endswith("TextColor")
+        names = [n for n in palette if not text or n not in NON_TEXT_COLORS]
+        # text: RGB only; border / background: alpha too (an invisible 0-alpha one stays invisible)
+        dims = 3 if text else 4
+        if not text and rgba(value)[3] == 0:
+            names = [n for n in names if rgba(palette[n])[3] == 0] or names
+        near = min(names, key=lambda n: sum((a - b) ** 2 for a, b in
+                                            zip(rgba(value)[:dims], rgba(palette[n])[:dims])))
+        return f"{key} {palette[near]}"
+    return COLOR_LINE.sub(one, text)
+
+
 def hand_rules(cfg, name):
-    """rules/<name>.filter; league_start turns "Hide # league_start" blocks into Show."""
+    """rules/<name>.filter; [gems] show_all turns "Hide # gems.show_all" blocks into Show."""
     text = (ROOT / "rules" / f"{name}.filter").read_text(encoding="utf-8")
     if name == "top":
-        for key in ("show_5_links", "show_6_links", "show_mirrored", "show_gold"):
+        for key in ("show_5_links", "show_6_links", "show_mirrored"):
             pattern = rf"(?ms)^# BEGIN {key}\r?\n(.*?)^# END {key}\r?\n?"
             replacement = r"\1" if cfg.get(key, key == "show_6_links") else TOGGLE_OFF.get(key, "")
             text, count = re.subn(pattern, replacement, text)
             if count != 1:
                 raise ValueError(f"Expected one {key} section in rules/top.filter, found {count}")
-    if cfg.get("league_start"):
-        text = re.sub(r"^Hide(?= # league_start)", "Show", text, flags=re.M)
+    if cfg.get("gems", {}).get("show_all"):
+        text = re.sub(r"^Hide(?= # gems\.show_all)", "Show", text, flags=re.M)
     return section(f"Hand-written {name} rules (rules/{name}.filter)") + text
 
 
 def build_text(cfg, data, league):
-    """Whole filter text + pricing results. No network, no file writes (tests use this)."""
+    """Whole filter text + pricing results. No network, no file writes (tests use this).
+    league_start set but not applied yet (tests): applied to a copy, cfg stays as it is."""
+    if cfg.get("league_start") and not cfg.get("_league_start_applied"):
+        cfg = apply_league_start(copy.deepcopy(cfg))
     apply_divine_tiers(cfg, exchange_divine(data))
     tiers = Tiers(cfg)
     prices, divine = price_stackables(data, cfg, tiers)
     card_volumes = card_trade_volumes(data)
     ancient_wombgift, item_type = prices.get("Ancient Wombgift", (0, "Wombgift"))
     prices["Ancient Wombgift"] = (max(ancient_wombgift, cfg["tiers"]["minor"]), item_type)
-    ubases = price_unique_bases(data, cfg, tiers, divine)
+    unique_ev = {}
+    ubases = price_unique_bases(data, cfg, tiers, divine, unique_ev, unique_vendor_values(cfg, prices))
     fbases = price_foulborn_bases(data, cfg, tiers, divine)
     linked = price_linked_jackpots(data, cfg, divine)
     cbases = price_crafting_bases(data, cfg, tiers, divine)
-    ref_text = (ROOT / "reference/league.filter").read_text(encoding="utf-8")
-    card_ref_text = (ROOT / "reference/regular-neversink.filter").read_text(encoding="utf-8")
-    ref_cards = reference_card_tiers(cfg, card_ref_text)
-    ref_currency = reference_currency_tiers(cfg, ref_text)
+    ref_cards = fallback_tiers(cfg, "cards")
+    ref_currency = fallback_tiers(cfg, "currency")
     clusters = price_clusters(data, cfg, tiers)
     gems = price_gems(data, cfg, tiers)
 
@@ -1871,34 +2553,47 @@ def build_text(cfg, data, league):
               f"# Do not edit - edit config.toml / rules/*.filter and rerun build_filter.py\n")
     text = "\n".join([
         header,
-        emit_forbidden_tome(cfg),
+        emit_visibility_toggles(cfg),
         emit_content_overrides(cfg, data.get("content", {}), ubases),
         emit_defaults(cfg),
         emit_pinned_stackables(cfg),
         emit_gems(cfg, tiers, gems),  # before top's 20% / Awakened Shows and the gemcutter recipe floor
+        emit_gold(cfg),  # league.filter [[0200]]: config show_gold, then module misc gold tiers
         hand_rules(cfg, "top"),
-        emit_overquality(cfg),  # before vendor recipes: a 30% RGB item keeps its overquality alert
-        emit_flasks(cfg, ref_text),  # before vendor recipes too (glassblower)
-        emit_exotics(cfg, ref_text),  # before recipes / crafting bases / rares
+        emit_flasks(cfg),  # before vendor recipes too (glassblower)
+        emit_id_mods(cfg),  # before recipes / crafting bases / rares: good identified gear beats base Hides
+        emit_perfection(cfg),  # [0901] perfection / overquality ([overquality]); before recipes: 30% RGB keeps its alert
+        emit_exotics(cfg),  # same; after id_mods like league.filter ([0600]-[0802] before [0902]-[1300])
+        emit_priced_bases_first(cfg, tiers, cbases),  # priced crafting bases beat the gear_special / crafting Shows only
+        emit_gear_special(cfg),  # [0302] influenced, [[0400]] eldritch, [[0500]] exotic bases (after id/exotic info)
+        emit_links(cfg),  # [[1400]] 5-links ([1401]); league.filter: after [1300], before [1500] bases
         emit_vendor_recipes(cfg, tiers, ubases, fbases, cbases),
         emit_gem_fallback(cfg, gems),  # after the gemcutter floor; explicit hides before blue
         emit_cluster_prices(cfg, tiers, clusters),
-        emit_leveling(cfg, ref_text),
+        emit_leveling(cfg, leveling_price_shown(cfg, tiers, prices)),  # price_shown: [[3800]] price first
         campaign_unhide(cfg, emit_overrides(cfg, prices)),
         campaign_unhide(cfg, emit_stackables(cfg, tiers, prices, ref_currency, ref_cards, card_volumes)),
-        emit_special_maps(cfg, ref_text),
+        emit_special_maps(cfg),
+        emit_misc(cfg, MISC_BEFORE_UNIQUES),  # [[4500]]-[[4700]] heist targets / enshrouded / idols
         emit_uniques(cfg, tiers, ubases, fbases, linked,
                      {l["baseType"] for l in data["stash"]["UniqueMap"].get("lines", []) if l.get("baseType")},
-                     valuable_content_bases(data, cfg, tiers)),
-        emit_map_progression(cfg, ref_text),
+                     valuable_content_bases(data, cfg, tiers),
+                     valuable_content_bases(data, cfg, tiers, foulborn=True)),
+        emit_misc(cfg, MISC_AFTER_UNIQUES),  # [[4900]] questlike items 2 after uniques
+        emit_map_progression(cfg),
         emit_crafting_bases(cfg, tiers, cbases),
-        emit_rares(cfg, ref_text),
-        emit_clusters(ref_text),
+        emit_rares(cfg),  # after crafting bases: priced bases beat rare Hides
+        emit_endgame_crafting(cfg),  # [[2300]] crafting, [[2400]] chancing, [2601] RGB (league.filter order)
+        emit_rare_hide_layer(cfg),  # [2602] + [[2700]]
+        emit_jewels(cfg),  # league.filter [[2800]] after rares
+        emit_heist(cfg),  # [[2900]] right after jewels
+        emit_unknown_gems(cfg, data),  # last gem rule: unlisted gems blue, before bottom.filter's gem Hide
         hand_rules(cfg, "bottom"),
     ])
+    text = apply_palette(cfg, text)
     text = hidden_game_colours(text)
     text = maximize_item_sizes(text)
-    return text, {"tiers": tiers, "prices": prices, "divine": divine, "ubases": ubases,
+    return text, {"tiers": tiers, "prices": prices, "divine": divine, "ubases": ubases, "unique_ev": unique_ev,
                   "fbases": fbases, "linked": linked, "cbases": cbases, "ref_cards": ref_cards,
             "ref_currency": ref_currency, "card_volumes": card_volumes, "clusters": clusters, "gems": gems}
 

@@ -1,10 +1,10 @@
 # ===== rules/bottom.filter : hand-written rules, checked AFTER price rules =====
 
 # Maps: generated from reference/league.filter (config.toml [maps]), not here.
-# "Hide # league_start" = shown when config league_start = true (applies to any block).
+# "Hide # gems.show_all" = shown when config.toml [gems] show_all = true (league start sets it).
 
 # Gems: the rest is hidden (Awakened / 20% shows are in rules/top.filter)
-Hide # league_start
+Hide # gems.show_all
 	Class == "Skill Gems" "Support Gems"
 	SetFontSize 35
 

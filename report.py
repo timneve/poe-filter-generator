@@ -137,6 +137,28 @@ def collect(cfg, data, blocks, r):
     return rows
 
 
+def unique_ev(data, blocks, r):
+    """[uniques.ev] bases -> [{base, ev, tier, cheapest, shown, rule, line, look, uniques}], EV desc.
+    uniques = [{name, p (drop share 0..1), c (avg chaos or None = unlisted), t (drop tier)}]."""
+    cls = {}
+    for t in (t for t in data["stash"] if t.startswith("Unique")):
+        for line in data["stash"][t].get("lines", []):
+            if line.get("baseType"):
+                cls.setdefault(line["baseType"], unique_class(line, t))
+    out = []
+    for base, parts in r.get("unique_ev", {}).items():
+        tier, cheapest, *_, ev = r["ubases"].get(base, ("unpriced", None, 0, "", None))
+        item = {"rarity": "Unique", "basetype": base, "class": cls.get(base), "ilvl": 84}
+        b, style = fs.evaluate(blocks, item)
+        out.append({"base": base, "ev": ev, "tier": tier, "cheapest": cheapest,
+                    "shown": b is None or b.action != "Hide",
+                    "rule": f"{b.action} # {b.comment}" if b else "(no rule matched: shown)",
+                    "line": b.line_no if b else 0, "look": look(style, item),
+                    "uniques": [{"name": n, "p": round(share, 4), "c": c, "t": t} for n, share, c, t in parts]})
+    out.sort(key=lambda x: -(x["ev"] or 0))
+    return out
+
+
 def content_modules(cfg, data, blocks):
     """[content.*] modules -> [{mod, on, sources, bases: [{base, look, shown, rule, uniques}]}].
     Each base dropped as an unidentified unique, so `look` is what the filter really shows."""
@@ -187,12 +209,16 @@ def recipe_sample(conds):
     return item
 
 
-def vendor_recipes(cfg, blocks):
+def vendor_recipes(cfg, blocks, data=None):
     """[vendor_recipes.<key>] -> [{key, name, on, tier, note, items: [{base, how, look, shown, rule}]}].
     One item per base x `any` condition x rarity (normal .. unidentified unique), replayed through
-    the built filter, so `look` / `rule` show what that drop really gets (a better price tier may win)."""
+    the built filter, so `look` / `rule` show what that drop really gets (a better price tier may win).
+    `uniques` recipes (vendor value, no blocks): one unidentified unique per base they roll on."""
     out = []
     for key, rec in cfg.get("vendor_recipes", {}).items():
+        if rec.get("uniques"):
+            out.append(unique_vendor_recipe(key, rec, blocks, data or {}))
+            continue
         items = []
         classes = [rec["class"]] if isinstance(rec.get("class"), str) else rec.get("class") or [None]
         sample = recipe_sample(rec.get("conds", []))
@@ -217,6 +243,33 @@ def vendor_recipes(cfg, blocks):
     return out
 
 
+def unique_vendor_recipe(key, rec, blocks, data):
+    """vendor_recipes row for a `uniques` recipe: each base (wiki, else poe.ninja) as an unID unique."""
+    names = set(rec["uniques"])
+    bases, cls = {}, {}
+    for t in (t for t in data.get("stash", {}) if t.startswith("Unique")):
+        for line in data["stash"][t].get("lines", []):
+            if line.get("baseType"):
+                cls.setdefault(line["baseType"], unique_class(line, t))
+                if line["name"] in names:
+                    bases.setdefault(line["baseType"], set()).add(line["name"])
+    for base, ns in data.get("wiki_bases", {}).items():
+        if ns & names:
+            bases.setdefault(base, set()).update(ns & names)
+    items = []
+    for base in sorted(bases):
+        item = {"rarity": "Unique", "basetype": base, "class": cls.get(base), "ilvl": 84}
+        b, style = fs.evaluate(blocks, item)
+        items.append({"base": base, "how": "unid unique: " + ", ".join(sorted(bases[base])),
+                      "look": look(style, item), "shown": b is None or b.action != "Hide",
+                      "rule": f"{b.action} # {b.comment}" if b else "(no rule matched: shown)",
+                      "line": b.line_no if b else 0})
+    reward = f"{rec.get('reward_count', 1)}x {rec['reward']}"
+    return {"key": key, "name": key.replace("_", " ").title(), "on": bool(rec.get("enabled")),
+            "tier": "vendor value " + reward, "note": rec.get("note", ""), "conds": [], "needs": [],
+            "rarity": ["unique"], "items": items}
+
+
 def browser_rules(blocks):
     """Serialize parsed filter rules for the offline item checker in report.html."""
     return [{
@@ -237,7 +290,10 @@ def tier_strip(cfg, tiers):
 
     def lines(n):
         own = styles.get(n, {}).get("lines", [])
-        return own + styles.get("quiet", {}).get("lines", []) if n in quiet else own
+        own = own + styles.get("quiet", {}).get("lines", []) if n in quiet else own
+        # config style lines name a [colors] entry ("SetTextColor red") -> its value
+        named = lambda w: [w[0], cfg["colors"][w[1]]] if w[0].endswith("Color") and w[1:] and w[1] in cfg.get("colors", {}) else w
+        return [" ".join(named(l.split())) for l in own]
     return [{"name": n, "chaos": v, "div": divs.get(n), "hidden": n in cfg.get("hide_tiers", []),
              "quiet": n in quiet, "look": look(lines(n), {})} for n, v in tiers.list]
 
@@ -268,7 +324,8 @@ def write(cfg, data, text, r, league, path):
             "tiers": tier_strip(cfg, r["tiers"]), "unique_tiers": unique_tier_strip(cfg, r["tiers"])}
     payload = json.dumps({"meta": meta, "rows": rows, "rules": browser_rules(blocks),
                           "content": content_modules(cfg, data, blocks),
-                          "vendor": vendor_recipes(cfg, blocks)},
+                          "uev": unique_ev(data, blocks, r),
+                          "vendor": vendor_recipes(cfg, blocks, data)},
                          separators=(",", ":")).replace("</", "<\\/")
     path.parent.mkdir(exist_ok=True)
     path.write_text(PAGE.replace("__DATA__", payload).replace("__LEAGUE__", html.escape(league))
@@ -382,6 +439,12 @@ details .bar{position:sticky;top:0;z-index:2;background:var(--bg);padding:8px 0}
 </section>
 <h2>Look at these first <small>· hidden and worth ≥ safety, grouped by why</small></h2>
 <ul id="lk"></ul>
+<h2>Unique base EV <small>· [uniques.ev]: value of one unidentified drop = Σ drop chance × price</small></h2>
+<p class="note">Drop chance = tier_weights[tier] / drop-anywhere uniques in that tier (unique_tiers.toml), shared among the uniques on the base.
+Price = listing-weighted average of its poe.ninja variants; unlisted = 0. Blue "variable" = EV tier shown but the cheapest unique is junk (most drops worthless).</p>
+<details id="uevd"><summary id="uevs"></summary>
+<div class="bar"><input type="search" id="uq" placeholder="Search base or unique…"></div>
+<table><thead><tr><th>Base (unID drop)</th><th class="num">EV</th><th>Tier</th><th class="num">Cheapest</th><th>Uniques: chance · price</th><th>Filter</th><th>Deciding rule</th></tr></thead><tbody id="ub"></tbody></table></details>
 <h2>League content modules <small>· [content.*] in config.toml: uniques that only drop from one boss / encounter / instance</small></h2>
 <p class="note">On: priced like any unique; a base the price rules would hide shows small + faded when one of its content uniques is in a shown unique tier, so a valuable encounter drop isn't missed.
 Off: ignored on shared bases; a base with only that content's uniques stays blue. Label = how an unidentified drop on that base looks now.</p>
@@ -627,6 +690,16 @@ $("vr").innerHTML=(D.vendor||[]).map(v=>{const n=v.items.filter(i=>i.shown).leng
 <td class="v ${i.shown?"s":"h"}">${i.shown?"Shown":"Hidden"}</td>
 <td><div class="rule">${esc(i.rule)} <span>:${i.line}</span></div></td></tr>`).join("")+`</tbody></table></details>`}).join("")
  ||`<p class="empty">No [vendor_recipes.*] in config.toml.</p>`;
+{const U=D.uev||[],pct=p=>p>=0.01?(p*100).toFixed(0)+"%":p>=0.001?(p*100).toFixed(1)+"%":"<0.1%";
+ $("uevs").innerHTML=`${U.length} bases · ${U.filter(u=>u.tier==="variable").length} variable · ${U.filter(u=>!u.shown).length} hidden`;
+ const draw=()=>{const q=$("uq").value.toLowerCase();
+  $("ub").innerHTML=U.filter(u=>!q||(u.base+" "+u.uniques.map(x=>x.name).join(" ")).toLowerCase().includes(q)).slice(0,1500).map(u=>
+   `<tr class="${u.shown?"":"hid"}"><td>${label({name:u.base,look:u.look})}</td><td class="num">${fmt(u.ev)}${CI}</td><td>${esc(u.tier)}</td>
+<td class="num">${u.cheapest==null?"–":fmt(u.cheapest)+CI}</td>
+<td>${u.uniques.map(x=>`${esc(x.name)} <span class="note">T${x.t} · ${pct(x.p)} · ${x.c==null?"unlisted":fmt(x.c)+CI}</span>`).join("<br>")}</td>
+<td class="v ${u.shown?"s":"h"}">${u.shown?"Shown":"Hidden"}</td>
+<td><div class="rule">${esc(u.rule)} <span>:${u.line}</span></div></td></tr>`).join("")};
+ $("uq").addEventListener("input",draw);draw()}
 const unq=r=>["Unique","Foulborn","Replica"].includes(r.cat),lnk=r=>/\(\dL\)$/.test(r.name);
 const checks=[
  {sev:"bad",t:`Hidden worth ≥ ${M.jackpot}${DI}`,rows:R.filter(r=>!r.nomap&&!r.shown&&r.jp),

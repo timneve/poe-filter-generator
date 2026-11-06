@@ -1,4 +1,5 @@
 import json
+import re
 import sys
 import unittest
 from pathlib import Path
@@ -66,6 +67,12 @@ class Poe2FilterTests(unittest.TestCase):
         add_item(self.data, "Currency", "Chaos Orb", 0.01)
         add_item(self.data, "Currency", "Exalted Orb", 0.002)
 
+
+    def test_every_colour_from_palette(self):
+        text, _ = bf.build_text(self.cfg, self.data, "Test League", REFERENCE)
+        used = set(re.findall(r"Set(?:Text|Border|Background)Color (.+)", text))
+        self.assertTrue(used)
+        self.assertEqual(used - set(self.cfg["colors"].values()), set())
     def build(self):
         text, results = bf.build_text(self.cfg, self.data, "Test League", REFERENCE)
         self.text = text

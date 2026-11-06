@@ -17,6 +17,8 @@ NUMERIC = {"StackSize": "stack", "ItemLevel": "ilvl", "Quality": "quality",
            "BaseArmour": "armour", "BaseEvasion": "evasion", "BaseEnergyShield": "es",
            "EnchantmentPassiveNum": "cluster_passives", "MemoryStrands": "memory_strands",
            "MapTier": "map_tier",
+           "HasSearingExarchImplicit": "exarch_implicit", "HasEaterOfWorldsImplicit": "eater_implicit",
+           "BaseDefencePercentile": "defence_percentile",
            # PoE2
            "GemLevel": "gem_level", "WaystoneTier": "waystone_tier",
            "UnidentifiedItemTier": "unid_tier"}
@@ -27,7 +29,8 @@ DEFAULTS = {"area_level": 83}
 BOOL = {"Corrupted": "corrupted", "Mirrored": "mirrored", "Identified": "identified",
         "Foulborn": "foulborn", "TransfiguredGem": "transfigured", "FracturedItem": "fractured",
         "BlightedMap": "blighted", "UberBlightedMap": "uber_blighted", "ZanaMemory": "zana_memory",
-        "HasImplicitMod": "implicit",
+        "HasImplicitMod": "implicit", "Imbued": "imbued", "SynthesisedItem": "synthesised",
+        "HasCruciblePassiveTree": "crucible", "Vestigial": "vestigial", "Replica": "replica",
         # PoE2
         "AnyEnchantment": "enchanted", "TwiceCorrupted": "twice_corrupted",
         "IsVaalUnique": "vaal_unique", "HasVaalUniqueMod": "vaal_unique_mod",
@@ -88,6 +91,15 @@ def _match(item, key, op, vals, no):
         if op in ("!", "!="):
             return all(r != RARITY[v] for v in vals)
         return _cmp(r, op, RARITY[vals[0]])
+    if key == "Sockets" and re.search(r"[A-Z]", vals[0]):
+        # "Sockets >= AAAA" / "5GGG": optional count + colour letters (A = abyss). Item field
+        # "socket_colours" = one letter per socket; each letter needs at least that many
+        m = re.fullmatch(r"(\d*)([RGBWAD]+)", vals[0])
+        if not m or op not in ("=", "==", ">="):
+            raise NotImplementedError(f"line {no}: Sockets {op} {vals[0]} not modelled in filtersim")
+        have = item.get("socket_colours", "")
+        return ((not m.group(1) or _cmp(item.get("sockets", 0), op, int(m.group(1))))
+                and all(have.count(c) >= m.group(2).count(c) for c in set(m.group(2))))
     if key in NUMERIC:
         return _cmp(item.get(NUMERIC[key], DEFAULTS.get(NUMERIC[key], 0)), op, int(vals[0]))
     if key == "SocketGroup":

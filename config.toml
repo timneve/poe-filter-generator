@@ -28,18 +28,29 @@ variable_after = "minor"
 hide_tiers = ["brown", "dust"]
 quiet_tiers = ["low"]
 
-# ENDGAME RARES (ilvl rares.min_ilvl.<group>+, at least 68). poe.ninja has no rare prices, so these use NeverSink's
-# FilterBlade base tiers from reference/league.filter. Per group, list the tiers to show:
+# ENDGAME RARES: module rares (rules/modules/rares.filter = NeverSink [[1700]]-[2201], [2602], [[2700]]).
+# rares.enabled = whole module: decorators (bigger text in rares.text_color on ilvl 68+ rares), talismans, veiled
+# + breach rings shown, conditional hides (corrupted / mirrored unID, your FilterBlade entry hiding
+# ilvl < 83 two-handers / bows / staves / body armours), droplevel hides, animated-weapon Shows (off;
+# league_start leaves them off: they'd show every normal / magic weapon), hide layer (league_start:
+# every Hide off, so base_tiers "all" decides). Each of those
+# blocks: on / off in modules.toml [rares.blocks]. Runs after crafting bases / uniques / id mods,
+# so a priced base, jackpot or good identified rare is never hidden by it.
+# Base-tier Shows (modules.toml keys "rr...tN" = "config.toml [rares]") are set ONLY here, not in
+# modules.toml: rares.base_tiers = on / off (league_start: on, every group "all", min_ilvl 68) (ilvl rares.min_ilvl.<group>+,
+# at least 68). poe.ninja has no rare prices, so these use NeverSink's FilterBlade base tiers.
+# Per group, list the tiers to show:
 # "t1" (best bases) .. "t5" (weapons + armour; jewellery t1..t3), "all" = every base, [] = none.
 # League start: ["all"], then tighten: ["t1", "t2", "t3"] -> ["t1", "t2"] -> ["t1"] -> [].
-# Shown rares get muted rare-yellow text (rares.text_color; game yellow = "255 255 119 255";
+# Shown rares get muted rare-yellow text (rares.text_color = a [colors] name; game yellow = "255 255 119 255";
 # kept pale + cool so it reads apart from the orange-gold mid tier and the tan brown tier),
 # no sound / beam / icon; the rest stay hidden. Price rules (crafting bases, links) still win.
-rares.enabled = false
+rares.enabled = true
+rares.base_tiers = false
 rares.weapons = ["t1"]
 rares.armour = ["t1"]
 rares.jewellery = ["t1"]     # amulets, rings, belts
-rares.text_color = "235 220 105 255"
+rares.text_color = "rare"
 # Per group: only rares at this item level or higher (68 = all endgame).
 rares.min_ilvl.weapons = 75
 rares.min_ilvl.armour = 75
@@ -88,8 +99,14 @@ league = "auto"
 output_name = "pricefilter"
 output_dirs = ["~/Documents/My Games/Path of Exile"]
 
-# Hide Forbidden Tome regardless of its price or fallback class rule.
+# Hide Forbidden Tome regardless of its price or fallback class rule. false = shown: overrides
+# the [maps] module's Sanctum Research Hides (modules.toml "exoticmap->sanctum.*").
 hide_forbidden_tome = true
+
+# Heist contracts (any rarity, also unique). false = all hidden, before any price rule.
+# true = all shown: overrides the [maps] module's plain-contract Hide
+# (modules.toml "heist->contract.handpicked"). Quest contracts (Quest Items) always shown.
+show_contracts = false
 
 # Show generic 5-link / 6-link items.
 show_5_links = false
@@ -98,33 +115,74 @@ show_mirrored = false
 
 # Vendor recipes: see [vendor_recipes.*] further down.
 
-# Gold: false = always hidden. true = big stacks (3001+) everywhere, small stacks in the campaign.
+# Gold: false = always hidden. true = in maps (area level 68+) stacks >= gold_min_stack shown
+# (FilterBlade's big-gold look), smaller ones hidden; every stack in the campaign.
+# gold_min_stack alone decides the big look (modules.toml gold.* keys follow it).
+# show_small_gold: true = smaller stacks also shown in maps, in the small campaign-gold look.
+# League start: show_gold + show_small_gold true (all gold, big stacks still big).
 show_gold = false
+gold_min_stack = 10000
+show_small_gold = false
+
+# Item classes always shown at top tier (tink), priced or not, never hidden: first block, beats
+# prices, [overrides] and modules (like the pinned Divine / Mirror / Hinekora's Lock).
+# "Vault Keys" = every Reliquary Key (modules.toml maps relickeys* follow this).
+always_top_classes = ["Vault Keys"]
 
 # Re-download prices if cache older than this many minutes
 cache_minutes = 60
 
 # LEAGUE START: true = show (almost) everything while prices are thin and you're poor.
-# Overrides the settings below without editing them, so flipping back is one line:
+# Better for tightening step by step: python tools/league_start.py start (writes these same
+# values INTO config.toml / modules.toml, backup kept; guide: docs/LEAGUE_START.md).
+# This flag overrides the settings below at build time without editing them (one line back):
 #   hide_tiers -> none (brown, dust shown)      small_loot -> off
-#   uniques.show -> all tiers    foulborn / bases min_tier -> lowest tier    uniques.hide_maps -> false
-#   "hide" overrides, unpriced settings and card tiers -> lowest tier
-#   all [content.*] modules on, [leveling] on
-#   rules/*.filter blocks tagged "Hide # league_start" -> Show (gems, small gold)
-#   [maps] progression "none" -> "all" (every normal map tier shown)
-#   commented-out "#Show" rules of reference/league.filter on (maps, flasks, exotics)
-#   white crafting bases the [leveling] build never uses stay hidden (league_start_hide_unused)
-# Only plain gear in maps (and gold, unless show_gold) stays hidden.
+#   uniques.show -> all tiers    foulborn / bases / gems min_tier -> lowest tier
+#   uniques.hide_maps -> false   uniques.variable_jackpot_only -> false
+#   "hide" in overrides, unpriced settings, card tiers, [exchange.unpriced_tiers] -> lowest tier
+#   show_5_links / show_6_links / show_mirrored / show_contracts / show_gold / show_small_gold
+#   -> true, hide_forbidden_tome -> false, [gems] show_all on, every [overquality] on
+#   every [content.*] module (false drops -> "price"), [vendor_recipes.*] and rule module
+#   (enabled) on, [leveling] on
+#   [maps] progression "none" -> "all", corrupted_min_tier -> 0
+#   [rares] base_tiers on, every group ["all"], min_ilvl 68
+#   modules.toml: every off Show block on, except [[2600]] animated weapons, [2805] empty
+#   cluster eco tiers, [2302] crafting matrix (they'd flood); every on Hide block off, except
+#   maps [3302] tier Hides (progression "all" shows them in tier style) and leveling (campaign
+#   preset: outdated-flask Hides)
+#   [leveling] unused_whites_min_tier -> your bases.min_tier (league_start_hide_unused): white
+#   crafting bases the [leveling] build never uses stay hidden
+# Not changed: [leveling] campaign hides (hide_normal_after, hide_magic_after, strictness).
+# Only plain gear in maps stays hidden.
 # Set back to false after a few days, when you have currency and prices settle.
 league_start = false
 
+# ---------------------------------------------------------------------------
+# COLOURS. The only place colour values live. Everything else (styles below, rules/*.filter,
+# the code) uses these names: "SetTextColor white", gear_text_color = "white".
+# Blocks copied from reference/league.filter (clusters, flasks, exotics, maps, leveling rules)
+# snap to the nearest colour here, so their whites / reds / yellows look like ours.
+# Exception: hidden gear's Alt view keeps the game's rarity colours.
+# ---------------------------------------------------------------------------
+colors.white = "215 215 215 255"     # minor / low tiers, gear text, every imported white
+colors.grey = "170 170 170 255"      # campaign white gear
+colors.red = "255 0 0 255"           # top (tink) + high tier text, tink border
+colors.yellow = "255 190 0 255"      # mid tier
+colors.brown = "210 178 134 255"     # brown / dust / quiet tiers
+colors.gold = "255 212 87 255"       # gold piles
+colors.cyan = "20 240 240 255"       # quality gems
+colors.rare = "235 220 105 255"      # endgame rares (rares.text_color)
+colors.tink_bg = "255 255 255 255"   # tink background (top tier only)
+colors.content_bg = "0 0 0 193"      # [style.content] label background
+colors.clear = "0 0 0 0"             # no border / background
+
 # Text colour for normal/magic/rare gear, so rarity (yellow/blue) never grabs the eye.
-# Light grey now; when rich switch to brown "210 178 134 255" (less clicking, less distraction).
+# A [colors] name. "white" now; when rich switch to "brown" (less clicking, less distraction).
 # Price tier styles still win (a 1 div base keeps its red tink text).
 # Maps only: in the campaign ([leveling] on, AreaLevel <= area_level_max) gear keeps rarity colour.
-gear_text_color = "215 215 215 255"
+gear_text_color = "white"
 # Campaign only: white (normal) gear text, a bit grey so it reads below magic / rare.
-campaign_white_text_color = "170 170 170 255"
+campaign_white_text_color = "grey"
 
 # Unknown value -> blue. A unique base only gets a price tier when EVERY unique that can
 # drop on it (poewiki list, boss-only ones too) has a confident poe.ninja price. One
@@ -145,17 +203,38 @@ min_volume = 5
 # proxy, not a count of trades. At/above the threshold cards without a reliable price stay
 # unknown (blue, silent), rather than inheriting a potentially misleading reference tier.
 card_fallback_min_volume = 5
+# Unpriced card whose fallback group (fallback_tiers.toml cards) is hidden: a stack of at least
+# this many still shows, in fallback_stack_tier (league.filter "exstack"; 0 = off). Cards with a
+# card_rewards price: their price decides stacks too.
+card_fallback_stack = 3
+# Tier for those fallback stack Shows (cards above, [exchange.reference_currency_stacks]).
+fallback_stack_tier = "low"
+# Tier for [exchange.show_stacks] (stacks shown whatever their price).
+show_stacks_tier = "low"
 # Also show stacks: 10x a 0.5c item = 5c, tiered as 5c. Stack checks up to:
 max_stack = 40
+# (per-name bigger limit for items that drop in huge stacks: [exchange.big_stacks])
 # Low-volume prices for non-card stackables are still used to SHOW an item, never to hide it.
 # What to do with stackables poe.ninja has no price for: a tier name, "hide" or "unknown"
-# "reference" = NeverSink currency tier from reference/league.filter (mapping below), so
+# "reference" = NeverSink currency tier from fallback_tiers.toml [currency] (mapping below), so
 # league start (no poe.ninja prices yet) still has sane tiers; not in reference -> "unknown".
 unpriced_currency = "reference"
 # Card quotes are not used to assign a value. Cards with explicitly configured, guaranteed
 # rewards use exact reward value / set size. Other unpriced cards use regular NeverSink's
 # divination-card groups as a fallback; unmatched cards stay unknown (blue beam, no sound).
 # NeverSink groups are not treated as market prices.
+
+# Fixed tier for known-cheap stackables when poe.ninja has no confident price (also thin-volume
+# cheap quotes). Beats unpriced_currency / reference. A confident price or [overrides] still wins.
+# e.g. "Some Cheap Oil" = "dust". Hard-to-price oils (Clear / Sepia) are pinned in [overrides].
+[exchange.unpriced_tiers]
+"Scroll Fragment" = "hide"   # NeverSink hides them
+"Amber Oil" = "hide"         # league.filter (FilterBlade) hides these cheap oils
+"Verdant Oil" = "hide"
+# Thin / no poe.ninja price, NeverSink's fallback group would hide them, but the FilterBlade
+# filter shows them: unconfident + maybe valuable -> blue
+"Omen of Refreshment" = "variable"
+"Omen of the Soul Devourer" = "variable"
 
 # Shards / splinters that combine into one item: price = finished item / count. Stack checks
 # go up to the conversion count (a full currency-shard stack is 20).
@@ -182,7 +261,8 @@ unpriced_currency = "reference"
 # Guaranteed, deterministic rewards: card = (exact reward item's price * quantity) / set size.
 # Stackable rewards use their exact poe.ninja Currency Exchange item price (including fragments,
 # scarabs, and other listed categories); named uniques/maps use listings for that exact item,
-# weighted by listing count and requiring uniques.min_listings. Card rewards can chain through
+# weighted by listing count and requiring uniques.min_listings; 5/6-link lines are ignored (cards
+# give unlinked items, linked lines are thin/troll-priced). Card rewards can chain through
 # another configured exact card reward. Missing/insufficient reward prices leave the card unpriced.
 # Random, selectable, corrupted, variable-outcome, and generic-category rewards are intentionally
 # excluded. Divination-card quotes never price a card because the feed does not distinguish buy
@@ -344,6 +424,25 @@ unpriced_currency = "reference"
 "The Twilight Moon" = ["The Twilight Temple", 1, 6]
 "The Wolf's Legacy" = ["Vaults of Atziri", 1, 4]
 
+# Items dropping in huge stacks: stack checks go up to this size instead of max_stack, so a big
+# stack gets the tier its total price earns (league.filter has extra stack tiers for these).
+# Value = biggest stack size league.filter distinguishes. name = max stack checked
+[exchange.big_stacks]
+"Primal Crystallised Lifeforce" = 1250
+"Vivid Crystallised Lifeforce" = 1250
+"Wild Crystallised Lifeforce" = 1250
+"Dead Man's Sulphur" = 12500
+"Rogue's Marker" = 2500
+
+# Stacks always shown from this size, in show_stacks_tier, even when price x stack is in a
+# hidden tier (league.filter [3907]: Rogue's Marker >= 2500). A better price tier still wins
+# (its stack block comes first); [overrides] beats it. name = stack size
+[exchange.show_stacks]
+"Rogue's Marker" = 2500
+
+# Fallback tiers: fallback_tiers.toml lists the NeverSink group of every currency / card name
+# (made once by tools/import_fallback_tiers.py; the build does not read reference/). Used only
+# without a confident poe.ninja price (unpriced_currency = "reference", card_fallback_min_volume).
 # NeverSink currency tier number (t1exalted, t4chaos, t8trans, fossil t2, ...) -> our tier
 [exchange.reference_currency_tiers]
 1 = "top"
@@ -356,8 +455,22 @@ unpriced_currency = "reference"
 8 = "dust"
 9 = "dust"
 
+# Unpriced currency whose fallback tier is hidden: shown from this stack size, in
+# fallback_stack_tier (league.filter [3901]: t5 lists x5, t6 x14). NeverSink tier number ->
+# stack size, 0 = never. Priced currency: price x stack decides instead.
+[exchange.reference_currency_stacks]
+1 = 0
+2 = 0
+3 = 0
+4 = 0
+5 = 5
+6 = 14
+7 = 0
+8 = 0
+9 = 0
+
 [exchange.reference_card_tiers]
-# Source: the card groups in reference/regular-neversink.filter. Left side is a rough
+# Source: fallback_tiers.toml [cards] (regular NeverSink card groups). Left side is a rough
 # NeverSink ranking by expected value/interest, highest to lowest:
 #   t1   - highest-value chase cards
 #   t2   - very valuable cards, below t1
@@ -396,8 +509,9 @@ t5 = "hide"
 # rules below. Bases whose enabled uniques are all boss/encounter-only are always shown as
 # variable, unless enabled in a [content.*] module where poe.ninja pricing applies.
 #
-# Uniques: a base is tiered by its CHEAPEST unique. Heavy Belt with
-# 1c Belt of the Deceiver = 1c tier, no matter what else rolls on it.
+# Uniques: a base is tiered by its CHEAPEST unique (base_price = "lowest"). Heavy Belt with
+# 1c Belt of the Deceiver = 1c tier, no matter what else rolls on it. base_price = "highest":
+# tiered by its priciest confident unique instead (shows more, clicks more junk).
 # Exception: variable bases (cheap, but some unique on it >= top-level jackpot_divine, e.g.
 # Heavy Belt -> Mageblood) get the blue "variable, worth identifying" style.
 # Safety: a base is NEVER hidden if any unique on it (any listing count) is worth
@@ -416,6 +530,9 @@ show.low   = false
 show.brown = false
 show.dust  = false
 never_hide_tier = "top"
+# Without EV ([uniques.ev] off, or bases with no drop-anywhere uniques): base tier from its
+# "lowest" or "highest" confident unique price. Jackpot / never_hide_tier rescue apply either way.
+base_price = "lowest"
 # Late league wrist saver: true = never_hide_tier rescue off, a cheap base goes blue
 # "variable" only when some unique on it is >= jackpot_divine (Moonstone Ring: 1c Heartbound
 # Loop / Timeclasp mostly, 200c Anathema -> hidden). Foulborn too. league_start forces false.
@@ -490,8 +607,13 @@ unknown_chase_tier = 2
 #   bases = exact BaseTypes, any rarity (normal, magic, rare, unique), optional `class`
 #   conds = filter conditions, all required (no bases = any base), optional `class` (one or a
 #           list) and `rarity` (list; left out = any). Uniques are left to their own rules.
+# Optional `sizes` (small / medium / large inventory size, [] = any) and `area_level` ([min, max],
+# [] = any): see chromatic.
 # Optional `any` = filter conditions, the item needs one of them (one block each, e.g.
 # ["Corrupted True"]); left out = any state.
+# Unique vendor value instead (no blocks, no `tier`): `uniques` = unique names, `reward` =
+# stackable they vendor for, `reward_count`. Each of them is worth at least reward price x
+# count in unique pricing ([uniques.ev] EV, cheapest, jackpot checks); unlisted ones too.
 # Checked before price / leveling rules (a hidden cheap crafting base still shows), after
 # rules/top.filter (5/6 links, Awakened + 20% gems) and [overquality].
 # ---------------------------------------------------------------------------
@@ -505,6 +627,21 @@ class = "Rings"
 bases = ["Cryonic Ring", "Enthalpic Ring", "Fugitive Ring", "Organic Ring", "Synaptic Ring"]
 note = "60x any mix; any rarity incl. unique; unidentified, corrupted or split OK"
 
+[vendor_recipes.harbinger]
+# Harbinger uniques vendor for a Fracturing Shard (poedb "Unique Item Recipe": 1x Harbinger
+# unique; not the item pieces / The Beachhead). Shard = Fracturing Orb / 20 ([exchange.splinters]).
+# Drop-restricted ones (Harbinger-only drops) still stay out of unique pricing.
+enabled = true
+uniques = [
+  "The Enmity Divine", "The Flow Untethered", "The Fracturing Spinner", "The Rippling Thoughts",
+  "The Tempest's Binding", "The Unshattered Will",
+  "The Immortal Will", "The Shattered Divinity", "The Surging Thoughts", "The Tempest's Liberation",
+  "The Torrent's Reclamation", "The Yielding Mortality",
+]
+reward = "Fracturing Shard"
+reward_count = 1
+note = "sell to vendor -> 1 Fracturing Shard"
+
 # Currency recipes, as in NeverSink's regular filter (low tier: white text + beam, Diamond).
 [vendor_recipes.chromatic]
 # Chromatic Orb: an item with R-G-B linked sockets, any size.
@@ -512,6 +649,11 @@ enabled = false
 tier = "low"
 rarity = ["Normal", "Magic", "Rare"]
 conds = ['SocketGroup "RGB"']
+# FilterBlade's RGB options ([1401] / [2601]): sizes = any of "small" (2x2, 1x1-1x4), "medium"
+# (2x3), "large" (2x4); [] = any size. area_level = [min, max] ([68, 83] = FilterBlade's
+# endgame RGB rules); [] = anywhere.
+sizes = []
+area_level = []
 note = "1 Chromatic Orb each"
 
 [vendor_recipes.jeweller]
@@ -549,19 +691,67 @@ note = "40% total quality -> 1 Glassblower's Bauble"
 #        faded ([style.content]) when one of its content uniques is itself in a shown
 #        [uniques] show tier (Amber Amulet: 1c map junk, 2 div Xoph's Blood). A cheap content
 #        unique (7c Hand of the Lords) stays hidden. Base-wide: a junk map unique on a faded
-#        base shows faded too (filters can't tell which unique dropped).
+#        base shows faded too (filters can't tell which unique dropped). Same for Foulborn:
+#        Foulborn Amber Amulet faded when a Foulborn content unique (cheapest variant) is in a
+#        shown [foulborn] tier (30c Foulborn Xoph's Blood), though 3c Foulborn Xoph's Heart hides it.
 #   off: its uniques are ignored on shared bases (Titan Greaves = Kaom's Roots tier). A base
 #        with only that content's uniques still shows blue.
 # PoE filters cannot tell where an item dropped, so the rule applies everywhere.
 # Per unique in `drops`: "price" (= default), true = faded show even past [overrides] when its
 # price would hide the base (price tier still wins), false = always hide
-# (base-wide). League start enables all content modules.
+# (base-wide). League start enables all content modules (false drops -> "price").
 # ---------------------------------------------------------------------------
 [content.breach]
 # Breach bosses in map breaches, Genesis Tree / Ancient Wombgift, Hive coffers, Esh / Tul.
 # Normal Breach monsters don't drop these.
 enabled = true
 sources = ["BreachBoss"]
+
+# Every Breach content unique (Foulborn versions follow the same setting). Leave a unique out = "price".
+[content.breach.drops]
+"Choir of the Storm" = "price"
+"Esh's Mirror" = "price"
+"Esh's Visage" = "price"
+"Hand of Thought and Motion" = "price"
+"Hand of Wisdom and Action" = "price"
+"Hand of the Lords" = "price"
+"Presence of Chayula" = "price"
+"Severed in Sleep" = "price"
+"Skin of the Lords" = "price"
+"Skin of the Loyal" = "price"
+"The Anticipation" = "price"
+"The Blue Dream" = "price"
+"The Blue Nightmare" = "price"
+"The Formless Flame" = "price"
+"The Formless Inferno" = "price"
+"The Green Dream" = "price"
+"The Green Nightmare" = "price"
+"The Grey Wind" = "price"
+"The Halcyon" = "price"
+"The Infinite Pursuit" = "price"
+"The Pandemonius" = "price"
+"The Perfect Form" = "price"
+"The Red Dream" = "price"
+"The Red Nightmare" = "price"
+"The Red Trail" = "price"
+"The Snowblind Grace" = "price"
+"The Sundered Will" = "price"
+"The Surrender" = "price"
+"The Will of Esh" = "price"
+"The Will of Tul" = "price"
+"The Will of Uul-Netol" = "price"
+"The Will of Xoph" = "price"
+"Tulborn" = "price"
+"Tulfall" = "price"
+"United in Dream" = "price"
+"Uul-Netol's Embrace" = "price"
+"Uul-Netol's Kiss" = "price"
+"Uul-Netol's Vow" = "price"
+"Voice of the Storm" = "price"
+"Xoph's Blood" = "price"
+"Xoph's Heart" = "price"
+"Xoph's Inception" = "price"
+"Xoph's Nurture" = "price"
 
 [content.ultimatum]
 enabled = true
@@ -573,6 +763,9 @@ sources = ["Blight"]   # Blight encounters, including Blight-ravaged maps
 
 [content.blight.drops]
 "Breathstealer" = "price"
+"Brinerot Flag" = "price"
+"Brinerot Mark" = "price"
+"Brinerot Whalers" = "price"
 "Cowl of the Ceraunophile" = "price"
 "Cowl of the Cryophile" = "price"
 "Cowl of the Thermophile" = "price"
@@ -624,14 +817,23 @@ types = ["Invitation", "Wombgift"]
 # recipe (like NeverSink, which hides plain level 1 gems). league_start: lowest tier.
 # No exact price -> blue (variable): thin listings (any price), and level 21+ / quality 21+
 # gems with no confident price. A confident price below min_tier still hides that variant.
+# A variant's price is capped by a confident better variant (20/0 never above 20/20).
+# A gem poe.ninja doesn't list at all (new exceptional supports): blue. Cheap level 18-20 gems are
+# left to price (FilterBlade shows every one; your choice).
+# show_all: true = every gem shown (rules/bottom.filter's "Hide # gems.show_all" gem Hide turns
+# Show, no "known on poe.ninja" gem Hide); priced gems keep their tier. League start: true.
 # ---------------------------------------------------------------------------
 [gems]
 min_tier = "mid"
+show_all = false
 
 # ---------------------------------------------------------------------------
-# Overquality items: non-mirrored, non-corrupted gear at these quality thresholds
-# is shown before price-based rules. 30% matches the active NeverSink tier;
-# enable 27% and 21% as desired.
+# Overquality items: non-mirrored, non-corrupted normal / magic / rare gear at these quality
+# thresholds (uniques stay priced). The 3 "any gear" overquality blocks of module gear_special
+# [0901] (modules.toml value "config.toml [overquality]"); work with [gear_special] off too.
+# 30% (FilterBlade on; our top-tier tink style) / 27% / 21% (FilterBlade off, its style).
+# league_start: all three on.
+# After [id_mods], before [exotics] / vendor recipes (a 30% RGB item keeps this alert).
 # ---------------------------------------------------------------------------
 [overquality]
 quality_30 = true
@@ -639,49 +841,172 @@ quality_27 = false
 quality_21 = false
 
 # ---------------------------------------------------------------------------
-# Normal / magic flasks + tinctures: NeverSink's rules from reference/league.filter, copied
-# every build (borders / backgrounds stripped): identified magic flasks / tinctures with good
-# mods ([0803]), fractured utility flasks ([1303]), endgame overquality ([[2500]]: 21%+ any
-# flask, 21% / 26% ilvl 82+ utility flasks + tinctures, corrupted 30% utility). Before vendor
-# recipes, so a 21% white flask shows this way instead of the glassblower style.
+# Influenced / eldritch / exotic bases + perfection: our module rules/modules/gear_special.filter
+# (made from FilterBlade's rules, league.filter style without borders / backgrounds). Per-block
+# on / off: modules.toml [gear_special.blocks]. Families:
+#   [0302] influenced rares: t1 exclusive bases (any influence), t1 bases per influence ilvl 82+;
+#          off: top bases, t2 classes per influence, t2 bases 84+, any influenced 86+ / any
+#   [[0400]] eldritch (Searing Exarch / Eater of Worlds implicit): all off (top armour bases / any)
+#   [[0500]] exotic bases: Iron Flask, heist / ritual / Kalandra / talisman bases, Grasping Mail,
+#            unique-only bases, Cord Belt, Stygian Vise (abyssal / ilvl 86), Sacrificial Garb,
+#            Pearlescent Amulet; off: expedition (runic) bases, any Stygian Vise
+#   [0901] perfection: 28%+ / 21%+ top armour bases, 28%+ / 24%+ ilvl 83+ top weapon bases
+#          (off: t2 weapons, BaseDefencePercentile 99 perfection); overquality: [overquality]
+# FilterBlade's [[0500]] "Conditional Entry" blocks are no module blocks: Stacked Deck = stackable
+# price, breach rings = [vendor_recipes.grasping_mail], unique Opal Ring / Abyssal Axe = unique price.
+# A base poe.ninja prices at a shown [bases] tier (or jackpot -> blue) keeps that price style;
+# one priced lower is not decided by price, so these Shows apply. Uniques never match.
+# league_start: every gear_special Show on (and every [overquality] key).
+# [0901] after [id_mods], before [exotics]; [0302]-[[0500]] after [exotics] and the priced bases
+# (identified good mods, fractured / strand look and a base price win), before vendor recipes.
+# enabled = false: every block off except [overquality] (own option).
+# ---------------------------------------------------------------------------
+[gear_special]
+enabled = true
+
+# ---------------------------------------------------------------------------
+# Linked gear, endgame crafting, chancing bases: our module rules/modules/crafting.filter (made
+# from FilterBlade's rules, league.filter style). Per-block on / off: modules.toml [crafting.blocks].
+#   [1401] 5-links: leveling (area level <= 67), 5L 6S, endgame 5L - all off (generic tink
+#          5 / 6 links: show_5_links / show_6_links). RGB / 6-socket blocks = vendor recipes:
+#          [vendor_recipes.chromatic] / [vendor_recipes.jeweller] (tier floor), no module block.
+#   [2301] early endgame crafting (Amethyst / Two-Stone Ring, Kinetic Wand, area 68-75: on;
+#          4-link armour: off)
+#   [2302] crafting matrix: ilvl 83 / 84 / 85 / 86 bases in 3 tiers, all off (poe.ninja prices
+#          bases first: [bases])
+#   [[2400]] chancing bases (Heavy / Leather Belt, Champion Kite Shield): off
+#   [2601] RGB: [vendor_recipes.chromatic] ([[2600]] animated weapons: [rares])
+# league_start: every Show on except [2302] (has an empty "every ilvl 83+ base" tier).
+# [1401] after [exotics], before vendor recipes; [[2300]]-[2601] after the [rares] gear tiers,
+# before the rare hide layer.
+# ---------------------------------------------------------------------------
+[crafting]
+enabled = true
+
+# ---------------------------------------------------------------------------
+# Normal / magic flasks + tinctures: our module rules/modules/flasks.filter (made from
+# FilterBlade's rules, league.filter style without borders / backgrounds): identified magic
+# flasks / tinctures with good mods ([0803]), fractured utility flasks ([1303]), endgame
+# overquality ([[2500]]: 21%+ any flask, 21% / 26% ilvl 82+ utility flasks + tinctures,
+# corrupted 30% utility; off by default: ilvl 82-85 utility / tinctures, early-mapping flasks).
+# Per-block on / off: modules.toml [flasks.blocks]. Before vendor recipes, so a 21% white
+# flask shows this way instead of the glassblower style.
 # Flask bases (Iron Flask ilvl 84 ...) are priced by poe.ninja in [bases], not here.
-# league_start: also the flask blocks commented out in reference/league.filter.
+# league_start: every flask block on (also the ones off in modules.toml).
 # ---------------------------------------------------------------------------
 [flasks]
 enabled = true
 
 # ---------------------------------------------------------------------------
-# Memory-stranded + fractured gear: reference/league.filter's blocks with its own style
-# (borders / backgrounds stripped): [0902] memory strands (stranded + fractured / veiled,
-# top bases 60+ / 15+ strands), [[1100]] fractured + veiled / incursion / delve mods,
-# [1303] fractured jewels / abyss jewels / heist gear (fractured flasks: [flasks]).
-# league_start: also the blocks commented out there (lower strand tiers, any fractured item).
-# Before vendor recipes / crafting bases / rares. poe.ninja has no price for these.
+# Exotic gear: our module rules/modules/exotics.filter (made from FilterBlade's rules,
+# league.filter style without borders / backgrounds). Per-block on / off: modules.toml
+# [exotics.blocks]. Families:
+#   [0902] memory strands (stranded + fractured / veiled, top bases 60+ / 15+ strands)
+#   [[1100]] exotic mods: veiled, incursion (temple), necropolis (Haunted), bestiary (Farrul /
+#            Fenumus ...), delve, mercenary (Infamous), warband, essence; crafted: off
+#   [[1200]] exotic classes: imbued, synthesised, voidstones, trinkets, fishing rods, unique
+#            pieces, quest items; [1201] normal / magic / rare relics
+#   [[1300]] variations: double / single corrupted rares, abyss-socketed gear, fractured
+#            jewels / heist gear (fractured flasks: [flasks]), enchanted / anointed, crucible
+# Uniques (unique fishing rods, imbued uniques, unique relics) stay priced by [uniques].
+# league_start: every exotic block on (lower strand tiers, any fractured item ...).
+# After [id_mods], before vendor recipes / crafting bases / rares. poe.ninja has no price for these.
 # ---------------------------------------------------------------------------
 [exotics]
 enabled = true
 
 # ---------------------------------------------------------------------------
-# Maps: shown / hidden exactly as reference/league.filter, with its own style. Special maps
-# always: Valdo, Nightmare, Shaper guardian, Zana / Elder (T16) / conqueror influenced,
-# blighted + blight-ravaged, T16 Vaal Temple, enchanted, implicit, 8-mod corrupted
-# ([0301], [3202]-[3204]). Unique maps: [uniques] hide_maps.
+# Identified gear with good mods: reference/league.filter's ID-mod blocks with its own style
+# (borders / backgrounds stripped): [[0600]] mod combinations per slot (phys / ele / caster
+# weapons, each armour slot, jewellery, quivers, jewels, veiled exceptions), [[0700]] dual
+# mods, [0801] top-value + [0802] uncorrupted single mods, [[1000]] corrupted items with good
+# mods. Flask / tincture ID mods ([0803]): [flasks]. league_start: also commented-out blocks.
+# Before vendor recipes / crafting bases / rares: a good identified rare is never hidden.
+# ---------------------------------------------------------------------------
+[id_mods]
+enabled = true
+
+# ---------------------------------------------------------------------------
+# Maps + map items: our module rules/modules/maps.filter (from the FilterBlade filter, its
+# own style; every block on / off in modules.toml [maps.blocks]). Special maps: Valdo,
+# Nightmare, Shaper guardian, Zana / Elder (T16) / conqueror influenced, blighted +
+# blight-ravaged, T16 Vaal Temple, enchanted, implicit, 8-mod corrupted ([0301], [3202]-[3204]).
+# Unique maps: [uniques] hide_maps. Map items ([[3400]] / [[3500]]): unique contracts /
+# blueprints, logbooks, charts, enchanted contracts / blueprints, blueprints shown, plain
+# contracts + Sanctum Research (Forbidden Tome) hidden, reliquary keys / Chronicle / Inscribed
+# Ultimatum shown. A poe.ninja price (Voidborn Reliquary Key) or the unpriced fragment fallback
+# (blue) decides first; show_contracts / hide_forbidden_tome beat these blocks both ways
+# (false / true: hidden before all; true / false: the module's contract / tome Hides skipped).
+# enabled = false: no map / map item rules at all (hide_maps, progression, corrupted_min_tier
+#   do nothing; maps fall to unique prices / the blue safety net).
 # progression = normal maps by tier ([3302]):
 #   "none" = league.filter as is: every tier hidden (late league)
 #   "all"  = every tier shown, league.filter tier style (league start: turning the rules on)
 #   "auto" = a tier shows while AreaLevel <= its own level (campaign: all; in a T5 map: T5+;
 #            in a T16 map: T16 only). Middle ground while climbing the atlas.
-# league_start: "none" -> "all", plus league.filter's commented-out map rules (corrupted implicit).
+# league_start: "none" -> "all", corrupted_min_tier 0, every Show block of the module on
+# (corrupted implicit), every Hide off except the [3302] tier Hides (progression shows them).
+# corrupted_min_tier: non-unique corrupted maps below this tier hidden (8-mod, implicit, blighted,
+#   influenced, progression tiers too). Valdo / Nightmare / Shaper guardian and unique maps
+#   untouched. 0 = off.
 # ---------------------------------------------------------------------------
 [maps]
+enabled = true
 progression = "none"
+corrupted_min_tier = 16
 
 # ---------------------------------------------------------------------------
-# Campaign / leveling: NeverSink's leveling rules, taken from reference/league.filter
-# (sections [2802] jewels, [[5000]]-[[5400]] flasks + gear) every build. Campaign currency:
-# price tiers / NeverSink reference tiers, never hidden (show_all_stackables).
+# Jewels: our module rules/modules/jewels.filter (from the FilterBlade filter, its own style;
+# every block on / off in modules.toml [jewels.blocks]): [2801] corrupted-implicit rare / magic
+# jewels + uncorrupted ones with a top mod, [2803] abyss jewels (corrupted rare, ilvl 83+ / 86+
+# shown, rest hidden), [2804] other rare / magic jewels hidden, [2805] cluster jewels by
+# enchant x passives x ilvl, [2806] random clusters (optimal passive counts ilvl 84 shown, rest
+# hidden). Priced first, so they win: poe.ninja cluster prices ([2805] only adds unpriced ones),
+# priced jewel bases ([bases]), [id_mods] / [exotics] jewels, campaign ([leveling]).
+# league_start: every Show block on (lower abyss / random cluster tiers), except [2805]: its
+# off blocks are empty economy tiers that would match every enchant; every Hide off.
+# After rares, before [heist].
+# ---------------------------------------------------------------------------
+[jewels]
+enabled = true
+
+# ---------------------------------------------------------------------------
+# Heist gear: our module rules/modules/heist.filter (from the FilterBlade filter, its own style;
+# every block on / off in modules.toml [heist.blocks]): per cloak / brooch / gear / tool, top
+# bases (ilvl 83+ louder), good bases shown, the rest hidden. Priced crafting bases and
+# [id_mods] / [exotics] heist items decide first. Contracts / blueprints: [maps].
+# ---------------------------------------------------------------------------
+[heist]
+enabled = true
+
+# ---------------------------------------------------------------------------
+# Misc items: our module rules/modules/misc.filter (from the FilterBlade filter, its own style;
+# every block on / off in modules.toml [misc.blocks]):
+#   gold.*        FilterBlade's gold stack tiers: decided by show_gold / gold_min_stack (top of
+#                 this file), not by [misc] enabled or modules.toml
+#   heisttarget / enshrouded / event->idols.*   heist targets, enshrouded gear, magic / rare idols
+#                 (event leagues): before uniques, as in FilterBlade ("override uniques")
+#   questlike.*   Maven's invitations, lab / incursion items: after uniques (prices first)
+#   6l.*          FilterBlade's 6-link overrides: set by show_6_links above instead
+# enabled = false: none of these (idols hidden as gear).
+# ---------------------------------------------------------------------------
+[misc]
+enabled = true
+
+# ---------------------------------------------------------------------------
+# Campaign / leveling: our module rules/modules/leveling.filter (NeverSink's leveling rules
+# from the FilterBlade filter: [2802] jewels, [[3800]] currency, [[5000]]-[[5405]] flasks,
+# rares, normal / magic gear; every block on / off in modules.toml [leveling.blocks]).
+# Blocks valued "config.toml [leveling] strictness" follow strictness below (their NeverSink
+# tag, as FilterBlade at that strictness), [[3800]] currency styles too; true / false blocks =
+# FilterBlade options (on: quicksilver / utility flask alerts; off: rare / magic size
+# decorators, spirit shields; league_start turns them on, strictness blocks stay as
+# strictness says). Campaign currency: a price tier that shows it (single or the stack size
+# reaching a shown tier; pinned Divine / Mirror / Hinekora's Lock, [overrides]) wins over the
+# [[3800]] style; never hidden (show_all_stackables).
 # Every block gets "AreaLevel <= area_level_max" (and "Rarity <= Rare" on gear), so they
-# do nothing in maps and never touch uniques. Placed right after rules/top.filter.
+# do nothing in maps and never touch uniques. Placed after rules/top.filter, flask / ID-mod /
+# exotic rules, vendor recipes and cluster prices, before the stackable / unique / base prices.
 # strictness = NeverSink levels: 0 soft (everything), 1 regular, 2 semi-strict,
 #              3 strict (+ hides large magic items), 4 very strict
 # build = build module rules/leveling/<build>.filter, checked first ("" = none).
@@ -701,9 +1026,11 @@ progression = "none"
 #         campaign, before hide_magic_after and the build module (their Hides don't apply).
 # show_magic_rare_cells: maximum inventory cells for those items, measured per base with its
 #         Width x Height (for example, small shields show while 2x4 shields do not at 4). 0 = off.
-# league_start_hide_unused: with league_start, white crafting bases in maps that the build
-#         module hides (rf: pure ES, unused weapons, jewels, ...) stay hidden, unless worth
-#         bases.min_tier. Other white bases show at league start.
+# unused_whites_min_tier: with a build, white crafting bases in maps that the build module
+#         hides (rf: pure ES, unused weapons, jewels, ...) stay hidden unless priced at this
+#         tier or better ("" = off). For a lowered bases.min_tier: other white bases show.
+# league_start_hide_unused: league start (flag or tools/league_start.py) sets
+#         unused_whites_min_tier to your bases.min_tier. false = it doesn't.
 # show_all_stackables: in the campaign no currency / card / fragment / ... is hidden.
 #         Price tier styles stay; what maps would hide shows in the lowest tier's style.
 # ---------------------------------------------------------------------------
@@ -720,6 +1047,7 @@ show_gems = true
 show_magic_vendor = true
 show_rare_vendor = true
 show_magic_rare_cells = 4
+unused_whites_min_tier = ""
 league_start_hide_unused = true
 show_all_stackables = true
 # Campaign blocks with a minimap icon but no sound get this (Orb of Chance etc. = NeverSink single chaos sound; 4 = maps only)
@@ -748,6 +1076,21 @@ include_dual_influence = false
 # name = tier name | "hide" | "variable" | "unknown"
 "Scroll of Wisdom" = "hide"
 "Portal Scroll" = "hide"
+# Thin, erratic poe.ninja quotes: always white (minor), whatever the price says.
+"Clear Oil" = "minor"
+"Sepia Oil" = "minor"
+
+# ---------------------------------------------------------------------------
+# Unique exceptions: our module rules/modules/unique_exceptions.filter (league.filter [4801] /
+# [4803] / [4804] overqual): unique variants a per-base price can't tell apart, shown even when
+# their base is priced hidden: uber Impresence (Shaper + Elder Onyx Amulet), Forge swords
+# (influenced Infernal Sword), Kaom's Heart (Glorious Plate, no sockets), Tabula (6L Simple
+# Robe), synthesised uniques, 2-4 abyss-socket uniques, Vestigial, unique idols, double
+# corrupted, crucible, 27%+ quality. A base priced in a shown tier keeps its price style.
+# Per-block on / off: modules.toml [unique_exceptions.blocks] (league_start: every Show on).
+# ---------------------------------------------------------------------------
+[unique_exceptions]
+enabled = true
 
 # Uniques with a corrupted implicit (CorruptedMods >= 1): shown even when their base
 # is priced below min_tier. Listed classes OR base types match. Change per league.
@@ -786,9 +1129,9 @@ bases = []           # exact BaseType, e.g. "Prismatic Jewel"
 [style.top]
 lines = [
   "SetFontSize 45",
-  "SetTextColor 255 0 0 255",
-  "SetBorderColor 255 0 0 255",
-  "SetBackgroundColor 255 255 255 255",
+  "SetTextColor red",
+  "SetBorderColor red",
+  "SetBackgroundColor tink_bg",
   "PlayAlertSound 6 300",
   "PlayEffect Red",
   "MinimapIcon 0 Red Star",
@@ -797,7 +1140,7 @@ lines = [
 [style.high]
 lines = [
   "SetFontSize 45",
-  "SetTextColor 255 0 0 255",
+  "SetTextColor red",
   "PlayAlertSound 1 300",
   "PlayEffect Red",
   "MinimapIcon 1 Red Circle",
@@ -806,7 +1149,7 @@ lines = [
 [style.mid]
 lines = [
   "SetFontSize 45",
-  "SetTextColor 255 190 0",
+  "SetTextColor yellow",
   "PlayAlertSound 2 300",
   "PlayEffect Yellow",
   "MinimapIcon 1 Yellow Circle",
@@ -815,7 +1158,7 @@ lines = [
 [style.minor]
 lines = [
   "SetFontSize 45",
-  "SetTextColor 215 215 215 255",
+  "SetTextColor white",
   "PlayAlertSound 2 300",
   "PlayEffect White",
   "MinimapIcon 1 White Circle",
@@ -824,7 +1167,7 @@ lines = [
 [style.low]
 lines = [
   "SetFontSize 45",
-  "SetTextColor 215 215 215 255",
+  "SetTextColor white",
   "PlayAlertSound 2 300",
   "PlayEffect White",
   "MinimapIcon 1 White Circle",
@@ -834,7 +1177,7 @@ lines = [
 # SetFontSize comes from the tier itself.
 [style.quiet]
 lines = [
-  "SetTextColor 210 178 134 255",
+  "SetTextColor brown",
   "PlayEffect Grey",
   "MinimapIcon 2 Grey Circle",
   "DisableDropSound True",
@@ -844,7 +1187,7 @@ lines = [
 [style.brown]
 lines = [
   "SetFontSize 45",
-  "SetTextColor 210 178 134 255",
+  "SetTextColor brown",
   "DisableDropSound True",
 ]
 
@@ -852,14 +1195,14 @@ lines = [
 [style.content]
 lines = [
   "SetFontSize 32",
-  "SetBackgroundColor 0 0 0 193",
+  "SetBackgroundColor content_bg",
   "DisableDropSound True",
 ]
 
 [style.dust]
 lines = [
   "SetFontSize 45",
-  "SetTextColor 210 178 134 255",
+  "SetTextColor brown",
   "DisableDropSound True",
 ]
 
@@ -874,7 +1217,7 @@ lines = [
 [style.unknown]
 lines = [
   "SetFontSize 45",
-  "SetTextColor 215 215 215 255",
+  "SetTextColor white",
   "PlayAlertSound 2 300",
   "PlayEffect Blue",
   "MinimapIcon 1 Blue Star",
