@@ -715,6 +715,8 @@ def price_foulborn_bases(data, cfg, tiers, divine_chaos):
     ([foulborn] jackpot_divine, own value) or never_hide_tier. No confident price: foulborn.unpriced.
     """
     f, u = cfg["foulborn"], cfg["uniques"]
+    # enabled content modules price their restricted uniques; Foulborn versions follow
+    content_prices = content_policy(data.get("content", {}), cfg)["price_names"]
     per = {}  # (base, name) -> [listings over all variants, cheapest variant, (best, label)]
     boss_only = set()
     for t in UNIQUE_TYPES:
@@ -722,7 +724,8 @@ def price_foulborn_bases(data, cfg, tiers, divine_chaos):
             name, base = line["name"], line.get("baseType")
             if not name.startswith("Foulborn ") or not base or line.get("links"):
                 continue
-            boss = no_map_drop(data, name)  # counts for cheapest, never for best
+            plain = name[len("Foulborn "):]
+            boss = no_map_drop(data, name) and plain not in content_prices  # cheapest only, never best
             if boss:
                 boss_only.add(base)
             listings = line.get("listingCount", 0)

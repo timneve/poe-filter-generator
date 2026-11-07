@@ -214,7 +214,7 @@ other bases in the Shields class are larger. Vendor Shows take priority over cam
   instance-only uniques). On: its uniques are priced normally (Breach on: Titan Greaves blue from
   1c Red Trail), and a base the price rules would hide still shows small + faded when one of its
   content uniques is itself in a shown unique tier (Amber Amulet: 2 div Xoph's Blood), so the
-  valuable encounter drop isn't missed (not Foulborn: those come from Wombgifts, never the encounter, so only their own price counts); cheap content uniques stay hidden; normal mapping is otherwise unchanged. Off: those uniques are
+  valuable encounter drop isn't missed (not Foulborn: those come from Wombgifts, never the encounter, so only their own price counts; module on = Foulborn versions priced, off = hidden as boss-only); cheap content uniques stay hidden; normal mapping is otherwise unchanged. Off: those uniques are
   ignored on shared bases (Titan Greaves = Kaom's Roots tier); bases with only that content's
   uniques stay blue. `[content.<name>.drops]`: `"price"` (default), `true` to always show faded,
   or `false` to always hide a specific unique's base. PoE filters cannot

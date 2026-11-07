@@ -78,7 +78,9 @@ Filter sees only `Foulborn True` + base. No EV (no drop rates).
    drops) and not top -> **blue**. Never-hide floor in 5 uses this jackpot too.
 4. Below `[foulborn] min_tier` / small_loot -> **hidden**.
 5. Hidden but best >= never_hide floor -> **blue**. `unknown_as_variable` + thin unique -> **blue**.
-6. Only boss-only Foulborn uniques on base -> hidden. No price -> `[foulborn] unpriced`.
+6. Boss-only (wiki restricted) Foulborn uniques count for cheapest, never best; base with only those -> hidden.
+   Exception: unique in an enabled content module's `price_names` (Severed in Sleep, Breach on) is
+   priced normally, so its jackpot variant -> blue. No price -> `[foulborn] unpriced`.
 7. No faded content rescue (Wombgift-only, never content drops).
 Foulborn only ever takes its own price: normal unique tier blocks carry `Foulborn False` (else a hidden
 5c Foulborn Cutlass fell into the shown normal Cutlass tier, 780c United in Dream -> red), and the

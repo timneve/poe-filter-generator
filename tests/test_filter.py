@@ -1169,6 +1169,29 @@ class Synthetic(unittest.TestCase):
         self.assertEqual(r["fbases"]["Cutlass"][0], "variable")
         self.assertTrue(fs.visible(blocks, unid_unique("Cutlass", "One Hand Swords", foulborn=True)))
 
+    def test_foulborn_content_unique_follows_module(self):
+        # Severed in Sleep = Breach-boss restricted. Breach module on: its Foulborn is priced
+        # (jackpot -> blue), not skipped as boss-only. Off: boss-only -> hidden.
+        rows = [{"name": "Severed in Sleep", "base": "Cutlass", "restricted": True, "enabled": True,
+                 "source": "Metadata/Monsters/BreachBossHandMage/HandMage |  | "}]
+        self.data["nomap"] = bf.non_map_drops(rows, self.cfg)
+        self.data["wiki_bases"] = bf.wiki_unique_bases(rows)
+        self.data["content"] = bf.content_bases(rows, self.cfg)
+        self.cfg["small_loot"]["enabled"] = False
+        sword = dict(item_type="One Handed Sword", t="UniqueWeapon")
+        add_foulborn(self.data, "Cutlass", "Severed in Sleep", "Minion Unholy", 0.5, **sword)
+        add_foulborn(self.data, "Cutlass", "Severed in Sleep", "Minion Crit", 5 * 400, **sword)
+        self.cfg["foulborn"]["jackpot_divine"] = 1
+        item = unid_unique("Cutlass", "One Hand Swords", foulborn=True)
+        self.cfg["content"]["breach"]["enabled"] = True
+        blocks, r = self.build()
+        self.assertEqual(r["fbases"]["Cutlass"][0], "variable")
+        self.assertTrue(fs.visible(blocks, item))
+        self.cfg["content"]["breach"]["enabled"] = False
+        blocks, r = self.build()
+        self.assertEqual(r["fbases"]["Cutlass"][0], "hide")
+        self.assertFalse(fs.visible(blocks, item))
+
     def test_unique_show_toggles(self):
         # 1c base: minor/low tier, hidden by default; turning its tier on shows it
         self.cfg["small_loot"]["enabled"] = False

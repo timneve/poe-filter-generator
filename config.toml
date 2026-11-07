@@ -692,7 +692,8 @@ note = "40% total quality -> 1 Glassblower's Bauble"
 #        [uniques] show tier (Amber Amulet: 1c map junk, 2 div Xoph's Blood). A cheap content
 #        unique (7c Hand of the Lords) stays hidden. Base-wide: a junk map unique on a faded
 #        base shows faded too (filters can't tell which unique dropped). Not for Foulborn:
-#        they come from Wombgifts only, never the content, so [foulborn] price alone decides.
+#        they come from Wombgifts only, never the content, so [foulborn] price alone decides
+#        (module on = their Foulborn versions are priced too; off = skipped as boss-only).
 #   off: its uniques are ignored on shared bases (Titan Greaves = Kaom's Roots tier). A base
 #        with only that content's uniques still shows blue.
 # PoE filters cannot tell where an item dropped, so the rule applies everywhere.
