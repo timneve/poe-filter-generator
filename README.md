@@ -171,7 +171,7 @@ other bases in the Shields class are larger. Vendor Shows take priority over cam
   stack up to `[exchange.big_stacks]` (a 1000-stack of Vivid Lifeforce gets its real tier).
   `[exchange.show_stacks]` forces a stack size to show whatever its price (Rogue's Marker 2500+,
   as FilterBlade). Fixed tiers when unpriced (`[exchange.unpriced_tiers]`: Scroll Fragment, Amber /
-  Verdant Oil hidden; Omen of Refreshment / of the Soul Devourer blue). Clear Oil and Sepia Oil are always white (minor) via `[overrides]`.
+  Verdant Oil hidden; Omen of Refreshment / of the Soul Devourer blue). Clear Oil and Sepia Oil are pinned to dust via `[overrides]`.
 - Currency shards use one twentieth of the finished currency's price rather than sparse shard
   quotes; configured splinters use the finished item price divided by the completion count.
 - Divination-card quotes are not used because the available poe.ninja exchange data does not
@@ -201,7 +201,7 @@ other bases in the Shields class are larger. Vendor Shows take priority over cam
   Forge swords, Kaom's Heart (no sockets), 6L Tabula, synthesised, 2-4 abyss-socket, Vestigial,
   unique idols, double-corrupted, crucible and 21%+ quality uniques (league.filter: 27%).
 - Jackpot (`jackpot_divine`, top of config): ANY item worth that much is never hidden. Unique,
-  Foulborn and 5L/6L unique bases and crafting base ilvl ranges with a jackpot go variable.
+  Foulborn (own `[foulborn] jackpot_divine`) and 5L/6L unique bases and crafting base ilvl ranges with a jackpot go variable.
   Per unique the cheapest variant is used (Mageblood = 2-flask price).
 - Uniques that can't drop in a normal map (uber/pinnacle bosses, Breachlords, Atziri, Syndicate,
   Delve, Heist + Replicas, Incursion temple, Lab, recipes, upgrades) are skipped from pricing,
@@ -222,7 +222,7 @@ other bases in the Shields class are larger. Vendor Shows take priority over cam
   apply globally to the base and can affect other uniques sharing it. Always-show drops use
   the small, silent `[style.content]` with a slightly translucent label background.
   `league_start = true` enables all content modules.
-- Foulborn uniques: own tiers per base (cheapest variant = tier, best variant >= jackpot_divine = blue), hidden below `foulborn.min_tier`.
+- Foulborn uniques: own tiers per base (cheapest variant = tier, best variant >= `foulborn.jackpot_divine` = blue; own, lower jackpot since they only come from Wombgifts), hidden below `foulborn.min_tier`. A Foulborn never takes the normal unique tier of its base.
 - Unknown value (`unknown_as_variable`, toggle): a unique base is only tiered when every unique the
   wiki says can drop on it has a confident poe.ninja price; otherwise blue variable.
 - Wrist saver (`[small_loot]`, toggle): non-stackable loot (uniques, Foulborn, gems, invitations, wombgifts) below tier `min_tier` (default minor = 1/64 div) is hidden. Jackpots still show. Ancient Wombgift is guaranteed at least the minor (white) tier; higher prices use their normal price tier.

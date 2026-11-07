@@ -1,0 +1,48 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "PoE1 build",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/build_filter.py",
+      "cwd": "${workspaceFolder}",
+      "console": "integratedTerminal"
+    },
+    {
+      "name": "PoE1 build (refresh prices)",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/build_filter.py",
+      "args": ["--refresh"],
+      "cwd": "${workspaceFolder}",
+      "console": "integratedTerminal"
+    },
+    {
+      "name": "PoE2 build",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/build_filter_poe2.py",
+      "cwd": "${workspaceFolder}",
+      "console": "integratedTerminal"
+    },
+    {
+      "name": "PoE2 build (refresh prices)",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/build_filter_poe2.py",
+      "args": ["--refresh"],
+      "cwd": "${workspaceFolder}",
+      "console": "integratedTerminal"
+    },
+    {
+      "name": "Tests",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "unittest",
+      "args": ["discover", "tests"],
+      "cwd": "${workspaceFolder}",
+      "console": "integratedTerminal"
+    }
+  ]
+}

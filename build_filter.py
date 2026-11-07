@@ -712,7 +712,7 @@ def price_foulborn_bases(data, cfg, tiers, divine_chaos):
     Mutated mods vary per drop and the filter can't see them, so a base gets the cheapest
     variant of any confident Foulborn unique on it (listings summed over its variants).
     best = best variant with any listing. Below min_tier / small_loot: hidden, unless jackpot
-    or never_hide_tier. No confident price: foulborn.unpriced.
+    ([foulborn] jackpot_divine, own value) or never_hide_tier. No confident price: foulborn.unpriced.
     """
     f, u = cfg["foulborn"], cfg["uniques"]
     per = {}  # (base, name) -> [listings over all variants, cheapest variant, (best, label)]
@@ -747,7 +747,8 @@ def price_foulborn_bases(data, cfg, tiers, divine_chaos):
         if not boss:
             map_bases.add(base)
 
-    jackpot = jackpot_chaos(cfg, divine_chaos)
+    # own jackpot: Foulborn come from Wombgifts only (few drops), so a lower bar is worth a look
+    jackpot = f["jackpot_divine"] * divine_chaos if divine_chaos else math.inf
     min_rank = min_shown_rank(cfg, tiers, f["min_tier"])
     result = {}
     for base, best in best_by_base.items():
@@ -1310,9 +1311,12 @@ def emit_uniques(cfg, tiers, bases, fbases, linked, map_bases, rescue=None):
             block(action_for(cfg, setting), conds, style_for(cfg, setting, UNIQUE_SHAPE), label)
 
     foul = ["Rarity Unique", "Foulborn True"]
+    # normal tiers say Foulborn False: a Foulborn takes only its own price, never its base's
+    # normal one (Foulborn Cutlass 5.5c must not show red because United in Dream is 780c)
+    normal = ["Rarity Unique", "Foulborn False"]
     for tier in shown:
         out += tier_blocks(tier, fbases, foul, "foulborn")
-        out += tier_blocks(tier, bases, ["Rarity Unique"], "uniques")
+        out += tier_blocks(tier, bases, normal, "uniques")
         if tier == tiers.names[0] and cfg["uniques"].get("variable_classes"):
             # whole classes always blue; only a known tink base beats it
             out += block("Show", ["Rarity Unique", f"Class == {q(cfg['uniques']['variable_classes'])}"],
@@ -1334,7 +1338,7 @@ def emit_uniques(cfg, tiers, bases, fbases, linked, map_bases, rescue=None):
                      "content override show: enabled [content.*] uniques on otherwise hidden bases")
     for tier in order:
         if tier not in shown:
-            out += tier_blocks(tier, bases, ["Rarity Unique"], "uniques")
+            out += tier_blocks(tier, bases, normal, "uniques")
     out += unpriced_blocks(cfg["uniques"]["unpriced"], ["Rarity Unique"], "unpriced uniques")
     return out
 

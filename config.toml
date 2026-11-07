@@ -753,7 +753,7 @@ sources = ["BreachBoss"]
 "Xoph's Nurture" = "price"
 
 [content.ultimatum]
-enabled = true
+enabled = false
 sources = ["Ultimatum"]   # Trialmaster boss drops + Ultimatum rewards
 
 [content.blight]
@@ -787,12 +787,18 @@ sources = ["Blight"]   # Blight encounters, including Blight-ravaged maps
 # One Foulborn unique has many mutated-mod variants (Doomsower 120c .. 263k c) and the
 # filter can't see which mods dropped, only "Foulborn True" + BaseType. So per base:
 #   tier     = cheapest variant of any Foulborn unique on it (Goldwyrm 3.5c -> low)
-#   variable = best variant >= jackpot_divine (worth checking the mods)
+#   variable = best variant >= [foulborn] jackpot_divine (worth checking the mods)
 #   hidden   = below min_tier (and below [small_loot] when that's on), unless some
 #              variant >= uniques.never_hide_tier (then variable)
 # min_listings counts all variants of one unique together (variants are thin).
+# A Foulborn only takes its own price: normal unique tiers have "Foulborn False", so a
+# 5c Foulborn on a base whose normal unique is 780c is not shown at the normal tier.
 # ---------------------------------------------------------------------------
 [foulborn]
+# Own jackpot (divines), separate from the top-level jackpot_divine: Foulborn come from
+# Wombgifts only, never random map drops, so there are few and checking mods is cheap.
+# Best variant >= this -> blue "variable", never hidden.
+jackpot_divine = 0.5
 min_listings = 5
 min_tier = "low"
 # Foulborn base with no confident price: tier name, "hide" or "unknown"

@@ -36,6 +36,7 @@ class Synthetic(unittest.TestCase):    # setUp: cfg copy, fixed chaos tiers, EV 
 - Tink check: `not_tink(blocks, cfg, [(label, item)])` -> items whose deciding block lacks the top tier's background + alert sound (`tink_lines`). Guards: `Synthetic.test_very_expensive_items_tink` (one top-priced item per kind + always-tink items), `LiveCache.test_top_priced_items_tink` (every top-priced stackable / crafting base / cluster). New tink-worthy kind -> add it there.
 - Synthetic `setUp` disables `tiers_follow_divine`, `uniques.ev`, `variable_jackpot_only`, `always_show_bases`, content drops; re-enable in the test if needed (`ev_setup()` for EV).
 - `LiveCache` uses real `cache/`; skips some checks when `variable_jackpot_only` is on.
+- Wrong style, not just wrong visibility: `LiveCache.test_unique_price_blocks_match_own_kind` checks every unique / Foulborn base (unID) is decided by a price block of its own kind and tier (block comment `<kind> <tier>`). New per-kind price blocks sharing a base -> give each kind an exclusive condition (`Foulborn True/False`) and extend this test.
 
 ## Gotchas
 

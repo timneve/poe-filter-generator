@@ -55,7 +55,7 @@ Show # uniques->maps.multispecialcorrupted
 	SetFontSize 45
 	PlayAlertSound 2 300
 	PlayEffect Blue
-	MinimapIcon 1 Blue Star
+	MinimapIcon 1 Blue Square
 
 Hide # uniques->maps.multispecial
 	Corrupted False
@@ -69,7 +69,7 @@ Show # uniques->maps.restex
 	SetFontSize 45
 	PlayAlertSound 3 300
 	PlayEffect Pink
-	MinimapIcon 0 Pink Circle
+	MinimapIcon 0 Pink Square
 
 # [3202] SpecialMaps
 

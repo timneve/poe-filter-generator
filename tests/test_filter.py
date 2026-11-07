@@ -102,6 +102,7 @@ class Synthetic(unittest.TestCase):
         self.cfg["uniques"]["variable_jackpot_only"] = False
         self.cfg["uniques"]["always_show_bases"] = []
         self.cfg["content"]["ultimatum"]["drops"] = {}
+        self.cfg["content"]["ultimatum"]["enabled"] = True  # content tests use ultimatum (config may turn it off)
         self.cfg["content"]["blight"]["drops"] = {}
         self.cfg["content"]["breach"]["drops"] = {}
         self.data = empty_data()
@@ -117,6 +118,18 @@ class Synthetic(unittest.TestCase):
         self.assertTrue(rules[0]["continue"])
         self.assertEqual(rules[0]["conditions"][0]["values"], ["Unique"])
         self.assertEqual(rules[1]["conditions"][0]["values"], ["Shagreen Boots"])
+
+    def test_unique_maps_square_icon(self):
+        # unique map = map icon (Square), also module blocks (corrupted, restex)
+        blocks, _ = self.build()
+        for corrupted in (False, True):
+            item = {"rarity": "Unique", "class": "Maps", "basetype": "Map (Tier 16)",
+                    "corrupted": corrupted, "map_tier": 16, "ilvl": 83}
+            b, style = fs.evaluate(blocks, item)
+            if b is None or b.action == "Hide":
+                continue
+            icons = [l for l in style if l.startswith("MinimapIcon")]
+            self.assertTrue(icons and icons[-1].endswith("Square"), (corrupted, icons))
 
     def test_transfigured_gem_name_not_emitted(self):
         # "Cyclone of Tumult" is no BaseType: the game rejects the whole filter
@@ -1129,6 +1142,33 @@ class Synthetic(unittest.TestCase):
         self.assertFalse(fs.visible(blocks, unid_unique("Leather Belt", "Belts")))
         self.assertTrue(fs.visible(blocks, unid_unique("Leather Belt", "Belts", foulborn=True)))
 
+    def test_hidden_foulborn_not_shown_at_normal_tier(self):
+        # Foulborn Cutlass: cheapest variant 5c (hidden), normal Cutlass 780c (high, red).
+        # The Foulborn must stay hidden, the normal one shown.
+        sword = dict(item_type="One Handed Sword", t="UniqueWeapon")
+        add_unique(self.data, "Cutlass", "United in Dream", 780, **sword)
+        add_foulborn(self.data, "Cutlass", "Severed in Sleep", "Minion Unholy", 0.5, **sword)
+        blocks, r = self.build()
+        self.assertEqual(r["fbases"]["Cutlass"][0], "hide")
+        self.assertTrue(fs.visible(blocks, unid_unique("Cutlass", "One Hand Swords")))
+        self.assertFalse(fs.visible(blocks, unid_unique("Cutlass", "One Hand Swords", foulborn=True)))
+
+    def test_foulborn_own_jackpot(self):
+        # 2 div best variant on a hidden 0.5c base: below the top-level jackpot, but at
+        # [foulborn] jackpot_divine -> variable (Foulborn are Wombgift-only, lower bar)
+        self.cfg["small_loot"]["enabled"] = False
+        add_foulborn(self.data, "Cutlass", "Severed in Sleep", "Minion Unholy", 0.5, item_type="One Handed Sword", t="UniqueWeapon")
+        add_foulborn(self.data, "Cutlass", "Severed in Sleep", "Minion Crit", 2 * 400, listings=1, item_type="One Handed Sword", t="UniqueWeapon")
+        self.cfg["jackpot_divine"] = 100
+        self.cfg["uniques"]["variable_jackpot_only"] = True  # never-hide floor = jackpot only
+        self.cfg["foulborn"]["jackpot_divine"] = 100
+        _, r = self.build()
+        self.assertEqual(r["fbases"]["Cutlass"][0], "hide")
+        self.cfg["foulborn"]["jackpot_divine"] = 1
+        blocks, r = self.build()
+        self.assertEqual(r["fbases"]["Cutlass"][0], "variable")
+        self.assertTrue(fs.visible(blocks, unid_unique("Cutlass", "One Hand Swords", foulborn=True)))
+
     def test_unique_show_toggles(self):
         # 1c base: minor/low tier, hidden by default; turning its tier on shows it
         self.cfg["small_loot"]["enabled"] = False
@@ -1277,16 +1317,6 @@ class Synthetic(unittest.TestCase):
         self.assertFalse(fs.visible(self.build()[0], oil))
         self.data["exchange"]["Oil"]["lines"][-1].update(primaryValue=500, volumePrimaryValue=1000)
         self.assertTrue(fs.visible(self.build()[0], oil))  # confident price wins
-
-    def test_clear_sepia_oil_always_white(self):
-        add_exchange(self.data, "Oil", "Sepia Oil", 500, volume=1000)  # confident, pricey
-        blocks, _ = self.build()
-        for name in ("Clear Oil", "Sepia Oil"):
-            oil = {"class": "Stackable Currency", "basetype": name}
-            self.assertTrue(fs.visible(blocks, oil))
-            block, style = fs.evaluate(blocks, oil)
-            self.assertEqual(block.comment, "override minor")
-            self.assertIn("SetTextColor 215 215 215 255", style)
 
     def test_high_volume_card_quote_is_not_used_without_buy_order_direction(self):
         add_exchange(self.data, "DivinationCard", "The Surgeon", 1000, volume=10000)
@@ -2716,6 +2746,33 @@ class LiveCache(unittest.TestCase):
                 items.append((f"{name} ({base}, {v:.0f}c)", unid_unique(base, cls)))
         self.assertGreater(len(items), 30)
         self.assert_all_visible(items, "valuable unique bases")
+
+    def test_unique_price_blocks_match_own_kind(self):
+        # Every unique base, as it drops (unID), gets the price block of its own kind and tier:
+        # a Foulborn never lands in a normal "uniques <tier>" block and vice versa (5c Foulborn
+        # Cutlass was shown red by the 780c normal Cutlass tier). Earlier blocks (exceptions,
+        # variable_classes, linked ...) may still decide; only the wrong-kind price block fails.
+        classes = {}
+        for t in bf.UNIQUE_TYPES:
+            for line in self.data["stash"][t]["lines"]:
+                cls = unique_class(line, t)
+                if line.get("baseType") and cls:
+                    classes.setdefault(line["baseType"], cls)
+        tier_names = set(self.cfg["tiers"]) | {"variable", "hide", "unknown"}
+        bad = []
+        for kind, by_base, foul in (("foulborn", self.r["fbases"], True), ("uniques", self.r["ubases"], False)):
+            other = "uniques" if foul else "foulborn"
+            for base, (tier, *_rest) in by_base.items():
+                if base not in classes:
+                    continue
+                b, _ = fs.evaluate(self.blocks, unid_unique(base, classes[base], foulborn=foul))
+                c = (b.comment or "").strip().split() if b else []
+                # only price-tier blocks ("<kind> <tier>[ maps]"), not "uniques variable_classes" etc.
+                if len(c) < 2 or c[1] not in tier_names:
+                    continue
+                if c[0] == other or (c[0] == kind and c[1] != tier):
+                    bad.append(f"{kind} {base} (tier {tier}) <- {b}")
+        self.assertFalse(bad, f"{len(bad)} unique bases styled by the wrong price block:\n" + "\n".join(bad[:40]))
 
     def test_valuable_foulborn_visible_unidentified(self):
         self.skip_if_jackpot_only()

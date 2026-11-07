@@ -90,7 +90,7 @@ names / groups as the old build-time parse. "Price" = poe.ninja tier (stack bloc
 | [3907] Silver Coin | unpriced -> blue | covered |
 | [[4000]] currency tiers t1-t9 | price; unpriced -> `fallback_tiers.toml` | covered |
 | [4101]-[4112] vials, delirium, fossils / resonators, ducats, oils, runegrafts, corpses, essences, omens, tattoos, scrying / imprint / lens, wombgifts (+ restex) | price per item; unpriced -> fallback tier / blue catch-all per class | covered |
-| [4105] conditional Hide Amber / Clear / Sepia / Verdant Oil | Amber / Verdant: `[exchange.unpriced_tiers]` hide; Clear / Sepia: `[overrides]` minor (user choice) | **added** (Amber / Verdant) |
+| [4105] conditional Hide Amber / Clear / Sepia / Verdant Oil | Amber / Verdant: `[exchange.unpriced_tiers]` hide; Clear / Sepia: `[overrides]` dust (user choice) | **added** (Amber / Verdant) |
 | [4201]-[4203] splinter stacks | `[exchange.splinters]` price / count + stack blocks | covered |
 | [[4300]] card tiers t1-t5, tnew | `card_rewards` price, else `fallback_tiers.toml [cards]` (low volume), else blue | covered |
 | [[4300]] exstack (any card x3) / The Fortunate x3 | `card_fallback_stack` for unpriced hidden-group cards; priced cards: price x stack | **added** |

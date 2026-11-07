@@ -74,12 +74,15 @@ What counts on a base: uniques that can drop in maps.
 Filter sees only `Foulborn True` + base. No EV (no drop rates).
 1. Per unique: listings summed over variants >= `[foulborn] min_listings` = confident.
 2. Base price = CHEAPEST variant of any confident Foulborn unique (code ignores `base_price`).
-3. Best variant >= jackpot and not top -> **blue**.
+3. Best variant >= `[foulborn] jackpot_divine` (own, lower than the top-level one: Wombgift-only
+   drops) and not top -> **blue**. Never-hide floor in 5 uses this jackpot too.
 4. Below `[foulborn] min_tier` / small_loot -> **hidden**.
 5. Hidden but best >= never_hide floor -> **blue**. `unknown_as_variable` + thin unique -> **blue**.
 6. Only boss-only Foulborn uniques on base -> hidden. No price -> `[foulborn] unpriced`.
-7. Faded content rescue: same as 1d over `"Foulborn " + module unique` (priciest, ignores `base_price`).
-Foulborn blocks come before normal unique hides, so a Foulborn never falls into normal hidden tiers.
+7. No faded content rescue (Wombgift-only, never content drops).
+Foulborn only ever takes its own price: normal unique tier blocks carry `Foulborn False` (else a hidden
+5c Foulborn Cutlass fell into the shown normal Cutlass tier, 780c United in Dream -> red), and the
+Foulborn catch-all (`[foulborn] unpriced`) sits before the hidden normal tiers.
 
 ## 3. Stackables: currency, fragments, scarabs, essences, ... (`price_stackables`, `emit_stackables`)
 1. Divine / Mirror / Hinekora's Lock -> **top**, fixed (`PINNED_TOP_STACKABLES`).
@@ -215,4 +218,4 @@ groups ranked cheap, card 3-stacks and level 18-20 gems left to price). New gap 
 - EV path step 2: hidden EV tier hides even a pool jackpot (Headhunter on Leather Belt).
   User rule: jackpot -> blue first.
 - Foulborn base price always cheapest, ignores `base_price`.
-- Faded content rescue (normal + Foulborn) uses priciest module unique, ignores `base_price`.
+- Faded content rescue (normal uniques only) uses priciest module unique, ignores `base_price`.
