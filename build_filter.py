@@ -86,6 +86,7 @@ SHAPE = {
     "Corpse": "Moon", "Incubator": "Hexagon", "Memory": "Hexagon",
 }
 UNIQUE_SHAPE, BASE_SHAPE, MAP_SHAPE = "Star", "Diamond", "Square"
+CLUSTER_SHAPE = "Pentagon"  # cluster jewels (poe.ninja prices + module eco tiers)
 SPLINTER_SHAPE = "Kite"  # any name containing "Splinter" (breach, timeless, simulacrum, ritual...)
 PINNED_TOP_STACKABLES = {"Divine Orb", "Hinekora's Lock", "Mirror of Kalandra"}
 # Normal/magic/rare stuff that gets config gear_text_color instead of rarity colour
@@ -684,26 +685,20 @@ def price_unique_bases(data, cfg, tiers, divine_chaos, ev_detail=None, vendor=No
     return result
 
 
-def valuable_content_bases(data, cfg, tiers, foulborn=False):
+def valuable_content_bases(data, cfg, tiers):
     """Enabled-module bases worth the faded show: base -> its most valuable content unique's
     confident price (cheapest variant), kept only when that price's tier is a shown unique tier.
-    foulborn=True: same for the Foulborn versions ("Foulborn " + content unique; listings
-    summed over variants vs foulborn.min_listings, shown = up to foulborn.min_tier / small_loot)."""
+    Normal uniques only: Foulborn ones come from Wombgifts, never from the content itself."""
     rescue = content_policy(data.get("content", {}), cfg)["rescue"]
-    if foulborn:
-        floor = min_shown_rank(cfg, tiers, cfg["foulborn"]["min_tier"])
-        shown = {t for t in tiers.names if tiers.rank(t) <= floor and not hidden(cfg, t)}
-        min_listings = cfg["foulborn"]["min_listings"]
-    else:
-        shown, min_listings = shown_unique_tiers(cfg, tiers), cfg["uniques"]["min_listings"]
+    shown, min_listings = shown_unique_tiers(cfg, tiers), cfg["uniques"]["min_listings"]
     value, listings = {}, {}
     for t in UNIQUE_TYPES:
         for line in data["stash"][t].get("lines", []):
             base, name = line.get("baseType"), line["name"]
-            if name.startswith("Foulborn ") != foulborn or line.get("links"):
+            if name.startswith("Foulborn ") or line.get("links"):
                 continue
             n = line.get("listingCount", 0)
-            if name[9 if foulborn else 0:] in rescue.get(base, ()) and n >= (1 if foulborn else min_listings):
+            if name in rescue.get(base, ()) and n >= min_listings:
                 value.setdefault(base, {})
                 value[base][name] = min(value[base].get(name, math.inf), line["chaosValue"])
                 listings[base, name] = listings.get((base, name), 0) + n
@@ -929,7 +924,7 @@ def emit_overrides(cfg, prices):
 
 # Module gear_special (rules/modules/gear_special.filter, made with:
 #   tools/import_neversink.py gear_special 0302:0600 0901:0902
-#     --config-key "crafting->qualityperfection\.anyoverquality(perf|high)?=config.toml [overquality]"
+#     --config-key "crafting->qualityperfection\.(anyoverquality(perf|high)?|armors1q\d|weapont\dq\d|qualchancing)=config.toml [overquality]"
 #     --config-key "s0500_1=price (stackables)" --config-key "s0500_[234]=config.toml [vendor_recipes.grasping_mail]"
 #     --config-key "s0500_5=price (uniques)")
 # [0302] influenced rares, [[0400]] eldritch (Exarch / Eater implicits), [[0500]] exotic bases
@@ -943,6 +938,26 @@ PERFECTION_SECTION = ("0901", "0902")
 OVERQUALITY_KEYS = {"crafting->qualityperfection.anyoverqualityperf": 30,
                     "crafting->qualityperfection.anyoverqualityhigh": 27,
                     "crafting->qualityperfection.anyoverquality": 21}
+# other quality-threshold module blocks: on / off from config.toml [overquality] <name>
+# (modules.toml value "config.toml [overquality]"; module_blocks resolves them, block unchanged)
+OVERQUALITY_TOGGLES = {
+    "crafting->qualityperfection.armors1q1": "armour_t1_28",
+    "crafting->qualityperfection.armors1q2": "armour_t1_21",
+    "crafting->qualityperfection.weapont1q1": "weapon_t1_28",
+    "crafting->qualityperfection.weapont1q2": "weapon_t1_24",
+    "crafting->qualityperfection.weapont2q1": "weapon_t2_28",
+    "crafting->qualityperfection.weapont2q2": "weapon_t2_24",
+    "crafting->qualityperfection.qualchancing": "chancing_bases_28",
+    "endgameflasks.any20qualflask": "any_flask_21",
+    "endgametinctures.overqual1": "tinctures_26",
+    "endgametinctures.overqual2": "tinctures_21",
+    "endgameflasks.overqualutil1": "utility_flasks_26",
+    "endgameflasks.overqualutil2": "utility_flasks_21",
+    "endgameflasks.overqualcorrupted": "utility_corrupted_30",
+    "endgameflasks.overquallife1": "life_mana_flasks_30",
+    "endgameflasks.overquallife2": "life_mana_flasks_21",
+    "uniques.overqual": "uniques_21",
+}
 
 
 def module_elsewhere(b):
@@ -1010,7 +1025,8 @@ def emit_gear_special(cfg):
 def emit_perfection(cfg):
     """[0901] perfection / overquality: module gear_special, the 3 any-gear overquality blocks
     from config.toml [overquality] (overquality_driven). league.filter: after id mods / flasks,
-    before [0902] exotics; before vendor recipes (a 30% RGB item keeps its alert). Rarity <= Rare
+    before [0902] exotics; before vendor recipes (a 30% RGB item keeps its alert). The 30% block
+    goes first (beats the ilvl 83+ perfection blocks: 30% always tinks). Rarity <= Rare
     added: a unique stays priced. [gear_special] enabled = false: only the [overquality] blocks
     (own option, independent of the module switch)."""
     if not cfg.get("gear_special", {}).get("enabled", True):
@@ -1019,9 +1035,14 @@ def emit_perfection(cfg):
         return section("Overquality gear (config.toml [overquality])") + out if out else ""
     not_unique = {b["key"]: ["Rarity <= Rare"] for b in load_module("gear_special")
                   if b["section"] == PERFECTION_SECTION[0]}
+    driven = overquality_driven(cfg)
+    # 30% tink first: league.filter's perfection blocks (Quality >= 28 + ilvl 83+ bases) would
+    # otherwise catch a 30% item with their own non-tink style
+    tink = "".join(driven(b) for b in load_module("gear_special") if OVERQUALITY_KEYS.get(b["key"]) == 30)
+    rest = lambda b: "" if OVERQUALITY_KEYS.get(b["key"]) == 30 else driven(b)
     return (section("Perfection / overquality (config.toml [gear_special] + [overquality], modules.toml [gear_special.blocks])")
-            + module_blocks(cfg, "gear_special", "perfection", sections=[PERFECTION_SECTION],
-                            extra_conds=not_unique, driven=overquality_driven(cfg)))
+            + tink + module_blocks(cfg, "gear_special", "perfection", sections=[PERFECTION_SECTION],
+                                   extra_conds=not_unique, driven=rest))
 
 
 # Module crafting (rules/modules/crafting.filter, made with:
@@ -1267,7 +1288,7 @@ def emit_vendor_recipes(cfg, tiers, ubases, fbases, cbases):
     return section("Vendor recipes ([vendor_recipes.*], tier = floor)") + out if out else ""
 
 
-def emit_uniques(cfg, tiers, bases, fbases, linked, map_bases, rescue=None, frescue=None):
+def emit_uniques(cfg, tiers, bases, fbases, linked, map_bases, rescue=None):
     out = section("Uniques (tier = EV of one unID drop, or cheapest unique without drop tiers; variable = gamble; 5L/6L jackpots)")
     # shown tiers first (Foulborn before normal), then corrupted-implicit rescue, then the
     # Foulborn catch-all (so no Foulborn reaches the hidden normal tiers), then hidden tiers
@@ -1301,11 +1322,7 @@ def emit_uniques(cfg, tiers, bases, fbases, linked, map_bases, rescue=None, fres
                      style_for(cfg, "variable", UNIQUE_SHAPE), f"linked unique jackpot {links}L")
     out += emit_corrupted_uniques(cfg)
     out += emit_unique_exceptions(cfg)  # after the shown price tiers, before the hidden ones
-    # same faded content rescue for Foulborn, before the Foulborn hidden tiers / catch-all
-    ffaded = sorted(b for b in frescue or {} if hidden(cfg, fbases.get(b, ("hide",))[0]))
-    if ffaded:
-        out += block("Show", foul + [f"BaseType == {q(ffaded)}"], cfg["style"]["content"]["lines"],
-                     "content override show: enabled [content.*] Foulborn uniques on otherwise hidden bases")
+    # no faded content rescue for Foulborn: they only come from Wombgifts, never content drops
     for tier in order:
         if tier not in shown:
             out += tier_blocks(tier, fbases, foul, "foulborn")
@@ -1326,12 +1343,14 @@ def emit_unique_exceptions(cfg):
     """Unique variants a per-base price can't see (module unique_exceptions = league.filter
     [4801] / [4803] / [4804] overqual): uber Impresence / Forge swords (influence), Kaom's Heart
     (no sockets), Tabula, synthesised, abyss-socket uniques, Vestigial, unique idols, double
-    corrupted, crucible, 27%+ quality. Shows only, inside emit_uniques after the shown price
+    corrupted, crucible, 21%+ quality (ours; league.filter 27%; on / off: config.toml
+    [overquality] uniques_21). Shows only, inside emit_uniques after the shown price
     tiers (a priced shown base keeps its tier style) and before the hidden tiers (the variant
     beats its base's Hide). [4804] base lists / Foulborn = our unique / Foulborn pricing
     (modules.toml value "config.toml [uniques] (price)": no block).
     Refresh: python tools/import_neversink.py unique_exceptions 4801:4802 4803:4805
     --config-key "uniques[.](multispecialhigh|multispecial|foulborn|exdust[0-9])=config.toml [uniques] (price)"
+    --config-key "uniques[.]overqual=config.toml [overquality]"  (then set its Quality line to 21)
     """
     if not cfg.get("unique_exceptions", {}).get("enabled", True):
         return ""
@@ -1582,7 +1601,7 @@ def emit_cluster_prices(cfg, tiers, prices):
         conds += [f"EnchantmentPassiveNum {n}", f"BaseType == {q([base])}"]
         if None not in nodes:
             conds.append(f"EnchantmentPassiveNode == {q(nodes)}")
-        out += block("Show", conds, style_for(cfg, tier), f"cluster {tier} (poe.ninja)")
+        out += block("Show", conds, style_for(cfg, tier, CLUSTER_SHAPE), f"cluster {tier} (poe.ninja)")
     return section("Cluster jewels: poe.ninja prices (enchant x passives x ilvl bucket)") + out if out else ""
 
 
@@ -1664,12 +1683,15 @@ def module_blocks(cfg, name, label, sections=None, classes=None, only=None, drop
     for b in load_module(name):
         if sections and not any(first <= (b["section"] or "") < after for first, after in sections):
             continue
-        if isinstance(module_on(cfg, name, b["key"]), str):
+        on = module_on(cfg, name, b["key"])
+        if on == "config.toml [overquality]" and b["key"] in OVERQUALITY_TOGGLES:
+            on = cfg["overquality"][OVERQUALITY_TOGGLES[b["key"]]]  # missing key = error (no hidden settings)
+        if isinstance(on, str):
             if driven is None:
                 raise ValueError(f"modules.toml [{name}.blocks] {b['key']!r}: string value needs an emitter")
             out += driven(b)
             continue
-        if not module_on(cfg, name, b["key"]):
+        if not on:
             continue
         conds = b["conds"] + (extra_conds or {}).get(b["key"], [])
         style = restyle(b["key"], b["style"]) if restyle else b["style"]
@@ -1764,7 +1786,8 @@ def emit_misc(cfg, sections):
 
 # Flask / tincture rules: [0803] identified magic mods, [1303] fractured (flask classes only),
 # [[2500]] endgame quality / ilvl ([2501]-[2505])
-#   (module rules/modules/flasks.filter, made with: tools/import_neversink.py flasks 0803:0900 1303:1304 2500:2600)
+#   (module rules/modules/flasks.filter, made with: tools/import_neversink.py flasks 0803:0900 1303:1304 2500:2600
+#    --config-key "endgame(tinctures|flasks)\.(overqual\w*|any20qualflask)=config.toml [overquality]")
 FLASK_CLASSES = ["Hybrid Flasks", "Life Flasks", "Mana Flasks", "Utility Flasks", "Tinctures"]
 
 
@@ -2410,8 +2433,8 @@ def league_start_values(conf, modules):
          ("show_contracts",): True, ("hide_forbidden_tome",): False,
          ("show_gold",): True, ("show_small_gold",): True,
          ("maps", "corrupted_min_tier"): 0,
-         ("overquality", "quality_30"): True, ("overquality", "quality_27"): True,
-         ("overquality", "quality_21"): True}
+         }
+    c.update({("overquality", k): True for k in conf.get("overquality", {})})  # every quality rule on
     c = {p: v for p, v in c.items() if present(*p)}
     c.update({("uniques", "show", t): True for t in conf["uniques"].get("show", {})})
     for sec in ("foulborn", "bases"):
@@ -2577,8 +2600,7 @@ def build_text(cfg, data, league):
         emit_misc(cfg, MISC_BEFORE_UNIQUES),  # [[4500]]-[[4700]] heist targets / enshrouded / idols
         emit_uniques(cfg, tiers, ubases, fbases, linked,
                      {l["baseType"] for l in data["stash"]["UniqueMap"].get("lines", []) if l.get("baseType")},
-                     valuable_content_bases(data, cfg, tiers),
-                     valuable_content_bases(data, cfg, tiers, foulborn=True)),
+                     valuable_content_bases(data, cfg, tiers)),
         emit_misc(cfg, MISC_AFTER_UNIQUES),  # [[4900]] questlike items 2 after uniques
         emit_map_progression(cfg),
         emit_crafting_bases(cfg, tiers, cbases),

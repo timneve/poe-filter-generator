@@ -7,7 +7,7 @@ rules/modules/<module>.filter (our own file from then on: the build never reads 
 it) and writes the [<module>.blocks] table of modules.toml: one key per block ("type.tier" from
 NeverSink's tag), default = on / off as in the export (commented-out "#Show" = off). On a
 refresh, keys already in modules.toml keep their value; new keys get the export's default.
-Borders / backgrounds are dropped (calm look). Run it again when a league adds mods / bases.
+Borders / backgrounds are dropped (calm look), beams made permanent (no Temp). Run it again when a league adds mods / bases.
 --config-key REGEX=NOTE: keys matching REGEX get the string value NOTE instead of true/false
 (blocks an emitter decides from config.toml, e.g. rares: --config-key "rr(->\\w+)?\\.t\\d=config.toml [rares]").
 """
@@ -47,7 +47,7 @@ def parse_ref_blocks(ref_text, first, after):
     off, conds, style}]. off = commented-out "#Show" block (FilterBlade rule turned off).
     key = "type.tier" from NeverSink's "$type->X $tier->Y" tag (untagged: "s<section>_<n>").
     Commented-out "#Hide" blocks are parsed too (off; league start never turns them on).
-    style drops SetBorderColor / SetBackgroundColor (calm look)."""
+    style drops SetBorderColor / SetBackgroundColor (calm look) and PlayEffect Temp (permanent beams)."""
     lines = ref_text.splitlines()
     heads = section_heads(lines)
     if first not in heads or after not in heads:
@@ -83,7 +83,7 @@ def parse_ref_blocks(ref_text, first, after):
         out.append({"action": m.group(1), "comment": m.group(2), "key": key, "section": section,
                     "off": commented,
                     "conds": [l for l in body if not bf.STYLE_RE.match(l)],
-                    "style": [l for l in body if bf.STYLE_RE.match(l)
+                    "style": [re.sub(r"^(PlayEffect \w+) Temp$", r"\1", l) for l in body if bf.STYLE_RE.match(l)
                               and not l.startswith(("SetBorderColor", "SetBackgroundColor"))]})
     return out
 

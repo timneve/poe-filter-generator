@@ -184,7 +184,7 @@ Show # leveling->flasks->utility.quicksilver
 Show # leveling->flasks->utility.asortedutility
 	BaseType == "Amethyst Flask" "Basalt Flask" "Bismuth Flask" "Diamond Flask" "Gold Flask" "Granite Flask" "Iron Flask" "Jade Flask" "Quartz Flask" "Quicksilver Flask" "Ruby Flask" "Sapphire Flask" "Silver Flask" "Stibnite Flask" "Sulphur Flask" "Topaz Flask"
 	SetFontSize 45
-	PlayEffect Grey Temp
+	PlayEffect Grey
 	MinimapIcon 2 Grey Raindrop
 
 Hide # leveling->flasks->utility.any %H3
@@ -196,7 +196,7 @@ Show # leveling->flasks->quality.max %D3
 	Rarity Normal
 	Class == "Hybrid Flasks" "Life Flasks" "Mana Flasks" "Tinctures" "Utility Flasks"
 	SetFontSize 45
-	PlayEffect Grey Temp
+	PlayEffect Grey
 
 Show # leveling->flasks->quality.high %D1
 	Quality >= 14
@@ -787,14 +787,14 @@ Show # leveling->normalmagic->3l.earlythreelinks %D3
 	Rarity Normal Magic
 	AreaLevel <= 16
 	SetFontSize 45
-	PlayEffect Grey Temp
+	PlayEffect Grey
 
 Show # leveling->normalmagic->3l.general %D2
 	LinkedSockets >= 3
 	Rarity Normal Magic
 	AreaLevel <= 28
 	SetFontSize 45
-	PlayEffect Grey Temp
+	PlayEffect Grey
 
 Show # leveling->normalmagic->act1.casterweapons %D4
 	Sockets >= 3
@@ -802,7 +802,7 @@ Show # leveling->normalmagic->act1.casterweapons %D4
 	Class == "Sceptres" "Wands"
 	AreaLevel <= 16
 	SetFontSize 45
-	PlayEffect Grey Temp
+	PlayEffect Grey
 
 Show # leveling->normalmagic->act1.castercraftrings %D4
 	Rarity Normal Magic

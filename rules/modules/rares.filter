@@ -199,7 +199,7 @@ Show # rare->exotic->veiled.t4
 	BaseType == "Abyssal Sceptre" "Angelic Kite Shield" "Artillery Quiver" "Assassin's Garb" "Battle Buckler" "Behemoth Mace" "Blood Raiment" "Branded Kite Shield" "Bronze Gauntlets" "Bronze Tower Shield" "Bronzescale Boots" "Bronzescale Gauntlets" "Butcher Axe" "Calling Wand" "Callous Mask" "Carnal Armour" "Chiming Spirit Shield" "Citadel Bow" "Coiled Wand" "Colossus Mallet" "Coronal Maul" "Crystal Sceptre" "Crystal Wand" "Demon Dagger" "Ebony Tower Shield" "Eelskin Boots" "Eelskin Gloves" "Elegant Foil" "Elegant Ringmail" "Exquisite Blade" "Eye Gouger" "Ezomyte Blade" "Fencer Helm" "Fleshripper" "Foul Staff" "General's Brigandine" "Gladiator Plate" "Great Crown" "Grove Bow" "Harbinger Bow" "Hellion's Paw" "Imperial Maul" "Infernal Axe" "Ivory Bow" "Judgement Staff" "Karui Maul" "Karui Sceptre" "Lacewood Spirit Shield" "Lacquered Helmet" "Mesh Boots" "Mesh Gloves" "Midnight Blade" "Moon Staff" "Necromancer Circlet" "Nubuck Boots" "Omen Wand" "Pagan Wand" "Penetrating Arrow Quiver" "Plated Greaves" "Polished Spiked Shield" "Primordial Staff" "Ranger Bow" "Raven Mask" "Reaver Helmet" "Reinforced Greaves" "Ringmail Boots" "Riveted Gloves" "Royal Skean" "Sai" "Sambar Sceptre" "Samite Gloves" "Satin Gloves" "Satin Slippers" "Scholar Boots" "Serpentine Staff" "Serrated Foil" "Sharkskin Gloves" "Sharktooth Arrow Quiver" "Siege Helmet" "Silk Slippers" "Sovereign Spiked Shield" "Spike-Point Arrow Quiver" "Spiny Round Shield" "Spiraled Foil" "Steel Circlet" "Steel Gauntlets" "Steelscale Boots" "Steelscale Gauntlets" "Sundering Axe" "Teak Round Shield" "Terror Claw" "Thorium Spirit Shield" "Throat Stabber" "Trapper Boots" "Trapper Mitts" "Trisula" "Twin Claw" "Two-Point Arrow Quiver" "Tyrant's Sekhem" "Ursine Pelt" "Vaal Buckler" "Vaal Greatsword" "Vaal Hatchet" "Vile Arrow Quiver" "Void Axe" "Widowsilk Robe" "Zealot Helmet"
 	HasExplicitMod "Veil"
 	SetFontSize 45
-	PlayEffect Blue Temp
+	PlayEffect Blue
 
 Show # rare->exotic->veiled.any
 	Identified True
@@ -207,7 +207,7 @@ Show # rare->exotic->veiled.any
 	Rarity Rare
 	HasExplicitMod "Veil"
 	SetFontSize 45
-	PlayEffect Blue Temp
+	PlayEffect Blue
 
 # [1900] Endgame - Rare - Exotic Corrupted
 
@@ -375,7 +375,7 @@ Show # rr.identifieditemhandling
 	Rarity Rare
 	Class == "Amulets" "Belts" "Body Armours" "Boots" "Bows" "Claws" "Daggers" "Gloves" "Helmets" "One Hand Axes" "One Hand Maces" "One Hand Swords" "Quivers" "Rings" "Rune Daggers" "Sceptres" "Shields" "Staves" "Thrusting One Hand Swords" "Two Hand Axes" "Two Hand Maces" "Two Hand Swords" "Wands" "Warstaves"
 	SetFontSize 45
-	PlayEffect Blue Temp
+	PlayEffect Blue
 
 Show # rr.t3
 	ItemLevel >= 68

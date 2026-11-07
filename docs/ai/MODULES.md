@@ -100,7 +100,7 @@ names / groups as the old build-time parse. "Price" = poe.ninja tier (stack bloc
 | [4802] t1 / t2 unique bases, conditional base Show | unique price per base (EV / cheapest) | covered (price) |
 | [4803] Vestigial, unique idols, 2x corrupted, 2x abyss, crucible | module `unique_exceptions` | **added** |
 | [4804] multispecial(high) base lists, Foulborn | unique / Foulborn price (modules.toml string value) | covered (price) |
-| [4804] overqual 27%+ unique | module `unique_exceptions` | **added** |
+| [4804] overqual unique (ours 21%+, league.filter 27%+) | module `unique_exceptions` | **added** |
 | [4805] unique jewels, corrupted uniques per class | `variable_classes` blue, `[corrupted_implicits]` | covered |
 | [4806]-[4807] t3 / boss / hideable tiers + Hides | unique price | covered (price) |
 

@@ -61,11 +61,12 @@ What counts on a base: uniques that can drop in maps.
   tiers, before the hidden ones): variants a base price can't see -> shown in league.filter's style
   even on a hidden base: influenced Impresence / Forge swords, Kaom's Heart (`Sockets < 1`), Tabula
   6L, synthesised, 2-4 abyss sockets, `Vestigial`, unique idols, double corrupted, crucible,
-  27%+ quality. A base priced in a shown tier keeps its price style (block comes later). Shows only.
+  21%+ quality (ours; league.filter 27%; `[overquality] uniques_21`). A base priced in a shown tier keeps its price style (block comes later). Shows only.
 - Unique maps: `hide_maps` -> NeverSink [3201] rules, else priced like uniques.
 - **Faded content rescue** (`valuable_content_bases`): base hidden by price, enabled module,
   module's uniques priced -> if that price is a shown tier -> **faded** (`[style.content]`).
   Code today: takes the PRICIEST module unique (= "highest"), ignores `base_price`.
+  Not for Foulborn: they come from Wombgifts only, never content drops; `[foulborn]` price decides.
 - `[content.<mod>.drops]` per unique: "price" default, true = always faded show, false = base hidden.
 
 ## 2. Foulborn uniques (`price_foulborn_bases`)
@@ -138,7 +139,7 @@ relics are Normal-Rare in league.filter). Exception: unique Harbinger pieces (`R
 no poe.ninja price) shown as league.filter. Rare relics / trinkets shown (FilterBlade default).
 Gear special `[gear_special]` (module `gear_special`: [0302] influenced rares, [[0400]] eldritch,
 [[0500]] exotic bases after exotics; [0901] perfection + `[overquality]` (own option, also with
-the module off; 30% = top tink style) after id_mods, before exotics / recipes) and crafting
+the module off; 30% = top tink style, first in [0901]: beats the ilvl 83+ perfection blocks) after id_mods, before exotics / recipes) and crafting
 `[crafting]` (module `crafting`: [1401] 5-links after exotics; [2301] early crafting, [2302]
 matrix, [[2400]] chancing after the rare gear tiers, before the hide layer): Shows only. Price vs
 module: `emit_priced_bases_first` puts the crafting-base Shows (confident price at a shown

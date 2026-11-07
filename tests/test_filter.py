@@ -75,6 +75,24 @@ def add_foulborn(data, base, name, variant, chaos, listings=20, item_type="Belt"
                                       "chaosValue": chaos, "listingCount": listings, "itemType": item_type})
 
 
+def tink_lines(cfg):
+    """Lines that make a block tink: top tier's background + alert sound (palette applied)."""
+    top = max(cfg["tiers"], key=cfg["tiers"].get)
+    style = fs.parse(bf.apply_palette(cfg, bf.block("Show", [], bf.style_for(cfg, top))))[0].style
+    return [l for l in style if l.startswith(("SetBackgroundColor", "PlayAlertSound"))]
+
+
+def not_tink(blocks, cfg, items):
+    """[(label, block)] of the items whose deciding block is not tink."""
+    need = tink_lines(cfg)
+    out = []
+    for label, it in items:
+        b, style = fs.evaluate(blocks, it)
+        if b is None or b.action != "Show" or any(l not in style for l in need):
+            out.append((label, b))
+    return out
+
+
 class Synthetic(unittest.TestCase):
     def setUp(self):
         self.cfg = copy.deepcopy(bf.load_cfg())
@@ -834,10 +852,9 @@ class Synthetic(unittest.TestCase):
         _, r = self.build()
         self.assertEqual(r["ubases"]["Shagreen Boots"][0], "top")
 
-    def test_enabled_content_foulborn_shows_faded(self):
-        # Amber Amulet-like: Foulborn content unique cheapest 3c (hidden by small_loot), another
-        # Foulborn content unique 30c (shown tier) -> Foulborn base faded. Module off -> not faded
-        # (content-only base -> blue, see test_content_module_on_off).
+    def test_enabled_content_foulborn_not_faded(self):
+        # Foulborn uniques only come from Wombgifts, never from the content: a 30c Foulborn
+        # Xoph's Blood does not rescue a Foulborn Amber Amulet its cheapest variant hides.
         rows = [{"name": n, "base": "Amber Amulet", "restricted": True, "enabled": True,
                  "source": "Metadata/Monsters/Breach/BreachBoss |  | "} for n in ("Xoph's Heart", "Xoph's Blood")]
         self.cfg["small_loot"]["enabled"] = True
@@ -848,14 +865,10 @@ class Synthetic(unittest.TestCase):
         self.data["wiki_bases"] = {"Amber Amulet": {"Xoph's Heart", "Xoph's Blood"}}
         item = unid_unique("Amber Amulet", "Amulets", foulborn=True)
 
-        self.data["stash"]["UniqueAccessory"]["lines"][1]["chaosValue"] = 0.5
-        self.assertFalse(fs.visible(self.build()[0], item))  # cheap content Foulborn stays hidden
-        self.data["stash"]["UniqueAccessory"]["lines"][1]["chaosValue"] = 30
         blocks, r = self.build()
         self.assertEqual(r["fbases"]["Amber Amulet"][0], "hide")
-        self.assertIn("SetFontSize 32", fs.evaluate(blocks, item)[1])
-        self.cfg["content"]["breach"]["enabled"] = False
-        self.assertNotIn("SetFontSize 32", fs.evaluate(self.build()[0], item)[1])
+        self.assertFalse(fs.visible(blocks, item))
+        self.assertNotIn("Foulborn uniques on otherwise hidden", blocks)
 
     def test_content_unique_is_not_unknown(self):
         # A disabled content module stays out of normal unknown-value handling.
@@ -916,8 +929,8 @@ class Synthetic(unittest.TestCase):
             b.comment = b.comment.split(" (module gear_special")[0]  # module gear_special [0901] block
             return b
 
-        self.assertEqual(self.cfg["overquality"], {
-            "quality_30": True, "quality_27": False, "quality_21": False})
+        oq = self.cfg["overquality"]
+        self.assertEqual((oq["quality_30"], oq["quality_27"], oq["quality_21"]), (True, False, False))
         self.assertEqual(decided_at(30).comment, "overquality 30%+")
         self.assertNotEqual(decided_at(30, rarity="Unique").comment, "overquality 30%+")  # unique: price
         # 30% = our top-tier tink style (style_for), incl. the border / background only tink has
@@ -927,6 +940,10 @@ class Synthetic(unittest.TestCase):
             "Show", [], bf.style_for(self.cfg, max(self.cfg["tiers"], key=self.cfg["tiers"].get)))))[0].style]
         self.assertEqual(style[-len(top_style):], top_style)
         self.assertTrue(any(l.startswith("SetBackgroundColor") for l in top_style))
+        # 30% beats the [0901] perfection blocks (Quality >= 28, ilvl 83+ T1 bases like Spine Bow)
+        bow = {"class": "Bows", "basetype": "Spine Bow", "rarity": "Normal", "ilvl": 84}
+        self.assertEqual(decided_at(30, **bow).comment, "overquality 30%+")
+        self.assertIn("perfection", decided_at(28, **bow).comment)
         # [overquality] is its own option: still on with module gear_special off
         self.cfg["gear_special"]["enabled"] = False
         self.assertEqual(decided_at(30).comment, "overquality 30%+")
@@ -948,6 +965,44 @@ class Synthetic(unittest.TestCase):
         self.assertEqual(decided_at(21).comment, "overquality 21%+")
         self.cfg["overquality"]["quality_21"] = False
         self.assertEqual(decided_at(30).action, "Hide")
+
+    def test_crafting_and_overquality_have_icon_and_beam(self):
+        # user pref: every crafting / quality Show has a minimap icon and a permanent beam
+        for name in ("crafting", "gear_special", "flasks", "unique_exceptions"):
+            for b in bf.load_module(name):
+                if b["action"] != "Show" or (name == "gear_special" and b["section"] != "0901") or (
+                        name in ("flasks", "unique_exceptions") and b["key"] not in bf.OVERQUALITY_TOGGLES):
+                    continue
+                self.assertTrue(any(s.startswith("MinimapIcon") for s in b["style"]), b["key"])
+                self.assertTrue(any(s.startswith("PlayEffect") for s in b["style"]), b["key"])
+        # user pref: no temporary beams anywhere (league start = every module block on)
+        self.cfg["league_start"] = True
+        self.assertNotRegex(bf.build_text(self.cfg, self.data, "x")[0], r"PlayEffect \w+ Temp")
+
+    def test_overquality_groups_all_quality_rules(self):
+        # every quality-threshold module block is a config.toml [overquality] key (one place)
+        for name, table in self.cfg["modules"].items():
+            for key, v in table["blocks"].items():
+                if v == "config.toml [overquality]":
+                    self.assertIn(key, set(bf.OVERQUALITY_KEYS) | set(bf.OVERQUALITY_TOGGLES), key)
+        self.assertEqual({k: v for k, v in bf.OVERQUALITY_TOGGLES.items() if v not in self.cfg["overquality"]}, {})
+        # t1 armour 21%: off -> the endgame hide layer hides it, on -> perfection Show
+        regalia = {"class": "Body Armours", "basetype": "Twilight Regalia", "rarity": "Normal",
+                   "ilvl": 84, "quality": 21, "area_level": 83}
+        self.cfg["overquality"]["armour_t1_21"] = False
+        self.assertFalse(fs.visible(self.build()[0], regalia))
+        self.cfg["overquality"]["armour_t1_21"] = True
+        self.assertIn("armors1q2", fs.evaluate(self.build()[0], regalia)[0].comment)
+        # flask key: tinctures 21% ilvl 82+ in maps
+        tincture = {"class": "Tinctures", "basetype": "Prismatic Tincture", "rarity": "Normal",
+                    "ilvl": 82, "quality": 21, "area_level": 83}
+        self.cfg["overquality"].update(tinctures_21=True)
+        self.assertIn("overqual2", fs.evaluate(self.build()[0], tincture)[0].comment)
+        self.cfg["overquality"].update(tinctures_21=False)
+        self.assertNotIn("overqual2", fs.evaluate(self.build()[0], tincture)[0].comment)
+        # league_start: every [overquality] key on
+        ls = bf.apply_league_start(dict(copy.deepcopy(self.cfg), league_start=True))
+        self.assertTrue(all(ls["overquality"].values()))
 
     def test_small_loot_toggle(self):
         # 4c Foulborn (Goldwyrm-like) and a 3c invitation: hidden with the wrist saver on,
@@ -1831,6 +1886,13 @@ class Synthetic(unittest.TestCase):
         self.assertFalse(fs.visible(blocks, dict(circlet, socket_colours="AAA")))
         self.assertTrue(fs.visible(blocks, vestigial))
         self.assertIn("module unique_exceptions", fs.evaluate(blocks, kaom)[0].comment)
+        # [4804] overqual (ours 21%): 21%+ quality unique on a hidden base shown (blue), 20% stays hidden
+        oq = dict(unid_unique("Glorious Plate", "Body Armours"), sockets=6)  # sockets: not exkaom
+        self.assertIn("uniques.overqual", fs.evaluate(blocks, dict(oq, quality=21))[0].comment)
+        self.assertFalse(fs.visible(blocks, dict(oq, quality=20)))
+        self.cfg["overquality"]["uniques_21"] = False  # config.toml [overquality] toggle
+        self.assertFalse(fs.visible(self.build()[0], dict(oq, quality=21)))
+        self.cfg["overquality"]["uniques_21"] = True
         # a base priced in a shown tier keeps its price style
         self.data = empty_data()
         add_unique(self.data, "Glorious Plate", "Kaom's Heart", 500, item_type="BodyArmour", t="UniqueArmour")
@@ -2001,6 +2063,66 @@ class Synthetic(unittest.TestCase):
         blocks, _ = self.build()
         self.assertIn("jewels->cluster.highsmall", fs.evaluate(blocks, small)[0].comment)
         self.assertFalse(any("clustereco.n2_i84_t1" in b.comment for b in blocks))
+
+    def test_cluster_price_icon_pentagon(self):
+        tiers = bf.Tiers(self.cfg)
+        prices = {(t, "Large Cluster Jewel", 8, 84, None, "Fire Damage"): 1 for t in ("high", "top")}
+        blocks = fs.parse(bf.emit_cluster_prices(self.cfg, tiers, prices))
+        icons = {b.comment.split()[1]: [l for l in b.style if l.startswith("MinimapIcon")] for b in blocks}
+        self.assertTrue(icons["high"][0].endswith("Pentagon"))
+        self.assertTrue(icons["top"][0].endswith("Star"))   # tink keeps Star
+
+    def test_very_expensive_items_tink(self):
+        # every kind of item worth >= top tier (and the always-tink ones) must get the tink look,
+        # not just be visible: an earlier block with its own style must not catch it
+        big = 600  # > FIXED_TIERS top (125c)
+        add_exchange(self.data, "Currency", "Mirror of Kalandra", 9000)  # cards priced via reward chain
+        add_exchange(self.data, "DivinationCard", "House of Mirrors", 100000)
+        self.cfg["show_6_links"] = True  # off in our config.toml; on, it must tink
+        for t, name in [("Currency", "Fake Orb"), ("Scarab", "Fake Scarab"),
+                        ("Fragment", "Fake Fragment"), ("Essence", "Fake Essence"), ("Omen", "Fake Omen")]:
+            add_exchange(self.data, t, name, big)
+        add_unique(self.data, "Gold Ring", "Pricey", big, item_type="Ring")
+        self.data["stash"]["BaseType"]["lines"].append(
+            {"name": "Some Base", "levelRequired": 86, "chaosValue": big, "listingCount": 69, "count": 10,
+             "itemType": "Ring"})
+        enchant, node = next(iter(bf.CLUSTER_NODES.items()))
+        self.data["stash"]["ClusterJewel"]["lines"].append(
+            {"name": enchant, "baseType": "Large Cluster Jewel", "variant": "8 passives", "levelRequired": 84,
+             "chaosValue": big, "listingCount": 100})
+        self.data["stash"]["SkillGem"]["lines"].append(
+            {"name": "Fake Support", "gemLevel": 21, "gemQuality": 20, "corrupted": True, "chaosValue": big,
+             "listingCount": 100})
+        blocks, _ = self.build()
+        stack = lambda cls, name: {"class": cls, "basetype": name, "stack": 1}
+        bow = {"class": "Bows", "basetype": "Spine Bow", "rarity": "Normal", "quality": 30}
+        items = [
+            ("Fake Orb", stack("Stackable Currency", "Fake Orb")),
+            ("House of Mirrors (reward chain)", stack("Divination Cards", "House of Mirrors")),
+            ("The Endless Darkness (NeverSink top group, unpriced)", stack("Divination Cards", "The Endless Darkness")),
+            ("Fake Scarab", stack("Map Fragments", "Fake Scarab")),
+            ("Fake Fragment", stack("Map Fragments", "Fake Fragment")),
+            ("Fake Essence", stack("Stackable Currency", "Fake Essence")),
+            ("Fake Omen", stack("Stackable Currency", "Fake Omen")),
+            ("unique Gold Ring", unid_unique("Gold Ring", "Rings")),
+            ("base Some Base ilvl86", {"class": "Rings", "basetype": "Some Base", "rarity": "Rare", "ilvl": 86}),
+            ("cluster", {"class": "Jewels", "basetype": "Large Cluster Jewel", "rarity": "Normal", "ilvl": 84,
+                         "cluster_passives": 8, "cluster_node": node}),
+            ("gem 21/20c", {"class": "Support Gems", "basetype": "Fake Support", "gem_level": 21, "quality": 20,
+                            "corrupted": True}),
+            # always tink, priced or not
+            ("Divine Orb", stack("Stackable Currency", "Divine Orb")),
+            ("Mirror of Kalandra", stack("Stackable Currency", "Mirror of Kalandra")),
+            ("Hinekora's Lock", stack("Stackable Currency", "Hinekora's Lock")),
+            ("6-link", {"class": "Body Armours", "basetype": "Simple Robe", "rarity": "Rare", "ilvl": 84,
+                        "links": 6, "sockets": 6}),
+            ("30% bow ilvl 70", dict(bow, ilvl=70)),
+            ("30% bow ilvl 84 (perfection base)", dict(bow, ilvl=84)),
+            ("30% rare body armour", {"class": "Body Armours", "basetype": "Vaal Regalia", "rarity": "Rare",
+                                      "ilvl": 86, "quality": 30}),
+        ] + [(c, {"class": c, "basetype": "Fake " + c}) for c in self.cfg["always_top_classes"]]
+        bad = not_tink(blocks, self.cfg, items)
+        self.assertFalse(bad, "not tink:\n" + "\n".join(f"  {lab}  <- {b}" for lab, b in bad))
 
     def test_jewels_module(self):
         blocks, _ = self.build()
@@ -2230,10 +2352,11 @@ class Synthetic(unittest.TestCase):
         flask = {"class": "Utility Flasks", "basetype": "Quicksilver Flask", "rarity": "Magic", "ilvl": 86,
                  "width": 1, "height": 2}
         mana = {**flask, "class": "Mana Flasks", "basetype": "Divine Mana Flask", "quality": 21}
+        self.cfg["overquality"]["any_flask_21"] = True
         blocks, _ = self.build()
         self.assertIn("flask endgameflasks.any20qualflask", fs.evaluate(blocks, mana)[0].comment)
         self.assertNotIn("utility85", fs.evaluate(blocks, flask)[0].comment)          # off in FilterBlade
-        self.cfg["modules"]["flasks"]["blocks"]["endgameflasks.any20qualflask"] = False  # per-block toggle
+        self.cfg["overquality"]["any_flask_21"] = False  # toggle lives in config.toml [overquality]
         blocks, _ = self.build()
         self.assertNotIn("any20qualflask", fs.evaluate(blocks, mana)[0].comment)
         self.assertTrue(fs.visible(blocks, {**flask, "fractured": True}))            # rest still on
@@ -2632,6 +2755,25 @@ class LiveCache(unittest.TestCase):
                   for n, (v, t) in self.r["prices"].items() if v >= jackpot and overrides.get(n) != "hide"]
         self.assertGreater(len(items), 20)
         self.assert_all_visible(items, "jackpot items")
+
+    def test_top_priced_items_tink(self):
+        # every confident price in the top tier, as it drops, gets the tink look (not just shown)
+        top = max(self.cfg["tiers"], key=self.cfg["tiers"].get)
+        tiers, overrides = self.r["tiers"], self.cfg.get("overrides", {})
+        items = [(f"{n} ({v:.0f}c)", {"class": STACK_CLASS.get(t, "Stackable Currency"), "basetype": n, "stack": 1})
+                 for n, (v, t) in self.r["prices"].items() if tiers.of(v) == top and n not in overrides]
+        base_class = {l["name"]: NINJA_CLASS.get(l.get("itemType")) for l in self.data["stash"]["BaseType"]["lines"]}
+        items += [(f"base {name} ilvl{lo} {infl or ''} ({chaos:.0f}c)",
+                   {"class": base_class.get(name), "basetype": name, "rarity": "Rare", "ilvl": lo,
+                    "influence": infl.split("/") if infl else []})
+                  for tier, lo, hi, infl, name, chaos in self.r["cbases"] if tier == top]
+        items += [(f"cluster {base} {n}p {node} ilvl{lo} ({chaos:.0f}c)",
+                   {"class": "Jewels", "basetype": base, "rarity": "Normal", "ilvl": lo, "area_level": 83,
+                    "cluster_passives": n, "cluster_node": node})
+                  for (tier, base, n, lo, hi, node), chaos in self.r["clusters"].items() if tier == top and node]
+        bad = not_tink(self.blocks, self.cfg, items)
+        self.assertFalse(bad, f"{len(bad)} top-priced items not tink:\n" +
+                         "\n".join(f"  {lab}  <- {b}" for lab, b in bad[:40]))
 
     def test_priced_stackables_visible(self):
         floor = self.r["tiers"].shown_floor(self.cfg)

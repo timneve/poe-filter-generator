@@ -51,8 +51,9 @@ You can run the Python scripts directly instead of the batch files:
   Mortality, ...) vendor for a Fracturing Shard, so unique pricing / EV counts each at least the
   shard price (Fracturing Orb / 20). Off = poe.ninja price only. Recipes with `uniques` +
   `reward` + `reward_count` work the same way.
-- `[overquality]` - quality thresholds for non-mirrored, non-corrupted normal / magic / rare gear
-  (30% on by default, tink look; 27% and 21% are optional). Works even with `[gear_special]` off.
+- `[overquality]` - every quality-threshold rule in one place: any gear 30% / 27% / 21% (30% tink look,
+  on by default), top armour / weapon / chancing bases, flasks / tinctures, uniques 21%+. `false` = no rule,
+  the item falls to the normal rules (e.g. hidden in maps). Works even with `[gear_special]` off.
 - `[gear_special]` - your FilterBlade filter's influenced / eldritch / exotic-base / perfection
   rules (our module `rules/modules/gear_special.filter`, per-rule on / off in
   `modules.toml [gear_special.blocks]`, FilterBlade defaults): t1 influenced rare bases (ilvl 82+
@@ -67,7 +68,7 @@ You can run the Python scripts directly instead of the batch files:
   chancing bases off. RGB and 6-socket items are the chromatic / jeweller vendor recipes. On by default.
 - `[flasks]` - NeverSink's normal / magic flask + tincture rules: identified ones with good mods,
   fractured utility flasks, 21%+ quality (any flask; tinctures and utility flasks need ilvl 82+ in
-  maps, 26% = louder), corrupted 30% utility flasks. A 21%+ white flask uses this look, not the
+  maps, 26% = louder), corrupted 30% utility flasks (quality ones on / off in `[overquality]`). A 21%+ white flask uses this look, not the
   glassblower one. Per-rule on / off in `modules.toml [flasks.blocks]` (FilterBlade defaults). On by default.
 - `[exotics]` - exotic gear, shown the way your FilterBlade filter shows it (our module
   `rules/modules/exotics.filter`, per-rule on / off in `modules.toml [exotics.blocks]`, FilterBlade
@@ -198,7 +199,7 @@ other bases in the Shields class are larger. Vendor Shows take priority over cam
   on / off in `modules.toml [unique_exceptions.blocks]`, FilterBlade defaults): variants the base
   price can't tell apart are shown even on a hidden base: Shaper + Elder Impresence, influenced
   Forge swords, Kaom's Heart (no sockets), 6L Tabula, synthesised, 2-4 abyss-socket, Vestigial,
-  unique idols, double-corrupted, crucible and 27%+ quality uniques.
+  unique idols, double-corrupted, crucible and 21%+ quality uniques (league.filter: 27%).
 - Jackpot (`jackpot_divine`, top of config): ANY item worth that much is never hidden. Unique,
   Foulborn and 5L/6L unique bases and crafting base ilvl ranges with a jackpot go variable.
   Per unique the cheapest variant is used (Mageblood = 2-flask price).
@@ -213,7 +214,7 @@ other bases in the Shields class are larger. Vendor Shows take priority over cam
   instance-only uniques). On: its uniques are priced normally (Breach on: Titan Greaves blue from
   1c Red Trail), and a base the price rules would hide still shows small + faded when one of its
   content uniques is itself in a shown unique tier (Amber Amulet: 2 div Xoph's Blood), so the
-  valuable encounter drop isn't missed (Foulborn too: Foulborn Amber Amulet faded for a Foulborn Xoph's Blood); cheap content uniques stay hidden; normal mapping is otherwise unchanged. Off: those uniques are
+  valuable encounter drop isn't missed (not Foulborn: those come from Wombgifts, never the encounter, so only their own price counts); cheap content uniques stay hidden; normal mapping is otherwise unchanged. Off: those uniques are
   ignored on shared bases (Titan Greaves = Kaom's Roots tier); bases with only that content's
   uniques stay blue. `[content.<name>.drops]`: `"price"` (default), `true` to always show faded,
   or `false` to always hide a specific unique's base. PoE filters cannot

@@ -86,6 +86,8 @@ Show # socketslinks.6sockets
 	Height 3
 	Rarity Normal Magic Rare
 	SetFontSize 45
+	PlayEffect Grey
+	MinimapIcon 2 Grey Hexagon
 
 # [2301] Early Endgame Crafting projects
 
@@ -97,6 +99,8 @@ Show # normalcraft->extra.earlycraftoptional %D0
 	AreaLevel <= 75
 	AreaLevel >= 68
 	SetFontSize 45
+	PlayEffect Grey
+	MinimapIcon 2 Grey Diamond
 
 Show # normalcraft->extra.earlyendgame4link %D1
 	Mirrored False
@@ -107,6 +111,8 @@ Show # normalcraft->extra.earlyendgame4link %D1
 	AreaLevel <= 75
 	AreaLevel >= 68
 	SetFontSize 45
+	PlayEffect Grey
+	MinimapIcon 2 Grey Diamond
 
 # [2302] Crafting Matrix
 
@@ -118,6 +124,8 @@ Show # crafting->generalgear.t1_86 %D5
 	BaseType == "Conquest Lamellar" "Crystal Belt" "Leviathan Greaves" "Necrotic Armour" "Paladin Boots" "Phantom Boots" "Royal Plate" "Sacred Chainmail" "Sacrificial Garb" "Syndicate's Garb" "Twilight Regalia" "Velour Boots" "Warlock Boots" "Wyvernscale Boots"
 	SetFontSize 45
 	SetTextColor 255 255 255 255
+	PlayEffect White
+	MinimapIcon 1 White Diamond
 
 Show # crafting->generalgear.t2_86 %D4
 	Mirrored False
@@ -126,6 +134,8 @@ Show # crafting->generalgear.t2_86 %D4
 	Rarity Normal Magic Rare
 	BaseType == "Archon Kite Shield" "Broadhead Arrow Quiver" "Cardinal Round Shield" "Colossal Tower Shield" "Crusader Buckler" "Ezomyte Tower Shield" "Feathered Arrow Quiver" "Fossilised Spirit Shield" "Fugitive Boots" "Reflex Bow" "Short Bow" "Spine Bow" "Supreme Spiked Shield" "Thicket Bow" "Titanium Spirit Shield" "Two-Toned Boots" "Vanguard Belt"
 	SetFontSize 45
+	PlayEffect White
+	MinimapIcon 2 White Diamond
 
 Show # crafting->generalgear.t3_86 %D3
 	Mirrored False
@@ -134,6 +144,8 @@ Show # crafting->generalgear.t3_86 %D3
 	Rarity Normal Magic Rare
 	BaseType == "Champion Kite Shield" "Citadel Bow" "Elegant Round Shield" "Grove Bow" "Harmonic Spirit Shield" "Heavy Belt" "Imperial Buckler" "Lacquered Buckler" "Leather Belt" "Maraketh Bow" "Mirrored Spiked Shield" "Penetrating Arrow Quiver" "Pinnacle Tower Shield" "Primal Arrow Quiver" "Rustic Sash" "Vile Arrow Quiver"
 	SetFontSize 45
+	PlayEffect Grey
+	MinimapIcon 2 Grey Diamond
 
 Show # crafting->generalgear.t1_85 %D4
 	Mirrored False
@@ -143,6 +155,8 @@ Show # crafting->generalgear.t1_85 %D4
 	BaseType == "Divine Crown" "Giantslayer Helmet" "Haunted Bascinet" "Leviathan Gauntlets" "Lich's Circlet" "Majestic Pelt" "Paladin Gloves" "Phantom Mitts" "Torturer's Mask" "Velour Gloves" "Warlock Gloves" "Wyvernscale Gauntlets"
 	SetFontSize 45
 	SetTextColor 255 255 255 255
+	PlayEffect White
+	MinimapIcon 1 White Diamond
 
 Show # crafting->generalgear.t2_85 %D3
 	Mirrored False
@@ -151,6 +165,8 @@ Show # crafting->generalgear.t2_85 %D3
 	Rarity Normal Magic Rare
 	BaseType == "Apothecary's Gloves" "Blue Pearl Amulet" "Bone Helmet" "Fingerless Silk Gloves" "Marble Amulet" "Onyx Amulet" "Spiked Gloves"
 	SetFontSize 45
+	PlayEffect White
+	MinimapIcon 2 White Diamond
 
 Show # crafting->generalgear.t3_85 %D2
 	Mirrored False
@@ -159,6 +175,8 @@ Show # crafting->generalgear.t3_85 %D2
 	Rarity Normal Magic Rare
 	BaseType == "Agate Amulet" "Citrine Amulet" "Seaglass Amulet" "Turquoise Amulet"
 	SetFontSize 45
+	PlayEffect Grey
+	MinimapIcon 2 Grey Diamond
 
 Show # crafting->generalgear.t1_84 %D4
 	Mirrored False
@@ -167,6 +185,8 @@ Show # crafting->generalgear.t1_84 %D4
 	Rarity Normal Magic Rare
 	BaseType == "Iolite Ring" "Opal Ring" "Steel Ring" "Vermillion Ring"
 	SetFontSize 45
+	PlayEffect White
+	MinimapIcon 1 White Diamond
 
 Show # crafting->generalgear.t2_84 %D3
 	Mirrored False
@@ -175,6 +195,8 @@ Show # crafting->generalgear.t2_84 %D3
 	Rarity Normal Magic Rare
 	BaseType == "Amethyst Ring" "Bone Ring" "Cerulean Ring" "Convoking Wand" "Copper Kris" "Diamond Ring" "Golden Kris" "Imperial Skean" "Karui Sceptre" "Kinetic Wand" "Moonstone Ring" "Opal Sceptre" "Opal Wand" "Pagan Wand" "Platinum Kris" "Prismatic Ring" "Profane Wand" "Prophecy Wand" "Two-Stone Ring" "Unset Ring" "Void Sceptre"
 	SetFontSize 45
+	PlayEffect White
+	MinimapIcon 2 White Diamond
 
 Show # crafting->generalgear.t3_84 %D2
 	Mirrored False
@@ -183,6 +205,8 @@ Show # crafting->generalgear.t3_84 %D2
 	Rarity Normal Magic Rare
 	BaseType == "Convening Wand" "Lathi"
 	SetFontSize 45
+	PlayEffect Grey
+	MinimapIcon 2 Grey Diamond
 
 Show # crafting->generalgear.t1_83 %D4
 	Mirrored False
@@ -190,6 +214,8 @@ Show # crafting->generalgear.t1_83 %D4
 	ItemLevel >= 83
 	Rarity Normal Magic Rare
 	SetFontSize 45
+	PlayEffect White
+	MinimapIcon 1 White Diamond
 
 Show # crafting->generalgear.t2_83 %D3
 	Mirrored False
@@ -198,6 +224,8 @@ Show # crafting->generalgear.t2_83 %D3
 	Rarity Normal Magic Rare
 	BaseType == "Battered Foil" "Despot Axe" "Imperial Claw" "Jewelled Foil" "Reaver Axe" "Reaver Sword" "Vaal Axe" "Whalebone Rapier"
 	SetFontSize 45
+	PlayEffect White
+	MinimapIcon 2 White Diamond
 
 Show # crafting->generalgear.t3_83 %D2
 	Mirrored False
@@ -206,6 +234,8 @@ Show # crafting->generalgear.t3_83 %D2
 	Rarity Normal Magic Rare
 	BaseType == "Ambusher" "Basket Rapier" "Corsair Sword" "Eternal Sword" "Exquisite Blade" "Ezomyte Blade" "Ezomyte Staff" "Fleshripper" "Gavel" "Gemini Claw" "Judgement Staff" "Karui Chopper" "Meatgrinder" "Nightmare Mace" "Noble Claw" "Piledriver" "Sai" "Siege Axe" "Spiraled Foil" "Sundering Axe"
 	SetFontSize 45
+	PlayEffect Grey
+	MinimapIcon 2 Grey Diamond
 
 # [2400] Chancing Bases
 
@@ -215,6 +245,8 @@ Show # chancing.hh %D1
 	Rarity Normal
 	BaseType == "Heavy Belt" "Leather Belt"
 	SetFontSize 45
+	PlayEffect Grey
+	MinimapIcon 2 Grey Diamond
 
 Show # chancing.t2 %D1
 	Mirrored False
@@ -222,6 +254,8 @@ Show # chancing.t2 %D1
 	Rarity Normal
 	BaseType == "Champion Kite Shield"
 	SetFontSize 45
+	PlayEffect Grey
+	MinimapIcon 2 Grey Diamond
 
 # [2601] RGB Endgame
 

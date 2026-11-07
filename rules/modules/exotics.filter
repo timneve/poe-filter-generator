@@ -112,7 +112,7 @@ Show # gear->memorystrand.any
 	MemoryStrands >= 1
 	Rarity Normal Magic Rare
 	SetFontSize 45
-	PlayEffect Blue Temp
+	PlayEffect Blue
 
 # [1101] Veiled/Betrayal - low prio veiled items
 
@@ -338,14 +338,14 @@ Show # exoticmods.essence
 	Rarity Rare
 	HasExplicitMod "of the Essence" "Essences"
 	SetFontSize 45
-	PlayEffect Blue Temp
+	PlayEffect Blue
 
 Show # exoticmods.crafting
 	Identified True
 	Rarity Rare
 	HasExplicitMod "of Crafting" "of Spellcraft" "of Weaponcraft"
 	SetFontSize 45
-	PlayEffect Blue Temp
+	PlayEffect Blue
 
 # [1200] Exotic Item Classes
 
@@ -456,7 +456,7 @@ Show # exotic->corruptions.singlecorruptedquivers
 	Rarity Rare
 	Class == "Quivers"
 	SetFontSize 45
-	PlayEffect Blue Temp
+	PlayEffect Blue
 
 Show # exotic->corruptions.singlecorrupteditems
 	Corrupted True
@@ -465,7 +465,7 @@ Show # exotic->corruptions.singlecorrupteditems
 	Rarity Rare
 	Class == "Rings"
 	SetFontSize 45
-	PlayEffect Blue Temp
+	PlayEffect Blue
 
 # [1302] Abyss Jeweled Rares
 
@@ -534,7 +534,7 @@ Show # exotic->fractured.fractothers
 	Corrupted False
 	Rarity Normal Magic Rare
 	SetFontSize 45
-	PlayEffect Blue Temp
+	PlayEffect Blue
 	SetTextColor 220 220 220
 
 # [1304] Enchanted

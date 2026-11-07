@@ -178,7 +178,7 @@ Hide # uniques.multispecial %H7
 	SetFontSize 45
 
 Show # uniques.overqual %D5
-	Quality >= 27
+	Quality >= 21
 	Rarity Unique
 	SetFontSize 45
 	PlayAlertSound 2 300

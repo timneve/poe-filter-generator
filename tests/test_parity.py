@@ -185,8 +185,21 @@ def explain(comment):
     return next((reason for rx, reason in EXPLAINED if re.search(rx, comment)), None)
 
 
-def reason_for(tc, block, it):
-    reason = explain(block.comment) or price_reason(tc, it)
+def overquality_reason(cfg, ref_block):
+    """league.filter showed the item by a quality-threshold block that config.toml
+    [overquality] turns off (OVERQUALITY_KEYS / OVERQUALITY_TOGGLES)."""
+    toggles = dict(bf.OVERQUALITY_TOGGLES, **{k: f"quality_{n}" for k, n in bf.OVERQUALITY_KEYS.items()})
+    for key, name in toggles.items():
+        typ, tier = key.rsplit(".", 1)
+        if (re.search(rf"\$type->{re.escape(typ)}\s+\$tier->{re.escape(tier)}(?!\w)", ref_block.comment or "")
+                and not cfg["overquality"][name]):
+            return f"decision: config.toml [overquality] {name} = false"
+    return None
+
+
+def reason_for(tc, block, it, ref_block=None):
+    reason = (explain(block.comment) or price_reason(tc, it)
+              or (overquality_reason(tc.cfg, ref_block) if ref_block else None))
     if reason and reason.startswith("price"):
         if it.get("class") == "Divination Cards" and it.get("stack", 1) > 1:
             return STACKED_CARDS
@@ -250,7 +263,7 @@ class Parity(unittest.TestCase):
             ref_shows, ours_shows = fs.visible(cls.ref, it), fs.visible(cls.ours, it)
             if ref_shows and not ours_shows:
                 block = fs.evaluate(cls.ours, it)[0]
-                reason = reason_for(cls, block, it)
+                reason = reason_for(cls, block, it, fs.evaluate(cls.ref, it)[0])
                 if reason:
                     cls.explained[reason] += 1
                 else:

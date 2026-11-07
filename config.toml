@@ -670,7 +670,7 @@ note = "7 Jeweller's Orbs each"
 enabled = true
 tier = "low"
 class = ["Skill Gems", "Support Gems"]
-conds = ["Quality >= 1"]
+conds = ["Quality >= 20"]
 note = "40% total quality -> 1 Gemcutter's Prism"
 
 [vendor_recipes.glassblower]
@@ -691,9 +691,8 @@ note = "40% total quality -> 1 Glassblower's Bauble"
 #        faded ([style.content]) when one of its content uniques is itself in a shown
 #        [uniques] show tier (Amber Amulet: 1c map junk, 2 div Xoph's Blood). A cheap content
 #        unique (7c Hand of the Lords) stays hidden. Base-wide: a junk map unique on a faded
-#        base shows faded too (filters can't tell which unique dropped). Same for Foulborn:
-#        Foulborn Amber Amulet faded when a Foulborn content unique (cheapest variant) is in a
-#        shown [foulborn] tier (30c Foulborn Xoph's Blood), though 3c Foulborn Xoph's Heart hides it.
+#        base shows faded too (filters can't tell which unique dropped). Not for Foulborn:
+#        they come from Wombgifts only, never the content, so [foulborn] price alone decides.
 #   off: its uniques are ignored on shared bases (Titan Greaves = Kaom's Roots tier). A base
 #        with only that content's uniques still shows blue.
 # PoE filters cannot tell where an item dropped, so the rule applies everywhere.
@@ -828,17 +827,53 @@ min_tier = "mid"
 show_all = false
 
 # ---------------------------------------------------------------------------
-# Overquality items: non-mirrored, non-corrupted normal / magic / rare gear at these quality
-# thresholds (uniques stay priced). The 3 "any gear" overquality blocks of module gear_special
-# [0901] (modules.toml value "config.toml [overquality]"); work with [gear_special] off too.
-# 30% (FilterBlade on; our top-tier tink style) / 27% / 21% (FilterBlade off, its style).
-# league_start: all three on.
+# Overquality: every quality-threshold rule in one place (modules.toml value
+# "config.toml [overquality]" = decided here). Non-mirrored, non-corrupted unless noted.
+# true = shown with league.filter's look, false = no rule (the item falls to the normal rules,
+# e.g. hidden by the endgame hide layer).
+#
+# Any normal / magic / rare gear (module gear_special [0901]; works with [gear_special] off too).
+# 30% = our top-tier tink style, placed before the base rules below so any 30% item tinks.
 # After [id_mods], before [exotics] / vendor recipes (a 30% RGB item keeps this alert).
+#
+# Top bases (module gear_special [0901] "perfection", normal / magic / rare; need
+# [gear_special] enabled): t1 armour = best ES / armour / evasion body / boots / gloves /
+# helmet / shield bases, t1 / t2 weapon = best / good weapon bases ilvl 83+, chancing = Riveted
+# Boots / Steel Kite Shield.
+#
+# Flasks / tinctures (module flasks [[2500]], normal / magic, ilvl 82+ in maps; need [flasks]
+# enabled): any_flask_21 = any flask / tincture class; utility_flasks_26 = ilvl 84+ any utility flask; utility_corrupted_30 = corrupted
+# magic utility flask; life_mana = Divine / Eternal life / mana, Hallowed Hybrid.
+#
+# Uniques (module unique_exceptions [4804]): shown blue on a base the price rules hide (a base
+# priced in a shown tier keeps its price look). league.filter: 27%. Needs [unique_exceptions].
+#
+# league_start: every key on.
 # ---------------------------------------------------------------------------
 [overquality]
+# any gear
 quality_30 = true
 quality_27 = false
 quality_21 = false
+# top bases
+armour_t1_28 = true
+armour_t1_21 = false
+weapon_t1_28 = true
+weapon_t1_24 = true
+weapon_t2_28 = false
+weapon_t2_24 = false
+chancing_bases_28 = true
+# flasks / tinctures
+any_flask_21 = false
+tinctures_26 = true
+tinctures_21 = true
+utility_flasks_26 = true
+utility_flasks_21 = true
+utility_corrupted_30 = true
+life_mana_flasks_30 = true
+life_mana_flasks_21 = false
+# uniques
+uniques_21 = true
 
 # ---------------------------------------------------------------------------
 # Influenced / eldritch / exotic bases + perfection: our module rules/modules/gear_special.filter
@@ -850,8 +885,8 @@ quality_21 = false
 #   [[0500]] exotic bases: Iron Flask, heist / ritual / Kalandra / talisman bases, Grasping Mail,
 #            unique-only bases, Cord Belt, Stygian Vise (abyssal / ilvl 86), Sacrificial Garb,
 #            Pearlescent Amulet; off: expedition (runic) bases, any Stygian Vise
-#   [0901] perfection: 28%+ / 21%+ top armour bases, 28%+ / 24%+ ilvl 83+ top weapon bases
-#          (off: t2 weapons, BaseDefencePercentile 99 perfection); overquality: [overquality]
+#   [0901] perfection: BaseDefencePercentile 99 ilvl 84+ (off); every quality block (top armour /
+#          weapon / chancing bases, any-gear overquality): [overquality]
 # FilterBlade's [[0500]] "Conditional Entry" blocks are no module blocks: Stacked Deck = stackable
 # price, breach rings = [vendor_recipes.grasping_mail], unique Opal Ring / Abyssal Axe = unique price.
 # A base poe.ninja prices at a shown [bases] tier (or jackpot -> blue) keeps that price style;
@@ -859,7 +894,8 @@ quality_21 = false
 # league_start: every gear_special Show on (and every [overquality] key).
 # [0901] after [id_mods], before [exotics]; [0302]-[[0500]] after [exotics] and the priced bases
 # (identified good mods, fractured / strand look and a base price win), before vendor recipes.
-# enabled = false: every block off except [overquality] (own option).
+# enabled = false: every block off, incl. the [overquality] top-base keys; the 3 any-gear
+# [overquality] quality_* keys stay (own option).
 # ---------------------------------------------------------------------------
 [gear_special]
 enabled = true
@@ -887,8 +923,8 @@ enabled = true
 # Normal / magic flasks + tinctures: our module rules/modules/flasks.filter (made from
 # FilterBlade's rules, league.filter style without borders / backgrounds): identified magic
 # flasks / tinctures with good mods ([0803]), fractured utility flasks ([1303]), endgame
-# overquality ([[2500]]: 21%+ any flask, 21% / 26% ilvl 82+ utility flasks + tinctures,
-# corrupted 30% utility; off by default: ilvl 82-85 utility / tinctures, early-mapping flasks).
+# [[2500]] (ilvl 82-85 utility / tinctures, early-mapping 1% / 10% quality flasks: off).
+# Overquality flask / tincture blocks: config.toml [overquality] (need this enabled).
 # Per-block on / off: modules.toml [flasks.blocks]. Before vendor recipes, so a 21% white
 # flask shows this way instead of the glassblower style.
 # Flask bases (Iron Flask ilvl 84 ...) are priced by poe.ninja in [bases], not here.
@@ -1077,8 +1113,8 @@ include_dual_influence = false
 "Scroll of Wisdom" = "hide"
 "Portal Scroll" = "hide"
 # Thin, erratic poe.ninja quotes: always white (minor), whatever the price says.
-"Clear Oil" = "minor"
-"Sepia Oil" = "minor"
+"Clear Oil" = "dust"
+"Sepia Oil" = "dust"
 
 # ---------------------------------------------------------------------------
 # Unique exceptions: our module rules/modules/unique_exceptions.filter (league.filter [4801] /
@@ -1113,7 +1149,8 @@ bases = []           # exact BaseType, e.g. "Prismatic Jewel"
 # Minimap icons: size 1 (medium) everywhere, colour = text colour. Only tink gets size 0 (big).
 # Icon SHAPE is set by build_filter.py per category (shape in styles below is replaced):
 #   Star = uniques + tink, Square = unique maps, Circle = currency-like stackables/cards,
-#   Hexagon = fragments/scarabs, Kite = splinters (name contains "Splinter"), Diamond = bases / recipes / unknown,
+#   Hexagon = fragments/scarabs, Kite = splinters (name contains "Splinter"),
+#   Pentagon = cluster jewels, Diamond = bases / recipes / unknown,
 #   Moon = league-specific stackables without a more fitting category.
 # Rule: no SetBorderColor / SetBackgroundColor except top (tink). Borders are
 # cleared for everything by a default block, so only add them on purpose.

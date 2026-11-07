@@ -95,7 +95,7 @@ Show # influenced->all.t2classescrusader
 	Rarity Rare
 	Class == "Amulets" "Belts" "Rings"
 	SetFontSize 45
-	PlayEffect Blue Temp
+	PlayEffect Blue
 	SetTextColor 220 220 220
 
 Show # influenced->all.t2classeswarlord
@@ -104,7 +104,7 @@ Show # influenced->all.t2classeswarlord
 	Rarity Rare
 	Class == "Amulets" "Boots" "Gloves" "Rings"
 	SetFontSize 45
-	PlayEffect Blue Temp
+	PlayEffect Blue
 	SetTextColor 220 220 220
 
 Show # influenced->all.t2classesredeemer
@@ -113,7 +113,7 @@ Show # influenced->all.t2classesredeemer
 	Rarity Rare
 	Class == "Amulets" "Boots" "Rings" "Shields"
 	SetFontSize 45
-	PlayEffect Blue Temp
+	PlayEffect Blue
 	SetTextColor 220 220 220
 
 Show # influenced->all.t2classeshunter
@@ -122,7 +122,7 @@ Show # influenced->all.t2classeshunter
 	Rarity Rare
 	Class == "Amulets" "Belts" "Boots" "Gloves" "Quivers" "Rings" "Shields"
 	SetFontSize 45
-	PlayEffect Blue Temp
+	PlayEffect Blue
 	SetTextColor 220 220 220
 
 Show # influenced->all.t2classesshaper
@@ -131,7 +131,7 @@ Show # influenced->all.t2classesshaper
 	Rarity Rare
 	Class == "Amulets" "Bows" "Gloves" "Rings" "Wands"
 	SetFontSize 45
-	PlayEffect Blue Temp
+	PlayEffect Blue
 	SetTextColor 220 220 220
 
 Show # influenced->all.t2classeselder
@@ -140,7 +140,7 @@ Show # influenced->all.t2classeselder
 	Rarity Rare
 	Class == "Amulets" "Belts" "Rings"
 	SetFontSize 45
-	PlayEffect Blue Temp
+	PlayEffect Blue
 	SetTextColor 220 220 220
 
 Show # influenced->all.t2classesinfluencedshared
@@ -149,7 +149,7 @@ Show # influenced->all.t2classesinfluencedshared
 	Rarity Rare
 	Class == "Amulets" "Body Armours" "Helmets" "Quivers" "Rings" "Sceptres" "Wands"
 	SetFontSize 45
-	PlayEffect Blue Temp
+	PlayEffect Blue
 	SetTextColor 220 220 220
 
 Show # influenced->all.t2high
@@ -158,7 +158,7 @@ Show # influenced->all.t2high
 	Rarity Rare
 	BaseType == "Ancient Mask" "Arcanist Slippers" "Assassin's Boots" "Astral Leather" "Battered Foil" "Chimerascale Boots" "Chimerascale Gauntlets" "Conqueror's Helmet" "Conquest Helmet" "Convoking Wand" "Copper Kris" "Crusader Boots" "Crusader Gloves" "Deicide Mask" "Despot Axe" "Dire Pelt" "Dragonscale Boots" "Dragonscale Gauntlets" "Eternal Burgonet" "Faithful Helmet" "Full Wyvernscale" "General's Helmet" "Golden Kris" "Goliath Gauntlets" "Goliath Greaves" "Grand Ringmail" "Grizzly Pelt" "Harmonic Spirit Shield" "Harpyskin Boots" "Harpyskin Gloves" "Hubris Circlet" "Hydrascale Boots" "Hydrascale Gauntlets" "Imperial Claw" "Imperial Skean" "Infiltrator Boots" "Infiltrator Mitts" "Jester Mask" "Jewelled Foil" "Karui Sceptre" "Kinetic Wand" "Knight Helm" "Lacquered Buckler" "Lathi" "Legion Boots" "Legion Gloves" "Legion Plate" "Lion Pelt" "Marshall's Brigandine" "Martyr Boots" "Martyr Gloves" "Mind Cage" "Mirrored Spiked Shield" "Moonlit Circlet" "Murder Boots" "Murder Mitts" "Nightmare Bascinet" "Nightweave Robe" "Opal Sceptre" "Opal Wand" "Pagan Wand" "Paladin Crown" "Paladin's Hauberk" "Platinum Kris" "Praetor Crown" "Precursor Gauntlets" "Precursor Greaves" "Profane Wand" "Prophecy Wand" "Prophet Crown" "Reaver Axe" "Reaver Sword" "Reflex Bow" "Royal Burgonet" "Sage Gloves" "Sage Slippers" "Sanguine Raiment" "Short Bow" "Slink Boots" "Slink Gloves" "Soldier Boots" "Sorcerer Boots" "Sorcerer Gloves" "Spine Bow" "Stealth Boots" "Sunfire Circlet" "Supreme Leather" "Thicket Bow" "Titan Gauntlets" "Titan Greaves" "Titan Plate" "Tornado Wand" "Torturer Garb" "Vaal Axe" "Vaal Gauntlets" "Vaal Greaves" "Vaal Mask" "Void Sceptre" "Whalebone Rapier"
 	SetFontSize 45
-	PlayEffect Blue Temp
+	PlayEffect Blue
 
 Show # influenced->all.any86
 	HasInfluence Crusader Elder Hunter Redeemer Shaper Warlord
@@ -166,7 +166,7 @@ Show # influenced->all.any86
 	Rarity Rare
 	Class == "Amulets" "Belts" "Body Armours" "Boots" "Bows" "Claws" "Daggers" "Gloves" "Helmets" "One Hand Axes" "One Hand Maces" "One Hand Swords" "Quivers" "Rings" "Rune Daggers" "Sceptres" "Shields" "Staves" "Thrusting One Hand Swords" "Two Hand Axes" "Two Hand Maces" "Two Hand Swords" "Wands" "Warstaves"
 	SetFontSize 45
-	PlayEffect Blue Temp
+	PlayEffect Blue
 	SetTextColor 220 220 220
 
 Show # influenced->all.any
@@ -174,7 +174,7 @@ Show # influenced->all.any
 	Rarity Rare
 	Class == "Amulets" "Belts" "Body Armours" "Boots" "Bows" "Claws" "Daggers" "Gloves" "Helmets" "One Hand Axes" "One Hand Maces" "One Hand Swords" "Quivers" "Rings" "Rune Daggers" "Sceptres" "Shields" "Staves" "Thrusting One Hand Swords" "Two Hand Axes" "Two Hand Maces" "Two Hand Swords" "Wands" "Warstaves"
 	SetFontSize 45
-	PlayEffect Blue Temp
+	PlayEffect Blue
 
 # [0400] ELDRITCH ITEMS
 
@@ -183,26 +183,26 @@ Show # rare->exarch.anyhigh
 	Rarity Normal Magic Rare
 	BaseType == "Ambush Boots" "Ambush Mitts" "Ancient Gauntlets" "Ancient Greaves" "Ancient Mask" "Antique Gauntlets" "Antique Greaves" "Apothecary's Gloves" "Arcanist Gloves" "Arcanist Slippers" "Assassin's Boots" "Assassin's Mitts" "Bone Helmet" "Carnal Boots" "Carnal Mitts" "Chimerascale Boots" "Chimerascale Gauntlets" "Conjurer Boots" "Conjurer Gloves" "Conqueror's Helmet" "Conquest Helmet" "Crusader Boots" "Crusader Gloves" "Deicide Mask" "Dire Pelt" "Divine Crown" "Dragonscale Boots" "Dragonscale Gauntlets" "Eternal Burgonet" "Ezomyte Burgonet" "Faithful Helmet" "Fingerless Silk Gloves" "Fluted Bascinet" "Fugitive Boots" "General's Helmet" "Giantslayer Helmet" "Goliath Gauntlets" "Goliath Greaves" "Gripped Gloves" "Grizzly Pelt" "Harlequin Mask" "Harpyskin Boots" "Harpyskin Gloves" "Haunted Bascinet" "Hubris Circlet" "Hydrascale Boots" "Hydrascale Gauntlets" "Infiltrator Boots" "Infiltrator Mitts" "Jester Mask" "Knight Helm" "Legion Boots" "Legion Gloves" "Leviathan Gauntlets" "Leviathan Greaves" "Lich's Circlet" "Lion Pelt" "Magistrate Crown" "Majestic Pelt" "Martyr Boots" "Martyr Gloves" "Mind Cage" "Moonlit Circlet" "Murder Boots" "Murder Mitts" "Nightmare Bascinet" "Paladin Boots" "Paladin Crown" "Paladin Gloves" "Phantom Boots" "Phantom Mitts" "Pig-Faced Bascinet" "Praetor Crown" "Precursor Gauntlets" "Precursor Greaves" "Prophet Crown" "Regicide Mask" "Riveted Boots" "Royal Burgonet" "Sage Gloves" "Sage Slippers" "Samite Slippers" "Samnite Helmet" "Serpentscale Boots" "Serpentscale Gauntlets" "Shagreen Boots" "Shagreen Gloves" "Sharkskin Boots" "Silken Hood" "Sinner Tricorne" "Slink Boots" "Slink Gloves" "Solaris Circlet" "Soldier Boots" "Soldier Gloves" "Sorcerer Boots" "Sorcerer Gloves" "Spiked Gloves" "Stealth Boots" "Stealth Gloves" "Sunfire Circlet" "Titan Gauntlets" "Titan Greaves" "Torturer's Mask" "Two-Toned Boots" "Vaal Gauntlets" "Vaal Greaves" "Vaal Mask" "Velour Boots" "Velour Gloves" "Warlock Boots" "Warlock Gloves" "Wyrmscale Boots" "Wyrmscale Gauntlets" "Wyvernscale Boots" "Wyvernscale Gauntlets" "Zealot Boots" "Zealot Gloves"
 	SetFontSize 45
-	PlayEffect Blue Temp
+	PlayEffect Blue
 
 Show # rare->exarch.any
 	HasSearingExarchImplicit >= 1
 	Rarity Normal Magic Rare
 	SetFontSize 45
-	PlayEffect Blue Temp
+	PlayEffect Blue
 
 Show # rare->eater.anyhigh
 	HasEaterOfWorldsImplicit >= 1
 	Rarity Normal Magic Rare
 	BaseType == "Ambush Boots" "Ambush Mitts" "Ancient Gauntlets" "Ancient Greaves" "Ancient Mask" "Antique Gauntlets" "Antique Greaves" "Apothecary's Gloves" "Arcanist Gloves" "Arcanist Slippers" "Assassin's Boots" "Assassin's Mitts" "Bone Helmet" "Carnal Boots" "Carnal Mitts" "Chimerascale Boots" "Chimerascale Gauntlets" "Conjurer Boots" "Conjurer Gloves" "Conqueror's Helmet" "Conquest Helmet" "Crusader Boots" "Crusader Gloves" "Deicide Mask" "Dire Pelt" "Divine Crown" "Dragonscale Boots" "Dragonscale Gauntlets" "Eternal Burgonet" "Ezomyte Burgonet" "Faithful Helmet" "Fingerless Silk Gloves" "Fluted Bascinet" "Fugitive Boots" "General's Helmet" "Giantslayer Helmet" "Goliath Gauntlets" "Goliath Greaves" "Gripped Gloves" "Grizzly Pelt" "Harlequin Mask" "Harpyskin Boots" "Harpyskin Gloves" "Haunted Bascinet" "Hubris Circlet" "Hydrascale Boots" "Hydrascale Gauntlets" "Infiltrator Boots" "Infiltrator Mitts" "Jester Mask" "Knight Helm" "Legion Boots" "Legion Gloves" "Leviathan Gauntlets" "Leviathan Greaves" "Lich's Circlet" "Lion Pelt" "Magistrate Crown" "Majestic Pelt" "Martyr Boots" "Martyr Gloves" "Mind Cage" "Moonlit Circlet" "Murder Boots" "Murder Mitts" "Nightmare Bascinet" "Paladin Boots" "Paladin Crown" "Paladin Gloves" "Phantom Boots" "Phantom Mitts" "Pig-Faced Bascinet" "Praetor Crown" "Precursor Gauntlets" "Precursor Greaves" "Prophet Crown" "Regicide Mask" "Riveted Boots" "Royal Burgonet" "Sage Gloves" "Sage Slippers" "Samite Slippers" "Samnite Helmet" "Serpentscale Boots" "Serpentscale Gauntlets" "Shagreen Boots" "Shagreen Gloves" "Sharkskin Boots" "Silken Hood" "Sinner Tricorne" "Slink Boots" "Slink Gloves" "Solaris Circlet" "Soldier Boots" "Soldier Gloves" "Sorcerer Boots" "Sorcerer Gloves" "Spiked Gloves" "Stealth Boots" "Stealth Gloves" "Sunfire Circlet" "Titan Gauntlets" "Titan Greaves" "Torturer's Mask" "Two-Toned Boots" "Vaal Gauntlets" "Vaal Greaves" "Vaal Mask" "Velour Boots" "Velour Gloves" "Warlock Boots" "Warlock Gloves" "Wyrmscale Boots" "Wyrmscale Gauntlets" "Wyvernscale Boots" "Wyvernscale Gauntlets" "Zealot Boots" "Zealot Gloves"
 	SetFontSize 45
-	PlayEffect Blue Temp
+	PlayEffect Blue
 
 Show # rare->eater.any
 	HasEaterOfWorldsImplicit >= 1
 	Rarity Normal Magic Rare
 	SetFontSize 45
-	PlayEffect Blue Temp
+	PlayEffect Blue
 
 # [0500] Exotic Bases
 

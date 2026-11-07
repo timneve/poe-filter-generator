@@ -115,7 +115,7 @@ Show # exotic->fractured.fractothers
 	Corrupted False
 	Rarity Normal Magic Rare
 	SetFontSize 45
-	PlayEffect Blue Temp
+	PlayEffect Blue
 	SetTextColor 220 220 220
 
 # [2500] Endgame Flasks & Tinctures
@@ -154,7 +154,7 @@ Show # endgametinctures.tinc85
 	Class == "Tinctures"
 	AreaLevel >= 68
 	SetFontSize 45
-	PlayEffect Grey Temp
+	PlayEffect Grey
 
 Show # endgametinctures.tinc82
 	ItemLevel >= 82
@@ -162,14 +162,14 @@ Show # endgametinctures.tinc82
 	Class == "Tinctures"
 	AreaLevel >= 68
 	SetFontSize 45
-	PlayEffect Grey Temp
+	PlayEffect Grey
 
 Show # endgametinctures.any
 	Rarity Normal Magic
 	Class == "Tinctures"
 	AreaLevel >= 68
 	SetFontSize 45
-	PlayEffect Grey Temp
+	PlayEffect Grey
 
 # [2501] Endgame Flasks
 
@@ -181,7 +181,8 @@ Show # endgameflasks.overqualcorrupted
 	BaseType == "Amethyst Flask" "Basalt Flask" "Bismuth Flask" "Diamond Flask" "Gold Flask" "Granite Flask" "Iron Flask" "Jade Flask" "Quartz Flask" "Quicksilver Flask" "Ruby Flask" "Sapphire Flask" "Silver Flask" "Stibnite Flask" "Sulphur Flask" "Topaz Flask"
 	AreaLevel >= 68
 	SetFontSize 45
-	PlayEffect Grey Temp
+	PlayEffect Grey
+	MinimapIcon 2 Grey Diamond
 
 Show # endgameflasks.overqualutil1
 	Mirrored False
@@ -258,7 +259,7 @@ Show # endgameflasks.utility84
 	BaseType == "Amethyst Flask" "Basalt Flask" "Bismuth Flask" "Diamond Flask" "Gold Flask" "Granite Flask" "Iron Flask" "Jade Flask" "Quartz Flask" "Quicksilver Flask" "Ruby Flask" "Sapphire Flask" "Silver Flask" "Stibnite Flask" "Sulphur Flask" "Topaz Flask"
 	AreaLevel >= 68
 	SetFontSize 45
-	PlayEffect Grey Temp
+	PlayEffect Grey
 
 Show # endgameflasks.utility82
 	Mirrored False
@@ -268,7 +269,7 @@ Show # endgameflasks.utility82
 	Class == "Utility Flasks"
 	AreaLevel >= 68
 	SetFontSize 45
-	PlayEffect Grey Temp
+	PlayEffect Grey
 
 Show # endgameflasks.lifemana82
 	Mirrored False
@@ -288,7 +289,8 @@ Show # endgameflasks.any20qualflask
 	Rarity Normal Magic
 	Class == "Hybrid Flasks" "Life Flasks" "Mana Flasks" "Utility Flasks"
 	SetFontSize 45
-	PlayEffect Grey Temp
+	PlayEffect Grey
+	MinimapIcon 2 Grey Diamond
 
 # [2503] Quality Low
 
@@ -318,7 +320,7 @@ Show # endgameflasks.earlymappingflasks
 	AreaLevel >= 68
 	AreaLevel <= 75
 	SetFontSize 45
-	PlayEffect Grey Temp
+	PlayEffect Grey
 
 Show # endgameflasks.anyutility
 	Mirrored False
@@ -327,7 +329,7 @@ Show # endgameflasks.anyutility
 	Class == "Utility Flasks"
 	AreaLevel >= 68
 	SetFontSize 45
-	PlayEffect Grey Temp
+	PlayEffect Grey
 
 # [2505] Early mapping life/mana/utility flasks
 
