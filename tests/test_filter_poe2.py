@@ -9,30 +9,32 @@ sys.path.insert(0, str(ROOT))
 
 import build_filter_poe2 as bf  # noqa: E402
 import filtersim as fs  # noqa: E402
+from build_filter import parse_module  # noqa: E402
 
 CURRENCY = "Stackable Currency"
-# Stand-in for the NeverSink export: header, a tink block, a calm-able block, a catch-all.
-REFERENCE = """# NeverSink header
-# [[0100]] Gold
+# Stand-in rule module (rules/modules_poe2/<name>.filter): a tink block, a bordered block, an
+# off block, a catch-all.
+MODULE = """# test module
+# [1900] Socketables
 
-#===
-# [[1900]] Socketables
-#===
+Show # ns.tink
+	BaseType == "Ref Tink Rune"
+	SetBorderColor 255 0 0 255
+	SetBackgroundColor 255 255 255 255
 
-Show # ns tink
-\tBaseType == "Ref Tink Rune"
-\tSetBorderColor 255 0 0 255
-\tSetBackgroundColor 255 255 255 255
+Show # ns.known
+	BaseType == "Known Thin Rune"
+	SetBorderColor 10 20 30
+	SetFontSize 40
 
-Show # ns known
-\tBaseType == "Known Thin Rune"
-\tSetBorderColor 10 20 30
-\tSetBackgroundColor 0 0 0 200
-\tSetFontSize 40
+Show # ns.off
+	BaseType == "Off Rune"
+	SetFontSize 45
 
-Show # ns catch-all
-\tSetFontSize 45
+Show # ns.catch_all
+	SetFontSize 45
 """
+MODULE_TOGGLES = {"ns.tink": True, "ns.known": True, "ns.off": False, "ns.catch_all": True}
 
 
 def empty_data():
@@ -63,18 +65,21 @@ class Poe2FilterTests(unittest.TestCase):
         self.cfg = bf.load_cfg()
         self.cfg["hide_tiers"] = ["low", "brown", "dust"]  # tests assume these, not the user's config
         self.cfg["quiet_tiers"] = []
+        self.cfg["modules"] = {"test": True}
+        self.cfg["module_blocks"] = {"test": {"blocks": dict(MODULE_TOGGLES)}}
+        self.modules = {"test": parse_module(MODULE)}
         self.data = empty_data()
         add_item(self.data, "Currency", "Chaos Orb", 0.01)
         add_item(self.data, "Currency", "Exalted Orb", 0.002)
 
 
     def test_every_colour_from_palette(self):
-        text, _ = bf.build_text(self.cfg, self.data, "Test League", REFERENCE)
+        text, _ = bf.build_text(self.cfg, self.data, "Test League", self.modules)
         used = set(re.findall(r"Set(?:Text|Border|Background)Color (.+)", text))
         self.assertTrue(used)
         self.assertEqual(used - set(self.cfg["colors"].values()), set())
     def build(self):
-        text, results = bf.build_text(self.cfg, self.data, "Test League", REFERENCE)
+        text, results = bf.build_text(self.cfg, self.data, "Test League", self.modules)
         self.text = text
         return fs.parse(text), results
 
@@ -134,7 +139,7 @@ class Poe2FilterTests(unittest.TestCase):
     def test_thin_market_known_item_uses_neversink_tier(self):
         add_item(self.data, "Runes", "Known Thin Rune", 5.0, volume=0.2)
         blocks, results = self.build()
-        self.assertEqual(self.decide(blocks, "Known Thin Rune", "Augment").comment, "ns known")
+        self.assertEqual(self.decide(blocks, "Known Thin Rune", "Augment").comment, "test ns.known")
         self.assertIn("Known Thin Rune", results["deferred"])
 
     def test_expensive_item_trading_few_units_is_trusted(self):
@@ -149,21 +154,46 @@ class Poe2FilterTests(unittest.TestCase):
         self.assertEqual(self.decide(blocks, "Uncut Skill Gem", "Uncut Skill Gems", gem_level=19).comment, "mid")
         self.assertEqual(self.decide(blocks, "Uncut Skill Gem", "Uncut Skill Gems", gem_level=18).action, "Hide")
         self.assertEqual(self.decide(blocks, "Uncut Skill Gem", "Uncut Skill Gems", gem_level=5).comment,
-                         "ns catch-all")
+                         "test ns.catch_all")
 
     def test_level_names_outside_gem_feed_stay_literal(self):
         add_item(self.data, "Runes", "Thaumaturgic Flux (Level 20)", 0.5)
         blocks, _ = self.build()
         self.assertEqual(self.decide(blocks, "Thaumaturgic Flux (Level 20)", "Augment").comment, "high")
 
-    def test_reference_appended_and_calmed(self):
+    def test_modules_appended_no_borders_except_tink(self):
         blocks, _ = self.build()
-        self.assertEqual(self.decide(blocks, "Some Boots", "Boots").comment, "ns catch-all")
-        tink = next(b for b in blocks if b.comment == "ns tink")
-        known = next(b for b in blocks if b.comment == "ns known")
+        self.assertEqual(self.decide(blocks, "Some Boots", "Boots").comment, "test ns.catch_all")
+        tink = next(b for b in blocks if b.comment == "test ns.tink")
+        known = next(b for b in blocks if b.comment == "test ns.known")
         self.assertIn("SetBackgroundColor 255 255 255 255", tink.style)
-        self.assertEqual(known.style, ["SetFontSize 45"])  # calmed + full text size
-        self.assertNotIn("NeverSink header", self.text)
+        self.assertIn("SetBorderColor 255 0 0 255", tink.style)
+        clear = f"SetBorderColor {self.cfg['colors']['clear']}"
+        self.assertEqual(known.style, ["SetFontSize 45", clear])  # full text size, border opacity 0
+        tink_bg = f"SetBackgroundColor {self.cfg['colors']['tink_bg']}"
+        for b in blocks:  # price blocks too: a border only on tink
+            if tink_bg not in b.style:
+                self.assertEqual([s for s in b.style if s.startswith("SetBorderColor")], [clear], b.comment)
+
+    def test_module_block_toggle_and_module_off(self):
+        rune = {"class": "Augment", "basetype": "Off Rune"}
+        blocks, _ = self.build()
+        self.assertEqual(fs.evaluate(blocks, rune)[0].comment, "test ns.catch_all")
+        self.cfg["module_blocks"]["test"]["blocks"]["ns.off"] = True
+        blocks, _ = self.build()
+        self.assertEqual(fs.evaluate(blocks, rune)[0].comment, "test ns.off")
+        self.cfg["modules"]["test"] = False
+        blocks, _ = self.build()
+        self.assertFalse(any(b.comment.startswith("test ") for b in blocks))
+
+    def test_module_missing_toggle_raises(self):
+        del self.cfg["module_blocks"]["test"]["blocks"]["ns.known"]
+        with self.assertRaises(KeyError):
+            self.build()
+        self.cfg["module_blocks"]["test"]["blocks"]["ns.known"] = True
+        del self.cfg["modules"]["test"]
+        with self.assertRaises(KeyError):
+            self.build()
 
     def test_gold_hidden_unless_show_gold(self):
         gold = {"class": CURRENCY, "basetype": "Gold", "stack": 5000}
@@ -172,7 +202,7 @@ class Poe2FilterTests(unittest.TestCase):
         self.assertFalse(fs.visible(blocks, gold))
         self.cfg["show_gold"] = True
         blocks, _ = self.build()
-        self.assertEqual(self.decide(blocks, "Gold", stack=5000).comment, "ns catch-all")
+        self.assertEqual(self.decide(blocks, "Gold", stack=5000).comment, "test ns.catch_all")
 
     def test_shown_items_full_text_size(self):
         add_item(self.data, "Currency", "Minor Orb", 0.02)
@@ -190,7 +220,7 @@ class Poe2FilterTests(unittest.TestCase):
         import report_poe2
         add_item(self.data, "Currency", "Minor Orb", 0.02)
         add_item(self.data, "Runes", "Known Thin Rune", 5.0, volume=0.2)
-        text, results = bf.build_text(self.cfg, self.data, "Test League", REFERENCE)
+        text, results = bf.build_text(self.cfg, self.data, "Test League", self.modules)
         rows = {row["name"]: row for row in report_poe2.collect(self.cfg, fs.parse(text), results)}
         self.assertEqual((rows["Minor Orb"]["tier"], rows["Minor Orb"]["shown"]), ("minor", True))
         self.assertEqual(rows["Exalted Orb"]["shown"], False)
@@ -222,7 +252,7 @@ class Poe2LiveCache(unittest.TestCase):
             path = cache / f"ex_{item_type}.json"
             if path.exists():
                 data["exchange"][item_type] = json.loads(path.read_text(encoding="utf-8"))
-        text, cls.results = bf.build_text(cfg, data, cache.name, bf.load_reference(cfg))
+        text, cls.results = bf.build_text(cfg, data, cache.name, bf.load_modules())
         cls.blocks = fs.parse(text)
 
     def test_filter_fully_modelled(self):
@@ -249,5 +279,55 @@ class Poe2LiveCache(unittest.TestCase):
                 self.assertEqual(shown, not tiers.hidden(tiers.of(value)), name)
 
 
+class Poe2Modules(unittest.TestCase):
+    """rules/modules_poe2 vs modules_poe2.toml / config_poe2.toml / the FilterBlade export."""
+
+    def setUp(self):
+        self.cfg = bf.load_cfg()
+        self.modules = bf.load_modules()
+
+    def test_keys_match_toggles(self):
+        self.assertEqual(set(self.cfg["modules"]), set(self.modules))
+        for name, blocks in self.modules.items():
+            keys = [b["key"] for b in blocks]
+            self.assertEqual(len(keys), len(set(keys)), name)
+            self.assertEqual(keys, list(self.cfg["module_blocks"][name]["blocks"]), name)
+
+    def test_every_export_block_in_a_module(self):
+        """Same blocks (key, action, conditions) as the export the modules came from: a refresh
+        (tools/import_neversink.py --game poe2) that missed a section shows up here."""
+        sys.path.insert(0, str(ROOT / "tools"))
+        import import_neversink as imp
+        ref = (ROOT / "reference" / "league-filterblade-poe2.filter").read_text(encoding="utf-8")
+        exported = {b["key"]: (b["action"], b["conds"]) for b in imp.parse_ref_blocks(ref, *imp.section_span(ref))}
+        ours = {b["key"]: (b["action"], b["conds"]) for blocks in self.modules.values() for b in blocks}
+        self.assertEqual(ours, exported)
+
+    def test_sections_belong_to_one_module(self):
+        owner = {}
+        for name, blocks in self.modules.items():
+            for b in blocks:
+                self.assertEqual(owner.setdefault(b["section"], name), name, b["section"])
+
+
 if __name__ == "__main__":
     unittest.main()
+
+
+class LeagueList(unittest.TestCase):
+    """write_league_list: poe.ninja index-state -> leagues TOML (shared by both builds)."""
+
+    def test_groups_and_valid_toml(self):
+        import tempfile
+        import tomllib
+        state = {"economyLeagues": [
+                     {"name": "Runes of Aldur", "indexed": True},
+                     {"name": "Forbidden Rites", "indexed": False},
+                     {"name": "Standard", "indexed": True}],
+                 "oldEconomyLeagues": [{"name": "Dawn Ⅳ"}]}
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "leagues.toml"
+            bf.write_league_list(state, path, "config_poe2.toml")
+            got = tomllib.loads(path.read_text(encoding="utf-8"))
+        self.assertEqual(got, {"current": ["Runes of Aldur", "Standard"],
+                               "no_prices": ["Forbidden Rites"], "old": ["Dawn Ⅳ"]})

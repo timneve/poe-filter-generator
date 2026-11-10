@@ -1,0 +1,16 @@
+# Generated from poe.ninja on every build (2026-11-09 20:41). Don't edit.
+# League names you can put in config_poe2.toml `league` (or "auto" = current softcore
+# trade league). current = poe.ninja has prices, no_prices = listed but not priced yet,
+# old = finished leagues.
+
+current = [
+  "Runes of Aldur",
+]
+no_prices = [
+  "Forbidden Rites",
+  "HC Forbidden Rites",
+  "HC Runes of Aldur",
+  "Standard",
+  "Hardcore",
+]
+old = []

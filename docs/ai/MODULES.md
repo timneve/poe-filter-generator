@@ -3,7 +3,7 @@
 Goal: every feature the user's FilterBlade filter (`reference/league.filter`) has exists in our
 filter as OUR rule module, with the same options (per-block on/off like FilterBlade). The build
 never reads `reference/` (only `tools/import_neversink.py` / `tools/import_fallback_tiers.py` do;
-test `NoReference`). PoE2 still appends its FilterBlade export whole (remaining, separate).
+test `NoReference`). PoE2 has its own modules (`rules/modules_poe2/`, section "PoE2" below).
 Price-driven systems (poe.ninja tiers) stay; a module only covers what price can't decide
 (mods, item states, leveling, map progression ...).
 
@@ -61,7 +61,7 @@ Price-driven systems (poe.ninja tiers) stay; a module only covers what price can
 | `reference_currency_tiers` / `reference_card_tiers` fallbacks, [[3000]] gems, [[3600]]-[[4400]] currency specials, [[4800]] uniques | price fallbacks + `unique_exceptions` | done: `fallback_tiers.toml` (`tools/import_fallback_tiers.py`), coverage below; [4801] / [4803] / [4804] overqual -> module `unique_exceptions` |
 | Parity test: items league.filter shows (filtersim on reference) are shown by ours unless price-hidden | `tests/test_parity.py` | done (summary below) |
 | Build reads no `reference/` (only importer) | cleanup | done (`neversink_blocks` + unused read removed, parser moved to `tools/import_neversink.py`, test `NoReference`) |
-| PoE2: FilterBlade export appended whole | `poe2` | remaining (separate, still reads `reference/`) |
+| PoE2: FilterBlade export appended whole | `rules/modules_poe2/` | step 1 done (see PoE2 below) |
 
 ## Price-fallback coverage (league.filter [[3000]], [[3600]]-[[4400]], [[4800]])
 
@@ -122,3 +122,20 @@ Reverse (ours shows, league.filter hides; informational): ~440, mostly priced cl
 (355: poe.ninja tier vs NeverSink's strict cluster Hides), then priced gems (25), fragments /
 currency / cards (~30 priced or blue), uniques on priced / content / variable bases (~20).
 
+## PoE2 (`rules/modules_poe2/`, `modules_poe2.toml`)
+
+Whole `reference/league-filterblade-poe2.filter` imported 1:1 (`--game poe2 --stock
+reference/regular-neversink-poe2.filter`), 13 modules by section (ranges in `config_poe2.toml`
+`[modules]` comments). `build_filter_poe2.module_rules` emits turned-on blocks in section order,
+so the default build has exactly the export's rule sequence (checked once on 2026-11-09: 507
+blocks, same action + conditions). Tink (white background) blocks keep border / background;
+`no_borders` sets every other border to opacity 0. `modules_poe2.toml` comments: "(off in
+FilterBlade)" + "(stock NeverSink: ...)" where the user's export differs from stock.
+Tests `Poe2Modules`: file keys == toggles, `[modules]` == files, every export block (key, action,
+conditions) in a module, one module per section.
+
+Remaining (next steps):
+1. Exchange prices own NeverSink's currency / omen / essence / catalyst / emotion tiers (module
+   blocks for priced names become redundant; keep only unpriced).
+2. `tools/league_start.py` for PoE2 (loosen module Hides: currency d / e, rr, salvage, t3boss ...).
+3. Parity test like `tests/test_parity.py` once modules diverge from the export.

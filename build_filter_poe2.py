@@ -1,4 +1,5 @@
-"""Build a PoE2 loot filter: poe.ninja exchange prices tiered in divines, on top of NeverSink's filter."""
+"""Build a PoE2 loot filter: poe.ninja exchange prices tiered in divines, then our rule modules
+(rules/modules_poe2, imported once from NeverSink's PoE2 export, per-block toggles in modules_poe2.toml)."""
 import argparse
 import json
 import math
@@ -12,9 +13,11 @@ import urllib.request
 from datetime import datetime
 from pathlib import Path
 
-from build_filter import apply_palette
+from build_filter import apply_palette, parse_module, write_league_list
 
 ROOT = Path(__file__).resolve().parent
+MODULES_DIR = ROOT / "rules" / "modules_poe2"
+MODULES_TOML = ROOT / "modules_poe2.toml"
 NINJA = "https://poe.ninja/poe2/api"
 UA = {"User-Agent": "price-filter-builder/1.0 (personal loot filter script)"}
 PINNED_TOP = {"Divine Orb", "Mirror of Kalandra", "Hinekora's Lock"}
@@ -50,8 +53,6 @@ STYLES = {
 }
 QUIET_STYLE = ["SetTextColor brown", "PlayEffect Grey",
                "MinimapIcon 2 Grey Circle", "DisableDropSound True"]
-# reference export's tink blocks (white background, numbers: before apply_palette)
-TINK_BACKGROUND = "SetBackgroundColor 255 255 255 255"
 GOLD_HIDE = 'Hide # gold (show_gold = false)\n\tBaseType == "Gold"\n' + "".join(f"\t{line}\n" for line in HIDDEN_STYLE)
 
 
@@ -112,10 +113,16 @@ def fetch_json(url, cache_file, max_age_min, refresh):
 def detect_league(cfg, args):
     if args.league:
         return args.league
+    try:
+        state = fetch_json(f"{NINJA}/data/index-state", ROOT / "cache" / "poe2" / "index-state.json",
+                           60, args.refresh)
+    except OSError:
+        if cfg["league"] != "auto":
+            return cfg["league"]
+        raise
+    write_league_list(state, ROOT / "leagues_poe2.toml", "config_poe2.toml")
     if cfg["league"] != "auto":
         return cfg["league"]
-    state = fetch_json(f"{NINJA}/data/index-state", ROOT / "cache" / "poe2" / "index-state.json",
-                       60, args.refresh)
     for league in state.get("economyLeagues", []):
         name = league.get("name", "")
         if (league.get("indexed") and not league.get("hardcore")
@@ -212,30 +219,63 @@ def item_conditions(names, level):
     return [f"BaseType == {q(names)}"] + ([f"GemLevel == {level}"] if level else [])
 
 
-def reference_basetypes(text):
-    """Every BaseType named in an active (uncommented) reference block."""
-    names = set()
-    for line in text.splitlines():
-        if line.strip().startswith("BaseType"):
-            names.update(re.findall(r'"([^"]+)"', line))
-    return names
+def load_modules():
+    """rules/modules_poe2/*.filter -> {module: [block]} (build_filter.parse_module)."""
+    return {path.stem: parse_module(path.read_text(encoding="utf-8"))
+            for path in sorted(MODULES_DIR.glob("*.filter"))}
 
 
-def reference_body(text):
-    """NeverSink's rules from the first section holding a block, calmed to our style:
-    border/background only on tink (white background) blocks."""
-    lines = text.splitlines()
-    first = next(i for i, line in enumerate(lines) if line.startswith(("Show", "Hide", "Minimal")))
-    while first > 0 and lines[first - 1].startswith("#"):
-        first -= 1
-    chunks = "\n".join(lines[first:]).split("\n\n")
-    calm = []
-    for chunk in chunks:
-        if TINK_BACKGROUND not in chunk:
-            chunk = "\n".join(line for line in chunk.split("\n")
-                              if not line.strip().startswith(("SetBorderColor", "SetBackgroundColor")))
-        calm.append(chunk)
-    return "\n\n".join(calm) + "\n"
+def module_rules(cfg, modules):
+    """Blocks turned on: config_poe2.toml [modules] <name> (whole module) and modules_poe2.toml
+    [<name>.blocks] (per block). -> [(module, block)] in NeverSink section order (each section
+    belongs to one module; file order inside it). Missing toggle = error (no hidden settings)."""
+    picked = []
+    for name, blocks in modules.items():
+        if name not in cfg["modules"]:
+            raise KeyError(f"config_poe2.toml [modules] has no {name!r}")
+        toggles = cfg["module_blocks"].get(name, {}).get("blocks", {})
+        for b in blocks:
+            if b["key"] not in toggles:
+                raise KeyError(f"modules_poe2.toml [{name}.blocks] has no {b['key']!r} "
+                               "(run tools/import_neversink.py --game poe2)")
+            if cfg["modules"][name] and toggles[b["key"]]:
+                picked.append((name, b))
+    return sorted(picked, key=lambda nb: nb[1]["section"] or "")
+
+
+def module_basetypes(rules):
+    """Every BaseType a turned-on module block names (thin-market items left to its tier)."""
+    return {name for _, b in rules for c in b["conds"] if c.startswith("BaseType")
+            for name in re.findall(r'"([^"]+)"', c)}
+
+
+def module_text(rules):
+    out, section = [], None
+    for name, b in rules:
+        if b["section"] != section:
+            section = b["section"]
+            out.append(f"\n# [{section}]\n")
+        style = HIDDEN_STYLE if b["action"] == "Hide" else b["style"]
+        out.append(block(b["action"], b["conds"], style, f"{name} {b['key']}"))
+    return "".join(out)
+
+
+def no_borders(cfg, text):
+    """No borders except tink (top tier, tink_bg background): every other block's SetBorderColor
+    is removed and a final (non-Continue) block gets colors.clear (opacity 0), so no item keeps
+    the game's default border either. Runs after apply_palette (colours are numbers)."""
+    tink = f"SetBackgroundColor {cfg['colors']['tink_bg']}"
+    clear = f"\tSetBorderColor {cfg['colors']['clear']}"
+    out = []
+    for blk in re.split(r"(?m)(?=^(?:Show|Hide|Minimal)\b)", text):
+        if blk.startswith(("Show", "Hide", "Minimal")) and tink not in blk:
+            lines = [line for line in blk.split("\n") if not line.strip().startswith("SetBorderColor")]
+            if not any(line.strip() == "Continue" for line in lines):
+                last = max(i for i, line in enumerate(lines) if i == 0 or line.startswith(("\t", " ")))
+                lines.insert(last + 1, clear)
+            blk = "\n".join(lines)
+        out.append(blk)
+    return "".join(out)
 
 
 def maximize_item_sizes(text):
@@ -248,10 +288,12 @@ def maximize_item_sizes(text):
     return "".join(out)
 
 
-def build_text(cfg, data, league, reference_text):
+def build_text(cfg, data, league, modules):
+    """modules: load_modules() ({module: [block]})."""
     prices = price_exchange(data)
     tiers = Tiers(cfg)
-    ref_names = reference_basetypes(reference_text)
+    rules = module_rules(cfg, modules)
+    ref_names = module_basetypes(rules)
     singles = {}    # (tier, shape, level) -> [basetype]
     stacks = {}     # (target tier, count, shape) -> [basetype]
     deferred = []   # thin market, NeverSink tiers it
@@ -283,7 +325,7 @@ def build_text(cfg, data, league, reference_text):
               f"# League: {league}   {rates}\n"
               f"# Tiers: {tier_line}\n"
               f"# Prices: poe.ninja exchange ({', '.join(data['exchange'])}), tiered in divines.\n"
-              "# Below the price rules: NeverSink's PoE2 filter (reference/), calmed.\n"
+              "# Below the price rules: our rule modules (rules/modules_poe2, from NeverSink), calmed.\n"
               "# Do not edit - edit config_poe2.toml and rerun build_filter_poe2.py\n")
     out = [header]
     for name in sorted(PINNED_TOP):
@@ -311,23 +353,24 @@ def build_text(cfg, data, league, reference_text):
 
     if not cfg.get("show_gold", False):
         out.append(GOLD_HIDE)
-    out.append("\n# ===== NeverSink PoE2 rules (gear, uniques, waystones, unpriced items) =====\n\n")
-    out.append(reference_body(reference_text))
-    return apply_palette(cfg, maximize_item_sizes("".join(out))), {"prices": prices, "tiers": tiers, "deferred": deferred}
+    out.append("\n# ===== Rule modules (gear, uniques, waystones, unpriced items): "
+               "config_poe2.toml [modules], modules_poe2.toml =====\n")
+    out.append(module_text(rules))
+    text = no_borders(cfg, apply_palette(cfg, maximize_item_sizes("".join(out))))
+    return text, {"prices": prices, "tiers": tiers, "deferred": deferred}
 
 
 def load_cfg():
-    """config_poe2.toml + the shared colour palette (config.toml [colors], unless set here)."""
+    """config_poe2.toml + modules_poe2.toml (cfg["module_blocks"]) + the shared colour palette
+    (config.toml [colors], unless set here)."""
     with (ROOT / "config_poe2.toml").open("rb") as f:
         cfg = tomllib.load(f)
+    with MODULES_TOML.open("rb") as f:
+        cfg["module_blocks"] = tomllib.load(f)
     if "colors" not in cfg:
         with (ROOT / "config.toml").open("rb") as f:
             cfg["colors"] = tomllib.load(f)["colors"]
     return cfg
-
-
-def load_reference(cfg):
-    return (ROOT / cfg["reference"]).read_text(encoding="utf-8")
 
 
 def main():
@@ -339,7 +382,7 @@ def main():
     league = detect_league(cfg, args)
     print(f"PoE2 league: {league}")
     data = fetch_all(league, cfg, args.refresh)
-    text, result = build_text(cfg, data, league, load_reference(cfg))
+    text, result = build_text(cfg, data, league, load_modules())
     out_file = ROOT / "out" / f"{cfg['output_name']}.filter"
     out_file.parent.mkdir(parents=True, exist_ok=True)
     out_file.write_text(text, encoding="utf-8")

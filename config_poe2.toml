@@ -1,12 +1,9 @@
 # PoE2 price filter config. Edit, then run: python build_filter_poe2.py
-league = "auto"
+# "auto" = current softcore trade league, or a name from leagues_poe2.toml (rewritten every build)
+league = "Forbidden Rites"
 output_name = "pricefilter_poe2"
 output_dirs = ["~/Documents/My Games/Path of Exile 2"]
 cache_minutes = 60
-
-# Everything not priced here (gear, rares, uniques, waystones, gems, unpriced currency) uses
-# this NeverSink/FilterBlade PoE2 export. Borders/backgrounds are stripped except on its tink tier.
-reference = "reference/league-filterblade-poe2.filter"
 
 # Colours: the shared palette in config.toml (colors.*), same names / values as PoE1. Every
 # colour in the filter is one of them; the NeverSink export snaps to the nearest. A [colors]
@@ -44,3 +41,24 @@ min_units = 3
 trusted_volume = 5.0
 # Largest stack size checked for "stack reaches a higher tier" alerts.
 max_stack = 40
+
+# Everything not priced here (gear, rares, uniques, waystones, gems, unpriced currency) uses our
+# rule modules rules/modules_poe2/<name>.filter (imported once from your FilterBlade PoE2 export by
+# tools/import_neversink.py --game poe2, then ours). Per-block on / off: modules_poe2.toml
+# [<name>.blocks] (comments say where your export differs from stock NeverSink).
+# No borders anywhere (opacity 0, also hides the game's default border) except tink (top) blocks.
+# Every shown item at font size 45.
+[modules]          # whole module on / off
+misc = true        # [0100] gold, [1800] new league unknown items, [2100] relics, [2800] misc map-like, [3100] misc map items
+exotics = true     # [0200] exotic bases, [0300] exceptional items, crafting / chancing bases
+id_mods = true     # [0400] identified recombinator mods, [0800] high unidentified mod tier
+rares = true       # [0500] rare decorators, [0600] normal / magic / rare hiding, [1200]-[1700] endgame rares + hide layers
+crafting = true    # [0700] economy crafting bases, [1100] normal / magic crafting, salvagables
+flasks = true      # [0900] endgame flasks, [1000] endgame charms
+socketables = true # [1900] runes and soul cores
+jewels = true      # [2000] jewels
+gems = true        # [2200] gems and uncut gems
+maps = true        # [2300]-[2400] waystones, [3000] splinters / tablets / fragments
+currency = true    # [2500]-[2700] currency, emotions, catalysts, essences, omens; [3200] remaining currency
+uniques = true     # [2900] uniques
+leveling = true    # [3300]-[3700] campaign: salvagables, flasks / charms, rares, useful normal / magic items
