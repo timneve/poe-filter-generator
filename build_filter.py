@@ -23,6 +23,7 @@ import shutil
 import sys
 import time
 import tomllib
+import urllib.error
 import urllib.parse
 import urllib.request
 from datetime import datetime
@@ -122,12 +123,36 @@ def fetch_json(url, cache_file, max_age_min, refresh):
     return data
 
 
+def write_league_list(state, path, config_name):
+    """poe.ninja index-state -> TOML list of league names (current / old) for picking `league`.
+    Written by every build. PoE2 feeds mark unpriced leagues `indexed = false` -> `no_prices`."""
+    def names(key, keep=lambda lg: True):
+        return [lg["name"] for lg in state.get(key, []) if lg.get("name") and keep(lg)]
+    groups = [("current", names("economyLeagues", lambda lg: lg.get("indexed", True))),
+              ("no_prices", names("economyLeagues", lambda lg: not lg.get("indexed", True))),
+              ("old", names("oldEconomyLeagues"))]
+    lines = [f"# Generated from poe.ninja on every build ({datetime.now():%Y-%m-%d %H:%M}). Don't edit.",
+             f"# League names you can put in {config_name} `league` (or \"auto\" = current softcore",
+             "# trade league). current = poe.ninja has prices, no_prices = listed but not priced yet,",
+             "# old = finished leagues.", ""]
+    for key, group in groups:
+        lines.append(f"{key} = [" + "".join(f"\n  {json.dumps(n, ensure_ascii=False)}," for n in group)
+                     + ("\n]" if group else "]"))
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
 def detect_league(cfg, args):
     if args.league:
         return args.league
+    try:
+        data = fetch_json(f"{NINJA}/data/index-state", ROOT / "cache" / "index-state.json", 60, args.refresh)
+    except OSError:
+        if cfg["league"] != "auto":
+            return cfg["league"]
+        raise
+    write_league_list(data, ROOT / "leagues.toml", "config.toml")
     if cfg["league"] != "auto":
         return cfg["league"]
-    data = fetch_json(f"{NINJA}/data/index-state", ROOT / "cache" / "index-state.json", 60, args.refresh)
     for lg in data["economyLeagues"]:
         name = lg["name"]
         if name in ("Standard", "Hardcore") or "Hardcore" in name or "SSF" in name or "Ruthless" in name:
@@ -136,17 +161,32 @@ def detect_league(cfg, args):
     return "Standard"
 
 
+def fetch_feed(url, cache_file, age, refresh, label):
+    """fetch_json, but a feed poe.ninja dropped (HTTP 4xx, e.g. a category removed by a patch,
+    like Scarab in the 2026-11-13 patch) -> warning + empty feed {} instead of a crashed build. Every reader
+    uses .get("lines", []), so the category just prices nothing. Network down still raises."""
+    try:
+        return fetch_json(url, cache_file, age, refresh)
+    except urllib.error.HTTPError as e:
+        if not 400 <= e.code < 500:
+            raise
+        print(f"WARNING: poe.ninja feed {label} gone (HTTP {e.code}): priced as empty. "
+              "If the category was removed from the game, drop it from build_filter.py",
+              file=sys.stderr)
+        return {}
+
+
 def fetch_all(league, cfg, refresh):
     cache = ROOT / "cache" / league
     age = cfg["cache_minutes"]
     q = lambda t: urllib.parse.urlencode({"league": league, "type": t})
     out = {"exchange": {}, "stash": {}}
     for t in EXCHANGE_TYPES:
-        out["exchange"][t] = fetch_json(f"{NINJA}/economy/exchange/current/overview?{q(t)}",
-                                        cache / f"ex_{t}.json", age, refresh)
+        out["exchange"][t] = fetch_feed(f"{NINJA}/economy/exchange/current/overview?{q(t)}",
+                                        cache / f"ex_{t}.json", age, refresh, f"exchange {t}")
     for t in STASH_TYPES:
-        out["stash"][t] = fetch_json(f"{NINJA}/economy/stash/current/item/overview?{q(t)}",
-                                     cache / f"st_{t}.json", age, refresh)
+        out["stash"][t] = fetch_feed(f"{NINJA}/economy/stash/current/item/overview?{q(t)}",
+                                     cache / f"st_{t}.json", age, refresh, f"stash {t}")
     wiki = fetch_wiki_uniques(cfg, refresh)
     out["nomap"] = non_map_drops(wiki, cfg)
     out["wiki_bases"] = wiki_unique_bases(wiki)
@@ -191,6 +231,11 @@ def check_ninja_categories(refresh):
     if new:
         print(f"WARNING: poe.ninja categories not handled by this filter: {', '.join(new)}. "
               "Add each to EXCHANGE/STASH_STACKABLE/UNIQUE/BASE/CHECK/SKIPPED_TYPES in build_filter.py",
+              file=sys.stderr)
+    gone = sorted(set(NINJA_TYPES) - set(types))
+    if gone:
+        print(f"WARNING: categories no longer on poe.ninja: {', '.join(gone)}. "
+              "Removed from the game? Drop them from build_filter.py (see docs/ai/RECIPES.md)",
               file=sys.stderr)
 
 
@@ -648,9 +693,8 @@ def price_unique_bases(data, cfg, tiers, divine_chaos, ev_detail=None, vendor=No
             continue
         best = best_by_base.get(base, (0, ""))
         tier = tiers.of(priced_by_base[base])  # base_price: cheapest or priciest confident unique
-        # known >= top tier stays a tink; only cheaper bases with a big unique go "variable"
-        if best[0] >= jackpot and tier != tiers.names[0]:
-            tier = "variable"
+        if best[0] >= jackpot:
+            tier = jackpot_tier(tiers, tier, lambda t: not off(t))
         if off(tier):
             tier = "hide"
         if hidden(cfg, tier) and best[0] >= never_hide_floor(cfg, jackpot):
@@ -757,8 +801,8 @@ def price_foulborn_bases(data, cfg, tiers, divine_chaos):
     for base, best in best_by_base.items():
         cheapest = cheap_by_base.get(base)
         tier = tiers.of(cheapest) if cheapest is not None else f["unpriced"]
-        if best[0] >= jackpot and tier != tiers.names[0]:
-            tier = "variable"
+        if best[0] >= jackpot:
+            tier = jackpot_tier(tiers, tier, lambda t: not hidden(cfg, t) and tiers.rank(t) <= min_rank)
         if cheapest is not None and tier != "variable" and tiers.rank(tier) > min_rank:
             tier = "hide"  # a jackpot (variable) is never hidden by min_tier
         if hidden(cfg, tier) and best[0] >= never_hide_floor(cfg, jackpot):
@@ -854,6 +898,16 @@ def block(action, conds, style, comment=""):
 
 def hidden(cfg, tier):
     return tier == "hide" or tier in cfg.get("hide_tiers", [])
+
+
+def jackpot_tier(tiers, tier, shown):
+    """Tier of a base whose best unique is a jackpot. Top stays a tink; a shown price tier that
+    beats blue (high / mid: known cheapest is already worth it) keeps its louder style; anything
+    else (cheaper, hidden, unpriced) -> "variable", so a jackpot is never hidden or downgraded."""
+    if tier == tiers.names[0] or (tier in tiers.names and shown(tier)
+                                  and tiers.rank(tier) < tiers.rank("variable")):
+        return tier
+    return "variable"
 
 
 def style_for(cfg, tier, shape=BASE_SHAPE):
@@ -1247,8 +1301,40 @@ RECIPE_SIZES = {"small": [["Width 2", "Height 2"], ["Width 1", "Height <= 4"]],
                 "large": [["Width 2", "Height 4"]]}
 
 
-def emit_vendor_recipes(cfg, tiers, ubases, fbases, cbases):
-    """[vendor_recipes.<name>]: ingredients shown in the recipe's `tier` style, Diamond icon.
+RECIPE_MAX_QUALITY = 30  # highest item quality recipe_levels looks at (corrupted gems reach 23)
+
+
+def recipe_levels(cfg, tiers, rec, prices, ref_currency=None):
+    """[vendor_recipes.<name>] -> [(tier, extra conds)], best tier first; [] = nothing shown.
+    Fixed `tier`: [(tier, [])]. tier = "price": what one ingredient vendors for = `reward` price
+    x `reward_count`; with `per_quality` scaled by quality / per_quality (one item at
+    `full_quality`+ = the full reward; 0 = off), one "Quality >= N" level per tier. Price only
+    sets how loud: a value in a hidden tier gets the lowest shown tier (an enabled recipe shows
+    every ingredient its `conds` accept, e.g. Quality >= 1: the lower threshold wins). Reward without a
+    confident price: its NeverSink fallback tier's chaos threshold (ref_currency, as
+    stackables), else blue "variable" (quality recipes: full_quality+, else any quality)."""
+    tier = rec["tier"]
+    if tier != "price":
+        return [(tier, [])]
+    per, full = rec.get("per_quality", 0), rec.get("full_quality", 0)
+    price, ref = prices.get(rec["reward"]), (ref_currency or {}).get(rec["reward"])
+    chaos = price[0] if price else cfg["tiers"].get(ref)
+    if chaos is None:
+        return [("variable", [f"Quality >= {full or 1}"] if per else [])]
+    value = chaos * rec.get("reward_count", 1)
+    shown = [n for n in tiers.names if not hidden(cfg, n)]
+    floor = lambda t: t if not hidden(cfg, t) else shown[-1] if shown else "variable"
+    if not per:
+        return [(floor(tiers.of(value)), [])]
+    first = {}  # tier -> lowest quality reaching it
+    for qual in range(1, RECIPE_MAX_QUALITY + 1):
+        first.setdefault(floor(tiers.of(value * max(qual / per, 1 if full and qual >= full else 0))), qual)
+    return [(t, [f"Quality >= {qual}"]) for t, qual in sorted(first.items(), key=lambda kv: tiers.rank(kv[0]))]
+
+
+def emit_vendor_recipes(cfg, tiers, ubases, fbases, cbases, prices=None, ref_currency=None):
+    """[vendor_recipes.<name>]: ingredients shown in the recipe's tier style (recipe_levels:
+    fixed `tier`, or "price" = reward value, per quality level), Diamond icon.
     Ingredients = `bases` (any rarity) or, without bases, every item matching `conds` (+ `rarity`).
     Optional `sizes` (RECIPE_SIZES names, [] = any) and `area_level` ([min, max], [] = any) narrow
     it (one block set per `any` condition x size).
@@ -1259,37 +1345,46 @@ def emit_vendor_recipes(cfg, tiers, ubases, fbases, cbases):
     for name, rec in cfg.get("vendor_recipes", {}).items():
         if not rec.get("enabled") or rec.get("uniques"):  # `uniques`: value floor, unique_vendor_values
             continue
-        tier = rec["tier"]
-        if tier not in tiers.names + ["variable"]:
-            raise ValueError(f"[vendor_recipes.{name}] tier must be a price tier or variable, got {tier!r}")
-        better = lambda b: any(tiers.rank(p.get(b, ("hide",))[0]) < tiers.rank(tier) for p in (ubases, fbases))
-        classes = [rec["class"]] if isinstance(rec.get("class"), str) else rec.get("class")
-        cls = [f"Class == {q(classes)}"] if classes else []
-        style = style_for(cfg, tier, BASE_SHAPE)
-        bases = rec.get("bases")
-        conds = list(rec.get("conds", []))
-        if bases:
-            items, uniques = ["Rarity < Unique", f"BaseType == {q(bases)}"], [b for b in bases if not better(b)]
-        else:
-            items, uniques = [f"Rarity {' '.join(rec['rarity'])}"] if rec.get("rarity") else [], []
-        floor = recipe_floor(cfg, tiers, tier, bases, cbases)
+        if rec["tier"] not in tiers.names + ["variable", "price"]:
+            raise ValueError(f"[vendor_recipes.{name}] tier must be a price tier, variable or price, got {rec['tier']!r}")
+        if rec["tier"] == "price" and not rec.get("reward"):
+            raise ValueError(f"[vendor_recipes.{name}] tier = \"price\" needs `reward`")
         unknown = set(rec.get("sizes", [])) - set(RECIPE_SIZES)
         if unknown:
             raise ValueError(f"[vendor_recipes.{name}] sizes: unknown {sorted(unknown)}, use {list(RECIPE_SIZES)}")
-        sizes = [c for s in rec.get("sizes", []) for c in RECIPE_SIZES[s]] or [[]]
-        area = rec.get("area_level", [])
-        area = [f"AreaLevel >= {area[0]}", f"AreaLevel <= {area[1]}"] if area else []
-        for cond, size in ((c, s) for c in rec.get("any") or [""] for s in sizes):
-            extra = cls + conds + area + size + ([cond] if cond else [])
-            rarity = [c for c in items if c.startswith("Rarity")]  # recipe rarities are all <= Rare
-            for t, fconds, fstyle, label in floor:
-                own = [c for c in fconds if not (rarity and c.startswith("Rarity"))]
-                out += block("Show", extra + rarity + own, fstyle, f"vendor recipe: {name} (worth more: {label})")
-            out += block(action_for(cfg, tier), extra + items, style, f"vendor recipe: {name}")
-            if uniques:
-                out += block(action_for(cfg, tier), extra + ["Rarity Unique", f"BaseType == {q(uniques)}"],
-                             style, f"vendor recipe: {name} (uniques not worth more)")
+        for tier, qual in recipe_levels(cfg, tiers, rec, prices or {}, ref_currency):
+            out += recipe_blocks(cfg, tiers, name, rec, tier, qual, ubases, fbases, cbases)
     return section("Vendor recipes ([vendor_recipes.*], tier = floor)") + out if out else ""
+
+
+def recipe_blocks(cfg, tiers, name, rec, tier, qual, ubases, fbases, cbases):
+    """One recipe level of emit_vendor_recipes: floor copies, the recipe block, its uniques."""
+    out = ""
+    better = lambda b: any(tiers.rank(p.get(b, ("hide",))[0]) < tiers.rank(tier) for p in (ubases, fbases))
+    classes = [rec["class"]] if isinstance(rec.get("class"), str) else rec.get("class")
+    cls = [f"Class == {q(classes)}"] if classes else []
+    style = style_for(cfg, tier, BASE_SHAPE)
+    bases = rec.get("bases")
+    conds = list(rec.get("conds", [])) + qual
+    if bases:
+        items, uniques = ["Rarity < Unique", f"BaseType == {q(bases)}"], [b for b in bases if not better(b)]
+    else:
+        items, uniques = [f"Rarity {' '.join(rec['rarity'])}"] if rec.get("rarity") else [], []
+    floor = recipe_floor(cfg, tiers, tier, bases, cbases)
+    sizes = [c for s in rec.get("sizes", []) for c in RECIPE_SIZES[s]] or [[]]
+    area = rec.get("area_level", [])
+    area = [f"AreaLevel >= {area[0]}", f"AreaLevel <= {area[1]}"] if area else []
+    for cond, size in ((c, s) for c in rec.get("any") or [""] for s in sizes):
+        extra = cls + conds + area + size + ([cond] if cond else [])
+        rarity = [c for c in items if c.startswith("Rarity")]  # recipe rarities are all <= Rare
+        for t, fconds, fstyle, label in floor:
+            own = [c for c in fconds if not (rarity and c.startswith("Rarity"))]
+            out += block("Show", extra + rarity + own, fstyle, f"vendor recipe: {name} (worth more: {label})")
+        out += block(action_for(cfg, tier), extra + items, style, f"vendor recipe: {name}")
+        if uniques:
+            out += block(action_for(cfg, tier), extra + ["Rarity Unique", f"BaseType == {q(uniques)}"],
+                         style, f"vendor recipe: {name} (uniques not worth more)")
+    return out
 
 
 def emit_uniques(cfg, tiers, bases, fbases, linked, map_bases, rescue=None):
@@ -1640,13 +1735,18 @@ def _transform_block(action, conds, style, comment, classes=None, only=None, dro
 MODULES_DIR = ROOT / "rules/modules"
 
 
-def load_module(name):
-    """rules/modules/<name>.filter -> [{action, key, section, conds, style, tags}]. Our own rule
+def load_module(name, directory=MODULES_DIR):
+    """rules/modules/<name>.filter -> parse_module (PoE2: directory rules/modules_poe2)."""
+    return parse_module((directory / f"{name}.filter").read_text(encoding="utf-8"))
+
+
+def parse_module(text):
+    """Module filter text -> [{action, key, section, conds, style, tags}]. Our own rule
     files (first made by tools/import_neversink.py). Block header "Show # <key> [tags]" (tags =
     NeverSink strictness markers "%D3" / "%H2" / "!utility_layer"), section lines
-    "# [NNNN] title"; on/off per key lives in modules.toml."""
+    "# [NNNN] title"; on/off per key lives in modules.toml (PoE2: modules_poe2.toml)."""
     out, section, cur = [], None, None
-    for line in (MODULES_DIR / f"{name}.filter").read_text(encoding="utf-8").splitlines():
+    for line in text.splitlines():
         h = re.match(r"#\s+\[\[?(\d{4})\]\]?", line)
         m = re.match(r"(Show|Hide)\s+#\s*(\S+)(.*)", line)
         if h:
@@ -2104,13 +2204,16 @@ WEAPON_CLASSES = ["Bows", "Claws", "Daggers", "One Hand Axes", "One Hand Maces",
 
 
 def build_magic_weapons(text):
-    """Weapon classes the build module Shows at magic rarity (rf: 2H axes / maces)."""
+    """Classes the build module Shows at magic rarity, kept past hide_magic_after: weapon
+    classes (rf: 2H axes / maces; minion: wands) and any gear class of a Show naming exact
+    BaseTypes (minion: Bone Ring, minion spirit shields)."""
     out = []
     for blk in re.split(r"(?m)^(?=(?:Show|Hide)\b)", text):
         rarity = re.search(r"(?m)^\s*Rarity (.*)$", blk)
         cls = re.search(r"(?m)^\s*Class == (.*)$", blk)
         if blk.startswith("Show") and rarity and cls and ("Magic" in rarity.group(1) or "<= Rare" in rarity.group(1)):
-            out += [c for c in re.findall(r'"([^"]+)"', cls.group(1)) if c in WEAPON_CLASSES and c not in out]
+            ok = NORMAL_HIDE_CLASSES if re.search(r"(?m)^\s*BaseType ==", blk) else WEAPON_CLASSES
+            out += [c for c in re.findall(r'"([^"]+)"', cls.group(1)) if c in ok and c not in out]
     return out
 
 
@@ -2218,6 +2321,15 @@ def emit_leveling(cfg, price_shown=None):
     if lv.get("show_jewellery"):
         out += block("Show", ["Rarity <= Rare", f"AreaLevel <= {area}", 'Class == "Amulets" "Belts" "Rings"'],
                      ["SetFontSize 40"], "jewellery, any rarity (show_jewellery)") + "\n"
+    links_until = lv.get("show_3_links_until")
+    if links_until:
+        links_cls = [f"Class == {q(lv['link_classes'])}"] if lv.get("link_classes") else []
+        out += block("Show", ["Rarity <= Rare", "LinkedSockets >= 3", f"AreaLevel <= {min(links_until, area)}"] + links_cls,
+                     ["SetFontSize 45", "PlayEffect Grey", "MinimapIcon 2 Grey Diamond"],
+                     f"3-links, any base / rarity, until area {links_until} (show_3_links_until)") + "\n"
+    if lv.get("show_jewels"):
+        out += block("Show", ["Rarity <= Rare", f"AreaLevel <= {area}", 'Class == "Abyss Jewels" "Jewels"'],
+                     ["SetFontSize 40"], "jewels, any rarity (show_jewels)") + "\n"
     if lv.get("show_gems"):
         out += block("Show", [f"AreaLevel <= {area}", 'Class == "Skill Gems" "Support Gems"'],
                      ["SetFontSize 40", "SetTextColor cyan"], "skill / support gems (show_gems)") + "\n"
@@ -2253,7 +2365,7 @@ def emit_leveling(cfg, price_shown=None):
     if build:
         # "Show # whites": the white item types the build uses, shown until hide_normal_after
         text = re.sub(r"(?m)^(Show # whites.*)$", lambda m: f"{m.group(1)}\n\tAreaLevel <= {normal_after or 0}", text)
-        out += campaign_only(text, area) + "\n"
+        out += campaign_only(link_classes_only(text, lv.get("link_classes")), area) + "\n"
     if magic_after is not None and kept:
         # kept build weapons: only what the build module Shows (rf: 2H axes until the RF swap)
         out += block("Hide", ["Rarity Magic", f"AreaLevel > {magic_after}", f"AreaLevel <= {area}", f"Class == {q(kept)}"],
@@ -2265,6 +2377,28 @@ def emit_leveling(cfg, price_shown=None):
                      HIDDEN_STYLE, "white gear (build whites / hide_normal_after)") + "\n"
     out += leveling_module_blocks(cfg, price_shown)
     return campaign_icon_sound(out, lv.get("icon_sound", "PlayAlertSound 2 300"))
+
+
+def link_classes_only(text, classes):
+    """[leveling] link_classes: build-module Shows with a LinkedSockets condition only for these
+    classes (their Class list cut to it, or the line added; a block left with none is dropped).
+    Empty / missing = unchanged."""
+    if not classes:
+        return text
+    out = []
+    for blk in re.split(r"(?m)^(?=(?:Show|Hide)\b)", text):
+        if blk.startswith("Show") and re.search(r"(?m)^\s*LinkedSockets\b", blk):
+            cls = re.search(r"(?m)^(\s*)Class == (.*)$", blk)
+            if cls:
+                keep = [c for c in re.findall(r'"([^"]+)"', cls.group(2)) if c in classes]
+                if not keep:
+                    continue
+                blk = blk[:cls.start()] + f"{cls.group(1)}Class == {q(keep)}" + blk[cls.end():]
+            else:
+                head, _, rest = blk.partition("\n")
+                blk = f"{head}\n\tClass == {q(classes)}\n{rest}"
+        out.append(blk)
+    return "".join(out)
 
 
 def leveling_module_blocks(cfg, price_shown=None):
@@ -2282,7 +2416,9 @@ def leveling_module_blocks(cfg, price_shown=None):
         gated = any(int(n) <= area for c in b["conds"] for n in re.findall(r"^AreaLevel <= (\d+)$", c))
         extra[b["key"]] = ([] if gated else [f"AreaLevel <= {area}"]) + (
             [] if any(c.startswith("Rarity") or "Stackable Currency" in c for c in b["conds"]) else ["Rarity <= Rare"])
-    driven = leveling_strictness_block(lv.get("strictness", 2), extra)
+        if lv.get("link_classes") and b["action"] == "Show" and any(c.startswith("LinkedSockets") for c in b["conds"]):
+            extra[b["key"]].append(f"Class == {q(lv['link_classes'])}")  # [leveling] link_classes
+    driven =leveling_strictness_block(lv.get("strictness", 2), extra)
     out = module_blocks(cfg, "leveling", "leveling", sections=[("0000", "3800")], extra_conds=extra, driven=driven)
     for b in load_module("leveling"):
         if b["section"] != "3800":
@@ -2597,7 +2733,7 @@ def build_text(cfg, data, league):
         emit_priced_bases_first(cfg, tiers, cbases),  # priced crafting bases beat the gear_special / crafting Shows only
         emit_gear_special(cfg),  # [0302] influenced, [[0400]] eldritch, [[0500]] exotic bases (after id/exotic info)
         emit_links(cfg),  # [[1400]] 5-links ([1401]); league.filter: after [1300], before [1500] bases
-        emit_vendor_recipes(cfg, tiers, ubases, fbases, cbases),
+        emit_vendor_recipes(cfg, tiers, ubases, fbases, cbases, prices, ref_currency),
         emit_gem_fallback(cfg, gems),  # after the gemcutter floor; explicit hides before blue
         emit_cluster_prices(cfg, tiers, clusters),
         emit_leveling(cfg, leveling_price_shown(cfg, tiers, prices)),  # price_shown: [[3800]] price first

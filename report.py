@@ -222,6 +222,8 @@ def vendor_recipes(cfg, blocks, data=None):
         items = []
         classes = [rec["class"]] if isinstance(rec.get("class"), str) else rec.get("class") or [None]
         sample = recipe_sample(rec.get("conds", []))
+        if rec.get("per_quality"):  # tier = "price" quality recipe: best quality below full_quality
+            sample.setdefault("quality", rec["full_quality"] - 1 if rec.get("full_quality") else 20)
         for cond in rec.get("any") or [""]:
             flag = cond.split()[0] if cond else ""
             for rarity in rec.get("rarity") or ("Normal", "Magic", "Rare", "Unique"):
@@ -236,7 +238,7 @@ def vendor_recipes(cfg, blocks, data=None):
                                   "rule": f"{b.action} # {b.comment}" if b else "(no rule matched: shown)",
                                   "line": b.line_no if b else 0})
         out.append({"key": key, "name": key.replace("_", " ").title(), "on": bool(rec.get("enabled")),
-                    "tier": rec.get("tier"), "note": rec.get("note", ""),
+                    "tier": f"by price of {rec['reward']}" if rec.get("tier") == "price" else rec.get("tier"), "note": rec.get("note", ""),
                     "conds": rec.get("any") or [], "needs": rec.get("conds", []),
                     "rarity": [r.lower() for r in rec.get("rarity") or ("Normal", "Magic", "Rare", "Unique")],
                     "items": items})

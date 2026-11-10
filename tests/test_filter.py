@@ -230,6 +230,9 @@ class Synthetic(unittest.TestCase):
     def test_report_vendor_recipes(self):
         for rec in self.cfg["vendor_recipes"].values():
             rec["enabled"] = True
+        for name, chaos in [("Chromatic Orb", 1), ("Jeweller's Orb", 0.5), ("Gemcutter's Prism", 8),
+                            ("Glassblower's Bauble", 2)]:  # tier = "price" recipes: all shown
+            add_exchange(self.data, "Currency", name, chaos)
         blocks, _ = self.build()
         recipe = next(v for v in vendor_recipes(self.cfg, blocks) if v["key"] == "grasping_mail")
         self.assertTrue(recipe["on"])
@@ -432,6 +435,10 @@ class Synthetic(unittest.TestCase):
         recipes = {"chromatic": rgb, "jeweller": six, "gemcutter": gem, "glassblower": flask}
         for key in recipes:
             self.cfg["vendor_recipes"][key]["enabled"] = True
+        # tier = "price": 1c chrom, 7 x 0.5c jewellers, 7/40 x 8c prism, 20/40 x 2c bauble -> low
+        for name, chaos in [("Chromatic Orb", 1), ("Jeweller's Orb", 0.5), ("Gemcutter's Prism", 8),
+                            ("Glassblower's Bauble", 2)]:
+            add_exchange(self.data, "Currency", name, chaos)
         blocks, _ = self.build()
         for key, item in recipes.items():
             block, style = fs.evaluate(blocks, item)
@@ -439,13 +446,58 @@ class Synthetic(unittest.TestCase):
             self.assertTrue(any(l.startswith("MinimapIcon") and l.endswith("Diamond") for l in style), key)
         self.assertNotIn("recipe", fs.evaluate(blocks, gem20)[0].comment)  # own cyan 20% rule
         self.assertIn("MinimapIcon 1 Red Diamond", fs.evaluate(blocks, awakened)[1])
-        self.assertFalse(fs.visible(blocks, flask_low))
+        self.assertEqual(fs.evaluate(blocks, flask_low)[0].comment, "vendor recipe: glassblower")  # brown share: lowest shown
+        self.assertFalse(fs.visible(blocks, dict(flask, quality=0)))
         self.assertFalse(fs.visible(blocks, dict(rgb, socket_group="RGG")))
         for key in recipes:
             self.cfg["vendor_recipes"][key]["enabled"] = False
         blocks, _ = self.build()
         for key, item in recipes.items():
             self.assertFalse(fs.visible(blocks, item), key)
+
+    def test_vendor_recipe_price_tiers(self):
+        """tier = "price": recipe tier = reward value per ingredient (quality share for gems)."""
+        gem = {"class": "Skill Gems", "basetype": "Fireball", "rarity": "Normal"}
+        tier = lambda blocks, item: (lambda b: b.comment if b else None)(fs.evaluate(blocks, item)[0])
+        add_exchange(self.data, "Currency", "Gemcutter's Prism", 40)  # 1% quality = 1c
+        blocks, _ = self.build()
+        text = bf.emit_vendor_recipes(self.cfg, bf.Tiers(self.cfg), {}, {}, [],
+                                      {"Gemcutter's Prism": (40, "Currency")})
+        self.assertIn("Quality >= 1", text)   # 1c low
+        self.assertIn("Quality >= 2", text)   # 2c minor
+        self.assertIn("Quality >= 5", text)   # 5c mid
+        self.assertIn("Quality >= 20", text)  # one 20% gem = whole prism, 40c high
+        for qual in (1, 4, 19):
+            self.assertEqual(tier(blocks, dict(gem, quality=qual)), "vendor recipe: gemcutter", qual)
+        style = lambda qual: fs.evaluate(blocks, dict(gem, quality=qual))[1]
+        self.assertNotEqual(style(1), style(5))
+        self.assertFalse(fs.visible(blocks, dict(gem, quality=0)))
+        # cheap prism: shares in a hidden tier still show (lowest shown tier): the recipe accepts
+        # Quality >= 1, lower threshold wins; Quality 0 not
+        self.data = empty_data()
+        add_exchange(self.data, "Currency", "Gemcutter's Prism", 0.4)
+        blocks, _ = self.build()
+        for qual in (1, 19):
+            self.assertEqual(tier(blocks, dict(gem, quality=qual)), "vendor recipe: gemcutter", qual)
+        self.assertEqual(style(1), style(19))  # one level: all in the lowest shown tier (low)
+        self.assertEqual(sum("vendor recipe: gemcutter" == b.comment for b in blocks), 1)
+        self.assertFalse(fs.visible(blocks, dict(gem, quality=0)))
+        # chromatic: worthless orb -> no block; no price and no fallback tier -> blue
+        rec = self.cfg["vendor_recipes"]["chromatic"]
+        rec["enabled"] = True
+        rgb = {"class": "Gloves", "basetype": "Rawhide Gloves", "rarity": "Magic", "socket_group": "RGB",
+               "sockets": 3, "width": 2, "height": 2, "area_level": 80}
+        add_exchange(self.data, "Currency", "Chromatic Orb", 0.1)
+        blocks, _ = self.build()
+        self.assertEqual(tier(blocks, rgb), "vendor recipe: chromatic")  # cheap orb: still shown
+        self.data = empty_data()
+        self.cfg["fallback_tiers"]["currency"].pop("Chromatic Orb", None)
+        blocks, _ = self.build()
+        b, style = fs.evaluate(blocks, rgb)
+        self.assertEqual(b.comment, "vendor recipe: chromatic")
+        self.assertIn("PlayEffect Blue", style)
+        rec["tier"] = "nope"
+        self.assertRaises(ValueError, self.build)
 
     def test_vendor_recipe_floor_keeps_crafting_base_tier(self):
         # 6-socket Plate Vest: pricey ilvl 86 base keeps its top tier, cheap ilvl 84 one (hidden by
@@ -455,6 +507,7 @@ class Synthetic(unittest.TestCase):
                 {"name": "Plate Vest", "levelRequired": ilvl, "chaosValue": chaos,
                  "listingCount": 69, "count": 10, "itemType": "Body Armour"})
         self.cfg["vendor_recipes"]["jeweller"]["enabled"] = True
+        add_exchange(self.data, "Currency", "Jeweller's Orb", 0.5)  # 7 x 0.5c = low
         blocks, r = self.build()
         vest = {"class": "Body Armours", "basetype": "Plate Vest", "rarity": "Normal", "sockets": 6}
         block, style = fs.evaluate(blocks, dict(vest, ilvl=86))
@@ -1125,14 +1178,18 @@ class Synthetic(unittest.TestCase):
         self.assertTrue(fs.visible(blocks, unid_unique("Titan Greaves", "Boots", foulborn=True)))
 
     def test_foulborn_variants_cheapest_tiers_best_flags(self):
-        # same unique, mutated-mod variants 50c .. 30 div: tier by cheapest, flagged variable
+        # same unique, mutated-mod variants 1c .. 30 div: tier by cheapest (low), flagged variable
         add_foulborn(self.data, "Lion Sword", "Doomsower", "Red Immortal", 30 * 400, listings=3, item_type="Two Handed Sword", t="UniqueWeapon")
-        add_foulborn(self.data, "Lion Sword", "Doomsower", "Other", 50, listings=3, item_type="Two Handed Sword", t="UniqueWeapon")
+        add_foulborn(self.data, "Lion Sword", "Doomsower", "Other", 1, listings=3, item_type="Two Handed Sword", t="UniqueWeapon")
         _, r = self.build()
         tier, cheapest, best, *_ = r["fbases"]["Lion Sword"]
-        self.assertEqual(cheapest, 50)  # 3+3 listings summed >= min_listings
+        self.assertEqual(cheapest, 1)  # 3+3 listings summed >= min_listings
         self.assertEqual(best, 30 * 400)
         self.assertEqual(tier, "variable")
+        # cheapest already mid (ranks above variable): keeps its louder mid tier
+        self.data["stash"]["UniqueWeapon"]["lines"][-1]["chaosValue"] = self.cfg["tiers"]["mid"] * 1.5
+        _, r = self.build()
+        self.assertEqual(r["fbases"]["Lion Sword"][0], "mid")
 
     def test_foulborn_does_not_raise_normal_tier(self):
         add_unique(self.data, "Leather Belt", "Junk", 1)
@@ -1168,6 +1225,30 @@ class Synthetic(unittest.TestCase):
         blocks, r = self.build()
         self.assertEqual(r["fbases"]["Cutlass"][0], "variable")
         self.assertTrue(fs.visible(blocks, unid_unique("Cutlass", "One Hand Swords", foulborn=True)))
+
+    def test_jackpot_keeps_better_tier_than_variable(self):
+        # cheapest unique on the base just under top (high), best a jackpot: the jackpot must
+        # not drop it to blue variable (ranks below high); stays high. Normal + Foulborn.
+        high = self.cfg["tiers"]["high"]
+        sword = dict(item_type="Two Handed Sword", t="UniqueWeapon")
+        add_foulborn(self.data, "Lion Sword", "Doomsower", "Junk", high * 1.5, **sword)
+        add_foulborn(self.data, "Lion Sword", "Doomsower", "Chase", 76000, **sword)
+        add_unique(self.data, "Lion Sword", "Mid One", high * 1.5, **sword)
+        add_unique(self.data, "Lion Sword", "Chase One", 76000, **sword)
+        blocks, r = self.build()
+        self.assertEqual(r["fbases"]["Lion Sword"][0], "high")
+        self.assertEqual(r["ubases"]["Lion Sword"][0], "high")
+        b, _ = fs.evaluate(blocks, unid_unique("Lion Sword", "Two Hand Swords", foulborn=True))
+        self.assertEqual(b.comment, "foulborn high")
+        b, _ = fs.evaluate(blocks, unid_unique("Lion Sword", "Two Hand Swords"))
+        self.assertEqual(b.comment, "uniques high")
+        # tier hidden by config -> jackpot still blue, never hidden
+        self.cfg["hide_tiers"] = self.cfg["hide_tiers"] + ["high"]
+        blocks, r = self.build()
+        self.assertEqual(r["fbases"]["Lion Sword"][0], "variable")
+        self.assertEqual(r["ubases"]["Lion Sword"][0], "variable")
+        self.assertTrue(fs.visible(blocks, unid_unique("Lion Sword", "Two Hand Swords", foulborn=True)))
+        self.assertTrue(fs.visible(blocks, unid_unique("Lion Sword", "Two Hand Swords")))
 
     def test_foulborn_content_unique_follows_module(self):
         # Severed in Sleep = Breach-boss restricted. Breach module on: its Foulborn is priced
@@ -1537,6 +1618,32 @@ class Synthetic(unittest.TestCase):
         self.assertNotIn("House of Mirrors", r["prices"])
         self.assertNotIn("The Immortal", r["prices"])
 
+    def test_removed_category_feed_builds(self):
+        # Patch removes a category (Scarab, 2026-11-13 patch): poe.ninja feed gone -> {} from fetch_feed.
+        # Build must still work, other stackables still priced.
+        self.data["exchange"]["Scarab"] = {}
+        add_exchange(self.data, "Currency", "Chaos Orb", 1)
+        _, r = self.build()
+        self.assertIn("Chaos Orb", r["prices"])
+
+    def test_fetch_feed_gone_is_empty_not_fatal(self):
+        import io
+        import urllib.error
+        from contextlib import redirect_stderr
+        from unittest import mock
+
+        def gone(*_a, **_k):
+            raise urllib.error.HTTPError("u", 404, "Not Found", None, None)
+
+        def down(*_a, **_k):
+            raise urllib.error.HTTPError("u", 503, "Unavailable", None, None)
+
+        with mock.patch.object(bf, "fetch_json", gone), redirect_stderr(io.StringIO()) as err:
+            self.assertEqual(bf.fetch_feed("u", None, 0, False, "exchange Scarab"), {})
+        self.assertIn("exchange Scarab", err.getvalue())
+        with mock.patch.object(bf, "fetch_json", down), self.assertRaises(urllib.error.HTTPError):
+            bf.fetch_feed("u", None, 0, False, "exchange Scarab")
+
     def test_generic_scarab_rewards_are_not_treated_as_exact_items(self):
         rewards = self.cfg["exchange"]["card_rewards"]
         for card in ("Rebirth and Renewal", "The Card Sharp", "The Deal"):
@@ -1595,7 +1702,7 @@ class Synthetic(unittest.TestCase):
         # module leveling: [2802] [[3800]] [[5000]]-[[5405]], no build module / extras in the way
         lv = self.cfg["leveling"]
         lv.update(enabled=True, strictness=2, build="", hide_normal_after=None, hide_magic_after=None,
-                  show_magic_rare_cells=0, show_jewellery=False)
+                  show_magic_rare_cells=0, show_jewellery=False, show_jewels=False)
         toggles = self.cfg["modules"]["leveling"]["blocks"]
         camp = lambda cls, base, rarity="Normal", area=20, **kw: {
             "class": cls, "basetype": base, "rarity": rarity, "ilvl": area, "area_level": area, **kw}
@@ -1747,7 +1854,7 @@ class Synthetic(unittest.TestCase):
             ({"class": "Gloves", "basetype": "Iron Gauntlets", "rarity": "Normal", "armour": 10, "area_level": 2}, True),
             ({"class": "Gloves", "basetype": "Iron Gauntlets", "rarity": "Normal", "armour": 10, "area_level": 3}, False),
             ({"class": "Mana Flasks", "basetype": "Hallowed Mana Flask", "rarity": "Normal", "area_level": 40}, False),
-            ({"class": "Jewels", "basetype": "Cobalt Jewel", "rarity": "Magic"}, False),
+            ({"class": "Jewels", "basetype": "Cobalt Jewel", "rarity": "Magic"}, True),  # show_jewels
             ({"class": "Stackable Currency", "basetype": "Cheap Shard"}, True),
             ({"class": "Stackable Currency", "basetype": "Scroll of Wisdom"}, True),
             ({"class": "Body Armours", "basetype": "Plate Vest", "rarity": "Normal", "armour": 10, "links": 4}, True),
@@ -1774,7 +1881,8 @@ class Synthetic(unittest.TestCase):
         for item, shown in [
             ({"class": "Gloves", "basetype": "Iron Gauntlets", "rarity": "Magic", "armour": 10, "area_level": 7}, True),
             ({"class": "Gloves", "basetype": "Iron Gauntlets", "rarity": "Magic", "armour": 10, "area_level": 8}, False),
-            ({"class": "Body Armours", "basetype": "Plate Vest", "rarity": "Magic", "armour": 10, "links": 4}, False),
+            ({"class": "Body Armours", "basetype": "Plate Vest", "rarity": "Magic", "armour": 10, "links": 4,
+              "area_level": 30}, False),  # after show_3_links_until
             ({"class": "Gloves", "basetype": "Iron Gauntlets", "rarity": "Rare", "armour": 10}, True),
             ({"class": "Amulets", "basetype": "Coral Amulet", "rarity": "Magic"}, True),
             ({"class": "Two Hand Maces", "basetype": "Driftwood Club", "rarity": "Magic"}, True),
@@ -1789,6 +1897,92 @@ class Synthetic(unittest.TestCase):
         self.assertFalse(fs.visible(blocks, {"class": "Rings", "basetype": "Iron Ring", "rarity": "Normal"}))
         self.assertFalse(fs.visible(blocks, {"class": "Stackable Currency", "basetype": "Gold", "stack": 50}))
         self.assertFalse(fs.visible(blocks, {"class": "Stackable Currency", "basetype": "Cheap Shard"}))
+
+    def test_minion_leveling(self):
+        self.cfg["leveling"].update(enabled=True, build="minion", hide_normal_after=2, hide_magic_after=7,
+                                    show_jewellery=False, show_magic_rare_cells=0, keep_build_weapons_magic=True)
+        blocks, _ = self.build()
+        camp = {"area_level": 30, "ilvl": 30}
+        for item, shown in [
+            # minion bases: any rarity, whole campaign, past hide_normal_after / hide_magic_after
+            ({"class": "Wands", "basetype": "Calling Wand", "rarity": "Normal"}, True),
+            ({"class": "Wands", "basetype": "Convening Wand", "rarity": "Magic"}, True),
+            ({"class": "Wands", "basetype": "Convoking Wand", "rarity": "Rare", "area_level": 67}, True),
+            ({"class": "Rings", "basetype": "Bone Ring", "rarity": "Normal"}, True),
+            ({"class": "Rings", "basetype": "Bone Ring", "rarity": "Magic"}, True),
+            ({"class": "Shields", "basetype": "Bone Spirit Shield", "rarity": "Normal", "es": 10}, True),
+            # other wands: magic / rare early only, white until hide_normal_after
+            ({"class": "Wands", "basetype": "Driftwood Wand", "rarity": "Magic", "area_level": 7}, True),
+            ({"class": "Wands", "basetype": "Driftwood Wand", "rarity": "Magic"}, False),
+            ({"class": "Wands", "basetype": "Driftwood Wand", "rarity": "Normal", "area_level": 2}, True),
+            ({"class": "Wands", "basetype": "Driftwood Wand", "rarity": "Normal", "area_level": 3}, False),
+            # armour/ES hybrid only: never pure armour, evasion or pure ES
+            ({"class": "Gloves", "basetype": "Iron Gauntlets", "rarity": "Rare", "armour": 10}, False),
+            ({"class": "Gloves", "basetype": "Wool Gloves", "rarity": "Rare", "es": 10}, False),
+            ({"class": "Gloves", "basetype": "Riveted Gloves", "rarity": "Rare", "armour": 5, "es": 5}, True),
+            ({"class": "Gloves", "basetype": "Rawhide Gloves", "rarity": "Rare", "evasion": 10}, False),
+            ({"class": "Gloves", "basetype": "Fishscale Gauntlets", "rarity": "Rare", "armour": 5, "evasion": 5}, False),
+            ({"class": "Shields", "basetype": "Goathide Buckler", "rarity": "Rare", "evasion": 10}, False),
+            ({"class": "Shields", "basetype": "Splintered Tower Shield", "rarity": "Rare", "armour": 10}, False),
+            ({"class": "Shields", "basetype": "Splintered Tower Shield", "rarity": "Normal", "armour": 10, "area_level": 2}, True),
+            # pure armour only before that slot's first armour/ES base can drop (gloves / shields 7, helmets / boots 5)
+            ({"class": "Gloves", "basetype": "Iron Gauntlets", "rarity": "Rare", "armour": 10, "area_level": 6}, True),
+            ({"class": "Helmets", "basetype": "Iron Hat", "rarity": "Rare", "armour": 10, "area_level": 4}, True),
+            ({"class": "Helmets", "basetype": "Iron Hat", "rarity": "Rare", "armour": 10, "area_level": 5}, False),
+            ({"class": "Body Armours", "basetype": "Plate Vest", "rarity": "Rare", "armour": 10, "area_level": 2}, False),
+            ({"class": "Shields", "basetype": "Plank Kite Shield", "rarity": "Rare", "armour": 5, "es": 5}, True),
+            ({"class": "Shields", "basetype": "Plank Kite Shield", "rarity": "Normal", "armour": 5, "es": 5, "area_level": 2}, True),
+            # wands only
+            ({"class": "Two Hand Axes", "basetype": "Stone Axe", "rarity": "Rare"}, False),
+            ({"class": "Sceptres", "basetype": "Driftwood Sceptre", "rarity": "Rare"}, False),
+            ({"class": "Body Armours", "basetype": "Chainmail Vest", "rarity": "Normal", "armour": 5, "es": 5, "links": 4,
+              "socket_group": "BBBB"}, True),
+            ({"class": "Body Armours", "basetype": "Simple Robe", "rarity": "Normal", "es": 10, "links": 4,
+              "socket_group": "BBBB"}, False),
+            ({"class": "Boots", "basetype": "Wool Shoes", "rarity": "Unique", "evasion": 10}, True),  # Wanderlust
+            # early 3-links: any base, any rarity incl. white, until area 24
+            ({"class": "Gloves", "basetype": "Rawhide Gloves", "rarity": "Normal", "evasion": 10, "links": 3,
+              "socket_group": "RRG", "area_level": 24}, True),
+            ({"class": "Body Armours", "basetype": "Simple Robe", "rarity": "Magic", "es": 10, "links": 3,
+              "socket_group": "GGG", "area_level": 10}, True),
+            # link_classes (default: no weapons, no boots): links don't show them
+            ({"class": "Two Hand Axes", "basetype": "Stone Axe", "rarity": "Rare", "links": 3,
+              "socket_group": "RRR", "area_level": 10}, False),
+            ({"class": "Boots", "basetype": "Iron Greaves", "rarity": "Magic", "armour": 10, "links": 3,
+              "socket_group": "BBB", "area_level": 10}, False),
+            ({"class": "Boots", "basetype": "Iron Greaves", "rarity": "Magic", "armour": 10, "links": 4,
+              "socket_group": "BBBB", "area_level": 40}, False),
+            ({"class": "Gloves", "basetype": "Chain Gloves", "rarity": "Normal", "armour": 5, "es": 5, "links": 4,
+              "socket_group": "BBBB", "area_level": 40}, True),
+            ({"class": "Gloves", "basetype": "Rawhide Gloves", "rarity": "Normal", "evasion": 10, "links": 3,
+              "socket_group": "RRG", "area_level": 25}, False),
+        ]:
+            self.assertEqual(fs.visible(blocks, {**camp, **item}), shown, item)
+        # link_classes = []: every class again
+        self.cfg["leveling"]["link_classes"] = []
+        axe3 = {**camp, "class": "Two Hand Axes", "basetype": "Stone Axe", "rarity": "Rare", "links": 3,
+                "socket_group": "RRR", "area_level": 10}
+        self.assertTrue(fs.visible(self.build()[0], axe3))
+        self.cfg["leveling"]["link_classes"] = ["Body Armours", "Gloves", "Helmets", "Shields"]
+        blocks, _ = self.build()
+        # jewels always shown in the campaign (show_jewels); campaign chromatic recipe on
+        rgb = {"class": "Gloves", "basetype": "Rawhide Gloves", "rarity": "Normal", "evasion": 10,
+               "socket_group": "RGB", "sockets": 3, "links": 3}
+        for item, shown in [
+            ({"class": "Jewels", "basetype": "Cobalt Jewel", "rarity": "Magic"}, True),
+            ({"class": "Abyss Jewels", "basetype": "Murderous Eye Jewel", "rarity": "Rare"}, True),
+            (rgb, True),
+        ]:
+            self.assertEqual(fs.visible(blocks, {**camp, **item}), shown, item)
+        self.assertEqual(fs.evaluate(blocks, {**camp, **rgb})[0].comment, "vendor recipe: chromatic_campaign")
+        self.assertFalse(fs.visible(blocks, rgb))  # maps: endgame chromatic (off)
+        self.cfg["leveling"]["show_jewels"] = False
+        self.cfg["vendor_recipes"]["chromatic_campaign"]["enabled"] = False
+        blocks, _ = self.build()
+        self.assertFalse(fs.visible(blocks, {**camp, "class": "Jewels", "basetype": "Cobalt Jewel", "rarity": "Magic"}))
+        self.assertFalse(fs.visible(blocks, {**camp, **rgb}))
+        # maps untouched
+        self.assertFalse(fs.visible(blocks, {"class": "Rings", "basetype": "Bone Ring", "rarity": "Normal"}))
 
     def test_league_start_shows_almost_everything(self):
         add_exchange(self.data, "Currency", "Cheap Shard", 0.01)

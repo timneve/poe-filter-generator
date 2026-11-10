@@ -17,6 +17,10 @@ to the corresponding Path of Exile folder under `Documents\My Games` when that f
 You can run the Python scripts directly instead of the batch files:
 `python build_filter.py --refresh` or `python build_filter_poe2.py --refresh`.
 
+Every build also writes `leagues.toml` (PoE1) / `leagues_poe2.toml` (PoE2): the league names
+poe.ninja knows (current, not priced yet, old). Copy one into `league` in `config.toml` /
+`config_poe2.toml` to pin it; default `"auto"` picks the current softcore trade league.
+
 - `config.toml` - tiers (fractions of a divine: top 1, high 1/4, mid 1/16, minor 1/64, low 1/256,
   brown 1/1024, dust = everything cheaper), variable line (divine), confidence limits, overrides, styles,
   `show_gold` (default off: all gold hidden; on: in maps stacks of at least `gold_min_stack` (10000) shown,
@@ -43,10 +47,20 @@ You can run the Python scripts directly instead of the batch files:
   `grasping_mail` (on, tier variable): Cryonic / Enthalpic / Fugitive / Organic / Synaptic Ring, any
   rarity incl. unique, any state (poewiki: unidentified, corrupted or split are fine; Formless
   Ring is not part of it).
-  Currency recipes as in NeverSink's regular filter (tier low; jeweller off by default): `chromatic` (R-G-B linked,
-  any size; `sizes` = small / medium / large and `area_level` = [68, 83] give FilterBlade's RGB
-  options), `jeweller` (6 sockets), `gemcutter` (gems with any quality; Awakened / 20% gems keep
-  their own rules), `glassblower` (20% quality white flasks). Normal / magic / rare.
+  Currency recipes (chromatic / jeweller off by default) use `tier = "price"` (smart): the tier is
+  what one ingredient vendors for at the current poe.ninja price (`reward` x `reward_count`), so a
+  pricey currency shows louder. Price only sets how loud: an enabled recipe shows every ingredient
+  its `conds` accept (gems / flasks: `Quality >= 1`), at least in the lowest shown tier, so when
+  two rules disagree the lower threshold wins. Quality recipes (`per_quality` = 40) count each
+  item's share: a 10% gem = 1/4 prism, one 20% gem = a whole prism (`full_quality`); better
+  quality, better tier. No confident price: the currency's NeverSink tier, else blue. A fixed tier
+  name still works.
+  `chromatic` (R-G-B linked, any size; `sizes` = small / medium / large and `area_level` = [68, 83]
+  give FilterBlade's RGB options), `jeweller` (6 sockets, 7 orbs), `gemcutter` (gems by quality;
+  priced / Awakened / 20% gems keep their own rules), `glassblower` (white flasks by quality).
+  Normal / magic / rare.
+  `chromatic_campaign` (on, fixed tier low): RGB items in the campaign only (`area_level = [1, 67]`),
+  separate from the endgame `chromatic`; set `enabled = false` to drop it.
   `harbinger` (on): no blocks of its own; Harbinger uniques (Torrent's Reclamation, Yielding
   Mortality, ...) vendor for a Fracturing Shard, so unique pricing / EV counts each at least the
   shard price (Fracturing Orb / 20). Off = poe.ninja price only. Recipes with `uniques` +
@@ -97,15 +111,19 @@ item uses full text size.
 Divine, Mirror and Hinekora's Lock are always top.
 
 A price is trusted only with enough trade volume. Thin-market items never tink: they use
-NeverSink's tier if NeverSink lists them, else show blue.
+the rule modules' (NeverSink) tier if a module lists them, else show blue.
 
 Each build also writes `out/report_poe2.html`: tier values in exalts (plus divine fractions), the
 div:ex and div:chaos rates, and every priced item with its tier and whether the filter shows it.
 
-Everything else (gear, rares, uniques, waystones, campaign, unpriced items) comes from the
-NeverSink/FilterBlade PoE2 export in `reference/league-filterblade-poe2.filter`, appended below the
-price rules with borders and backgrounds removed except on its top tier. To change that part,
-export a new filter from FilterBlade and replace the file.
+Everything else (gear, rares, uniques, waystones, campaign, unpriced items) comes from our PoE2
+rule modules in `rules/modules_poe2/` (misc, exotics, id_mods, rares, crafting, flasks,
+socketables, jewels, gems, maps, currency, uniques, leveling), imported once from your
+FilterBlade PoE2 export and placed below the price rules in NeverSink's order. Turn a whole module
+on / off in `config_poe2.toml` `[modules]`, single rules (FilterBlade's options) in
+`modules_poe2.toml`; its comments mark every rule where your export differs from stock NeverSink.
+No item has a border (opacity 0, the game's default border too) except tink (top tier) items;
+backgrounds only on tink; every shown item at font size 45; beams permanent.
 
 ## League start
 Step by step (recommended): `python tools/league_start.py start` backs up `config.toml` +
@@ -123,7 +141,7 @@ look), 5L / 6L / mirrored / overquality / contracts / Forbidden Tome shown, ever
 base tiers "all" from ilvl 68), every module Show block that is off in FilterBlade on (not animated weapons,
 the empty cluster economy tiers, the crafting matrix) and every module Hide off (not the map tier Hides, which
 progression shows anyway, and the campaign's leveling Hides). Only plain gear in maps and white crafting
-bases the `[leveling] build` never uses (rf: pure ES, unused weapons; unless worth
+bases the `[leveling] build` never uses (rf: pure ES, unused weapons; minion: pure armour, evasion, pure ES, non-wand weapons; unless worth
 `bases.min_tier`: `[leveling] unused_whites_min_tier`, `league_start_hide_unused`) stay hidden.
 Set it back to `false` after a few days.
 
@@ -139,11 +157,18 @@ utility flask alerts on (as before), rare / magic size decorators and spirit shi
 
 Build module: `[leveling] build = "rf"` puts `rules/leveling/rf.filter` first (Pohx RF:
 armour/evasion only, never pure ES, 2H axes until the RF swap, guide uniques, Iron/Ruby
-rings, transmutes, RF-colour links). Other build: copy the file, edit, change `build`.
+rings, transmutes, RF-colour links). `build = "minion"` = `rules/leveling/minion.filter`
+(SRS + zombies: armour/ES hybrid; pure armour only until that slot's first armour/ES base can drop; never evasion or pure ES; wands + shields, other weapons
+hidden; Calling / Convening / Convoking Wand, Bone Ring and minion spirit shields shown at any
+rarity the whole campaign; other magic / rare wands until area 20; blue-gem links). Other
+build: copy a file, edit, change `build`.
 White gear: only the types in the build's `Show # whites` block, up to area
 `hide_normal_after` (no build: all white gear up to there). Magic gear: up to area
 `hide_magic_after` (`keep_build_weapons_magic`: the build's magic weapons still show). Small gold shows in the
-campaign. `show_gems`: all skill / support gems in the campaign. `show_magic_vendor` and
+campaign. `show_gems`: all skill / support gems in the campaign. `show_3_links_until = 24`: every 3-link, any base and rarity, up to that area (beats the
+campaign gear Hides). `link_classes` = the only classes campaign 3L / 4L link rules show
+(default body armour, gloves, helmets, shields: no weapons, no boots; [] = all). `show_jewels`: jewels / abyss jewels of
+any rarity in the campaign (build Hides don't apply). `show_magic_vendor` and
 `show_rare_vendor` independently enable magic and rare vendor items; `show_magic_rare_cells = 4`
 limits them to actual base dimensions (Width x Height), so a small shield can show even when
 other bases in the Shields class are larger. Vendor Shows take priority over campaign gear Hides.
@@ -201,7 +226,8 @@ other bases in the Shields class are larger. Vendor Shows take priority over cam
   Forge swords, Kaom's Heart (no sockets), 6L Tabula, synthesised, 2-4 abyss-socket, Vestigial,
   unique idols, double-corrupted, crucible and 21%+ quality uniques (league.filter: 27%).
 - Jackpot (`jackpot_divine`, top of config): ANY item worth that much is never hidden. Unique,
-  Foulborn (own `[foulborn] jackpot_divine`) and 5L/6L unique bases and crafting base ilvl ranges with a jackpot go variable.
+  Foulborn (own `[foulborn] jackpot_divine`) and 5L/6L unique bases and crafting base ilvl ranges with a jackpot go variable
+  (a unique / Foulborn base whose cheapest is already top / high / mid keeps that louder tier).
   Per unique the cheapest variant is used (Mageblood = 2-flask price).
 - Uniques that can't drop in a normal map (uber/pinnacle bosses, Breachlords, Atziri, Syndicate,
   Delve, Heist + Replicas, Incursion temple, Lab, recipes, upgrades) are skipped from pricing,
@@ -222,7 +248,7 @@ other bases in the Shields class are larger. Vendor Shows take priority over cam
   apply globally to the base and can affect other uniques sharing it. Always-show drops use
   the small, silent `[style.content]` with a slightly translucent label background.
   `league_start = true` enables all content modules.
-- Foulborn uniques: own tiers per base (cheapest variant = tier, best variant >= `foulborn.jackpot_divine` = blue; own, lower jackpot since they only come from Wombgifts), hidden below `foulborn.min_tier`. A Foulborn never takes the normal unique tier of its base.
+- Foulborn uniques: own tiers per base (cheapest variant = tier, best variant >= `foulborn.jackpot_divine` = blue unless the cheapest is already top / high / mid; own, lower jackpot since they only come from Wombgifts), hidden below `foulborn.min_tier`. A Foulborn never takes the normal unique tier of its base.
 - Unknown value (`unknown_as_variable`, toggle): a unique base is only tiered when every unique the
   wiki says can drop on it has a confident poe.ninja price; otherwise blue variable.
 - Wrist saver (`[small_loot]`, toggle): non-stackable loot (uniques, Foulborn, gems, invitations, wombgifts) below tier `min_tier` (default minor = 1/64 div) is hidden. Jackpots still show. Ancient Wombgift is guaranteed at least the minor (white) tier; higher prices use their normal price tier.

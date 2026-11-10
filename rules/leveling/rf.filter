@@ -114,17 +114,10 @@ Hide # rf no mana flasks after RF swap
 	SetFontSize 18
 	DisableDropSound True
 
-# Never looted: jewels, tinctures, chromatic recipe after act 1
-Hide # rf no jewels / tinctures
+# Never looted: tinctures (jewels: [leveling] show_jewels; chromatic: [vendor_recipes.chromatic_campaign])
+Hide # rf no tinctures
 	Rarity Normal Magic
-	Class == "Abyss Jewels" "Jewels" "Tinctures"
-	SetFontSize 18
-	DisableDropSound True
-
-Hide # rf no chromatic recipe
-	Rarity Normal Magic
-	SocketGroup "RGB"
-	AreaLevel >= 17
+	Class == "Tinctures"
 	SetFontSize 18
 	DisableDropSound True
 

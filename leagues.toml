@@ -1,0 +1,18 @@
+# Generated from poe.ninja on every build (2026-11-10 14:49). Don't edit.
+# League names you can put in config.toml `league` (or "auto" = current softcore
+# trade league). current = poe.ninja has prices, no_prices = listed but not priced yet,
+# old = finished leagues.
+
+current = [
+  "Allflame",
+  "Hardcore Allflame",
+  "Standard",
+  "Hardcore",
+]
+no_prices = []
+old = [
+  "Ancestors",
+  "Mirage",
+  "Hardcore Ancestors",
+  "Hardcore Mirage",
+]

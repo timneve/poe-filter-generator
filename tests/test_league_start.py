@@ -46,7 +46,7 @@ def some_data():
     add_unique(data, "Heavy Belt", "Cheap Belt", 1)
     data["stash"]["SkillGem"]["lines"].append({"name": "Fireball", "gemLevel": 1, "gemQuality": 0,
                                                "chaosValue": 1, "listingCount": 50})
-    for name, chaos, item_type in [("Imbued Wand", 2, "Wand"), ("Glorious Plate", 2, "Body Armour"),
+    for name, chaos, item_type in [("Imbued Wand", 2, "Wand"), ("Saintly Chainmail", 2, "Body Armour"),
                                    ("Profane Wand", 500, "Wand")]:
         data["stash"]["BaseType"]["lines"].append({"name": name, "levelRequired": 82, "chaosValue": chaos,
                                                    "listingCount": 50, "count": 10, "itemType": item_type})
@@ -61,9 +61,9 @@ ITEMS = [
     {"class": "Maps", "basetype": "Map (Tier 1)", "rarity": "Normal", "map_tier": 1, "area_level": 83},
     {"class": "Skill Gems", "basetype": "Fireball"},
     {"class": "Skill Gems", "basetype": "Some Gem"},
-    {"class": "Wands", "basetype": "Imbued Wand", "rarity": "Normal", "ilvl": 84, "area_level": 83},
-    {"class": "Body Armours", "basetype": "Glorious Plate", "rarity": "Normal", "ilvl": 84, "area_level": 83,
-     "armour": 500},
+    {"class": "Two Hand Swords", "basetype": "Reaver Sword", "rarity": "Normal", "ilvl": 84, "area_level": 83},
+    {"class": "Body Armours", "basetype": "Saintly Chainmail", "rarity": "Normal", "ilvl": 84, "area_level": 83,
+     "armour": 300, "es": 80},  # armour/ES: used by both builds
 ]
 
 
@@ -167,7 +167,7 @@ class LeagueStartScript(unittest.TestCase):
         blocks = fs.parse(a)
         for item in ITEMS[:7]:
             self.assertTrue(fs.visible(blocks, item), item)
-        self.assertFalse(fs.visible(blocks, ITEMS[7]))               # rf never uses wands: still hidden
+        self.assertFalse(fs.visible(blocks, ITEMS[7]))               # build never uses 2H swords: still hidden
         b, _ = fs.evaluate(blocks, ITEMS[2])
         self.assertEqual(b.comment, "gold: rest (campaign)")         # small gold: shown, small look kept
         self.assertTrue(fs.visible(blocks, ITEMS[8]))

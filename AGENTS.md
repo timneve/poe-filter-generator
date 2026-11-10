@@ -19,22 +19,24 @@ no network in tests. Player-facing behavior: `README.md`. Read only the doc you 
 | `config.toml` | ~1260 | PoE1 settings, heavily commented. Source of truth for tiers/styles/toggles |
 | `modules.toml` | ~670 | per-block on/off of our rule modules (FilterBlade-style options), `[<module>.blocks]` |
 | `rules/modules/*.filter` | - | Our rule modules (imported once from NeverSink, then ours). See `docs/ai/MODULES.md` |
-| `tools/import_neversink.py` | ~160 | Make / refresh a module from `reference/league.filter` sections (owns the NeverSink parser `parse_ref_blocks`) |
+| `tools/import_neversink.py` | ~200 | Make / refresh a module from `reference/league.filter` sections (`--game poe2`: PoE2 export -> `rules/modules_poe2/`; `--stock`: note blocks differing from stock NeverSink) (owns the NeverSink parser `parse_ref_blocks`) |
 | `tools/import_fallback_tiers.py` + `fallback_tiers.toml` | ~90 / ~970 | NeverSink currency / card group per name (fallback when poe.ninja has no confident price); tool makes the TOML once, build reads the TOML |
 | `tools/league_start.py` | ~300 | League start as real values: `start` (backup to `league_start/backup/`, gitignored, then writes `build_filter.league_start_values` into config.toml / modules.toml as text, comments kept), `status`, `restore [KEY]`, `finish`; `--root` for tests. Player guide `docs/LEAGUE_START.md` |
+| `leagues.toml` / `leagues_poe2.toml` | small | Generated every build (`write_league_list`): poe.ninja league names (current / no_prices / old) to pick `league` from. Don't edit |
 | `unique_tiers.toml` | ~200 | unique name -> drop-rarity tier 0..5 (for `[uniques.ev]` drop weights) |
 | `rules/top.filter` / `rules/bottom.filter` | 66 / 22 | Hand-written blocks before / after price rules |
-| `rules/leveling/rf.filter` | 156 | Build module for campaign (`[leveling] build = "rf"`) |
+| `rules/leveling/rf.filter`, `minion.filter` | 156 / 120 | Campaign build modules (`[leveling] build = "rf"` / `"minion"`) |
 | `filtersim.py` | ~140 | Mini filter evaluator (tests + report), PoE1 + PoE2 + every `reference/league.filter` condition. Unknown condition -> raises |
 | `report.py` | ~720 | Writes `out/report.html` (mostly an embedded HTML/JS `PAGE` string) |
 | `assets/chaos.png`, `assets/divine.png` | - | Currency icons, inlined into the report as data URIs by `report.icon()` |
 | `report_poe2.py` | ~130 | Writes `out/report_poe2.html`: tier values in ex, rates, priced items |
-| `build_filter_poe2.py` + `config_poe2.toml` | ~360 / 45 | PoE2, separate: poe.ninja exchange prices tiered in divines, NeverSink PoE2 export appended below |
+| `build_filter_poe2.py` + `config_poe2.toml` | ~400 / 65 | PoE2, separate: poe.ninja exchange prices tiered in divines, then our PoE2 rule modules (`[modules]` on/off) |
+| `rules/modules_poe2/*.filter` + `modules_poe2.toml` | - / ~530 | PoE2 rule modules (imported from `reference/league-filterblade-poe2.filter` by `tools/import_neversink.py --game poe2`, then ours) + per-block toggles |
 | `tests/test_filter.py` | ~2880 | `Synthetic` (fake data) + `LiveCache` (replays `cache/`, every poe.ninja feed) |
-| `tests/test_filter_poe2.py` | ~250 | PoE2 synthetic (fake reference) + `Poe2LiveCache` (replays `cache/poe2/`) |
+| `tests/test_filter_poe2.py` | ~320 | PoE2 synthetic (fake module) + `Poe2Modules` (files == toggles == export) + `Poe2LiveCache` (replays `cache/poe2/`) |
 | `tests/test_league_start.py` | ~200 | `tools/league_start.py` on temp copies: comments kept, start-written files == `league_start = true` (same filter text, Synthetic + live cache), status / restore round trip, double start refused |
 | `tests/test_parity.py` | ~340 | `Parity`: items league.filter shows must be shown by ours or explained (cache + per-block corpus); `NoReference`: build reads no `reference/` |
-| `reference/*.filter` | big | NeverSink/FilterBlade exports. PoE1 build never reads them (only `tools/import_*.py` + tests); PoE2 build appends `league-filterblade-poe2.filter` whole. Don't read whole; grep |
+| `reference/*.filter` | big | NeverSink/FilterBlade exports. Builds never read them (only `tools/import_*.py` + tests); `regular-neversink-poe2.filter` = stock PoE2 (importer `--stock`). Don't read whole; grep |
 | `cache/`, `out/` | gitignored | poe.ninja/wiki JSON cache; generated filter + report. Never edit `out/` |
 
 ## Hard rules

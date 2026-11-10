@@ -11,15 +11,16 @@
 | New toggle section in top rules | wrap in `# BEGIN key` / `# END key`, handle in `hand_rules` (expects exactly one section) |
 | New config key | add commented default in `config.toml`, read with `cfg.get(...)` default, add to `league_start_values` if LS should change it (flag + `tools/league_start.py` both use it), document in `README.md` + `docs/ai/CONFIG.md` |
 | New price source / poe.ninja type | build warns / `LiveCache.test_every_ninja_category_handled` fails on a new poe.ninja category. Put it in exactly one of `EXCHANGE_TYPES` / `STASH_STACKABLE_TYPES` / `UNIQUE_TYPES` / `BASE_TYPES` (priced) / `CHECK_TYPES` (only tested: add a drop model to `LiveCache.ninja_drop`) / `SKIPPED_TYPES` (reason); `SHAPE` entry for stackables; `empty_data()` / `load_cache` pick it up automatically |
+| Category removed by a patch (Scarab, 2026-11-13 patch) | build keeps working: `fetch_feed` turns the 4xx feed into `{}` + warning; `check_ninja_categories` warns "no longer on poe.ninja". Cleanup when confirmed gone: drop from `*_TYPES` + `SHAPE` (+ `report.STACK_CLASS`), `[exchange.card_rewards]` pointing at its items (card falls back to NeverSink tier), synthetic tests using it (`add_exchange(..., "Scarab", ...)`), docs mentioning it; refresh `reference/` + `tools/import_fallback_tiers.py`. Delete stale `cache/<league>/ex_<T>.json` |
 | New cluster enchant | `test_valuable_ninja_items_visible` fails: add poe.ninja text -> in-game node name to `CLUSTER_NODES` (name = RePoE `cluster_jewels.json` "name"; valuable ones must be in NeverSink's reference or the test's `VERIFIED_CLUSTER_NODES`) |
 | New emitted section | write `emit_x(cfg, ...)` returning `section(...) + block(...)...`, insert in `build_text` list at the right priority |
 | New filter condition | add to `filtersim._match` (+ `NUMERIC`/`BOOL` map) first |
-| Campaign build module | copy `rules/leveling/rf.filter`, edit, set `[leveling] build` |
+| Campaign build module | copy `rules/leveling/rf.filter` or `minion.filter`, edit, set `[leveling] build`. A `Show` with `Class ==` + `Rarity <= Rare`/`Magic` keeps those weapon classes past `hide_magic_after` (`build_magic_weapons`) |
 | Add vendor recipe | Check ingredients on poewiki via the API (`api.php?action=parse&page=Vendor recipe&prop=wikitext` with `UA`; the HTML pages are bot-blocked). `[vendor_recipes.<name>]` table in `config.toml` (`enabled`, `tier`, `class`, `bases` or `conds` + `rarity`, optional `any`, `note`); never hand-write recipe blocks in `rules/*.filter` (no floor there). Conditions in `conds` / `any` must be in `filtersim._match`; `report.recipe_sample` must know how to fake them (add a `RECIPE_BASE` example for new classes); `emit_vendor_recipes` + report pick it up automatically. Recipe that turns a unique into a stackable (Harbinger -> Fracturing Shard): `uniques` + `reward` + `reward_count` instead (value floor, no blocks) |
 | Report UI | edit `PAGE` string in `report.py` (PoE2: `report_poe2.py`); data rows from `collect()` |
 | PoE2 change | `build_filter_poe2.py` / `config_poe2.toml` only; no shared code with PoE1 (except `filtersim`, `apply_palette` + `config.toml` `colors`) |
 | PoE2 new poe.ninja feed | add to `[exchange].types` + `SHAPES` (+ `NO_STACK` if it never stacks, `LEVELED_FEEDS` if "(Level N)" means GemLevel) |
-| PoE2 gear/uniques/waystones look | not ours: replace `reference/league-filterblade-poe2.filter` with a new FilterBlade export; new conditions in it -> `filtersim` (`Poe2LiveCache.test_filter_fully_modelled`) |
+| PoE2 gear/uniques/waystones look | our modules `rules/modules_poe2/` (edit freely) + toggles `modules_poe2.toml`. Refresh from a new FilterBlade export: save it as `reference/league-filterblade-poe2.filter`, rerun the per-module `python tools/import_neversink.py --game poe2 --stock reference/regular-neversink-poe2.filter <module> <ranges>` (ranges = `[modules]` comments in `config_poe2.toml`; last = `3300:end`; keeps toggle values, overwrites the .filter); new conditions -> `filtersim` (`Poe2LiveCache.test_filter_fully_modelled`) |
 
 ## Writing tests (`tests/test_filter.py`)
 
@@ -72,12 +73,27 @@ class Synthetic(unittest.TestCase):    # setUp: cfg copy, fixed chaos tiers, EV 
 - Strictness-tagged NeverSink blocks (leveling): the importer keeps `%D<n>` / `%H<n>` / `!utility_layer` after the key in the block header (`load_module` -> `tags`); import them `--config-key ...=config.toml [leveling] strictness` and decide in a `driven` from the tag (`leveling_strictness_block`). FilterBlade exports leveling as Hide / `#Show` (leveling off): never take the export's action as-is for them.
 - New item section: grep BOTH reference filters first; league.filter decides shown / hidden + style, its `#Show` / Hide rules = league-start toggles (`off=`, `unhide=`). Never hand-write a blanket class Hide.
 
+## Patch prep: PoE1 item tiers (2026-11-13 patch, not built yet)
+
+Expected: PoE1 gear gets PoE2-style item tiers (unid "Tier N"). When the patch lands:
+1. New FilterBlade exports into `reference/`; grep for new conditions (`UnidentifiedItemTier`, or a
+   new name). `filtersim` already models `UnidentifiedItemTier` (item field `unid_tier`, PoE2); a new
+   name -> `filtersim._match` first (`LiveCache.test_filter_fully_modelled` / parity tests fail otherwise).
+2. Diff NeverSink's gear blocks (rares hide layer, crafting bases, chancing): PoE2 export uses
+   `UnidentifiedItemTier <= 3` + `Sockets 0` + `Quality 0` hiders at `AreaLevel >= 65` (see
+   `reference/league-filterblade-poe2.filter` "c3.gear.any.hiding").
+3. Hooks for ours: rare hide (`RARE_GROUPS`, `[rares.*]`) = min tier to show per group; crafting bases
+   (`price_crafting_bases`, priced per ilvl range) = only if poe.ninja `BaseType` lines gain a tier field
+   (check `cache/<league>/st_BaseType.json`), else unchanged. New keys: write defaults in `config.toml`
+   (no hidden settings), loosen in `league_start_values`, docs (CONFIG / TIERING / README).
+4. Never hide a tier the price feed can't see: unpriced tier -> blue, not hidden.
+
 ## PoE2 gotchas
 
 - `config_poe2.toml`: plain keys after `[tiers]` land inside that table; top-level keys go above it.
 - poe.ninja `volumePrimaryValue` is in the feed's primary currency; `price_exchange` converts it to divines.
 - PoE2 class names: runes/soul cores/idols = `Augment`, currency = `Stackable Currency`, omens = `Omen`. Our price blocks match BaseType only.
-- PoE2 tests: `tests/test_filter_poe2.py` passes a tiny fake `REFERENCE` to `build_text`; `add_item(data, feed, name, div, volume_div)`.
+- PoE2 tests: `tests/test_filter_poe2.py` passes a tiny fake module (`MODULE`, toggles `MODULE_TOGGLES`, `cfg["modules"] = {"test": True}`) to `build_text`; `add_item(data, feed, name, div, volume_div)`.
 - Colours: only in config `[colors]`. Styles, `rules/*.filter`, code write names (`SetTextColor red`); unknown name -> ValueError. New colour = new `[colors]` entry. Report reads config style lines: resolve names (`report.tier_strip`).
 - `reference/league.filter` = user's FilterBlade customization (Very Strict); `regular-neversink.filter` = stock. The build never reads `reference/` (test `NoReference.test_build_without_reference` guards `Path.read_text/read_bytes/open`): NeverSink blocks become our modules via `tools/import_neversink.py` (owns `parse_ref_blocks`; `apply_palette` snaps their colours to `[colors]`), fallback tiers via `tools/import_fallback_tiers.py`. Commented-out `#Show` blocks = off keys LS turns on.
 - Parity test (`tests/test_parity.py`, needs `cache/<league>/` + `reference/league.filter`): `python -m unittest discover tests -p test_parity.py`; `python tests/test_parity.py` prints gaps grouped, explained-reason counts and the reverse direction (ours shows, league.filter hides) per class. A gap = fix the filter, or add a specific reason: our deciding block comment -> `EXPLAINED` regex, item-level price -> `price_reason`, user decision -> `reason_for`. Corpus items come from block conditions (`items_for_block`): a new league.filter condition needs `filtersim._match` and `items_for_block` support. ~20 s.

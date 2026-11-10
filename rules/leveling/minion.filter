@@ -1,0 +1,136 @@
+# ===== rules/leveling/minion.filter : minion leveling (SRS + zombies), config [leveling] build = "minion" =====
+# Campaign only: build_filter.py adds "AreaLevel <= area_level_max" to every block that
+# has no AreaLevel <= of its own. Runs before the white-gear hide and NeverSink's rules,
+# so a Show here beats both. "Show # whites" (last block) = white item types the build uses.
+# Plan: Summon Raging Spirit + Raise Zombie from the start, wand + shield.
+# Gear: armour/ES hybrid; pure armour only until that slot's first armour/ES base can drop;
+# never evasion, never pure ES.
+# Minion bases (Calling / Convening / Convoking Wand, Bone Ring, minion spirit shields)
+# always shown, any rarity incl. white, the whole campaign.
+
+# Campaign uniques for minion leveling (base shown, any unique on it)
+Show # minion uniques: Goldrim, Wanderlust, Tabula Rasa, Lochtonial Caress, Bones of Ullr, Ashcaller, Midnight Bargain, Sidhebreath, Victario's Influence
+	Rarity Unique
+	BaseType == "Calling Wand" "Iron Gauntlets" "Lacquered Garb" "Leather Cap" "Paua Amulet" "Quartz Wand" "Silk Slippers" "Simple Robe" "Wool Shoes"
+	SetFontSize 45
+	PlayAlertSound 3 300
+	PlayEffect Brown
+	MinimapIcon 1 Brown Star
+
+# Minion wands: only these bases roll minion mods (+minion gem levels, minion damage)
+Show # minion wands
+	Rarity <= Rare
+	Class == "Wands"
+	BaseType == "Calling Wand" "Convening Wand" "Convoking Wand"
+	SetFontSize 45
+	PlayAlertSound 2 300
+	PlayEffect Brown
+	MinimapIcon 1 Brown Diamond
+
+# Bone Ring: minion ring base (with [leveling] show_jewellery on, every ring already shows)
+Show # minion rings
+	Rarity <= Rare
+	Class == "Rings"
+	BaseType == "Bone Ring"
+	SetFontSize 45
+	PlayAlertSound 2 300
+	PlayEffect Brown
+	MinimapIcon 1 Brown Diamond
+
+# Minion spirit shields (minion implicits)
+Show # minion shields
+	Rarity <= Rare
+	Class == "Shields"
+	BaseType == "Bone Spirit Shield" "Fossilised Spirit Shield" "Ivory Spirit Shield"
+	SetFontSize 45
+	PlayEffect Brown
+	MinimapIcon 2 Brown Diamond
+
+# Never evasion (pure or hybrid) armour
+Hide # minion no evasion
+	Rarity <= Rare
+	Class == "Body Armours" "Boots" "Gloves" "Helmets" "Shields"
+	BaseEvasion >= 1
+	SetFontSize 18
+	DisableDropSound True
+
+# Never pure ES (or ward) armour: armour/ES hybrids only (minion spirit shields above still show)
+Hide # minion no pure ES
+	Rarity <= Rare
+	Class == "Body Armours" "Boots" "Gloves" "Helmets" "Shields"
+	BaseArmour <= 0
+	SetFontSize 18
+	DisableDropSound True
+
+# Never pure armour once an armour/ES base of that slot can drop (first armour/ES base drop
+# level: Chainmail Vest 1, Rusted Coif 5, Chain Boots 5, Chain Gloves 7, Plank Kite Shield 7).
+# Before that, pure armour fills the slot.
+Hide # minion no pure armour (body)
+	Rarity <= Rare
+	Class == "Body Armours"
+	BaseEnergyShield <= 0
+	SetFontSize 18
+	DisableDropSound True
+
+Hide # minion no pure armour (helmets, boots)
+	Rarity <= Rare
+	Class == "Boots" "Helmets"
+	BaseEnergyShield <= 0
+	AreaLevel >= 5
+	SetFontSize 18
+	DisableDropSound True
+
+Hide # minion no pure armour (gloves, shields)
+	Rarity <= Rare
+	Class == "Gloves" "Shields"
+	BaseEnergyShield <= 0
+	AreaLevel >= 7
+	SetFontSize 18
+	DisableDropSound True
+
+# Links for SRS / zombies (blue gems): 4L any rarity incl. white (early 3L: [leveling] show_3_links_until)
+Show # minion 4-link blue
+	Rarity <= Rare
+	LinkedSockets >= 4
+	SocketGroup "BBBB" "BBBR" "BBBG"
+	Class == "Body Armours" "Boots" "Gloves" "Helmets"
+	SetFontSize 45
+	PlayAlertSound 2 300
+	PlayEffect Grey
+	MinimapIcon 1 Grey Diamond
+
+Show # minion 4-link armour
+	Rarity <= Rare
+	LinkedSockets >= 4
+	Class == "Body Armours" "Boots" "Gloves" "Helmets" "Shields"
+	SetFontSize 45
+	PlayEffect Grey
+	MinimapIcon 2 Grey Diamond
+
+# Never looted: tinctures (jewels: [leveling] show_jewels; chromatic: [vendor_recipes.chromatic_campaign])
+Hide # minion no tinctures
+	Rarity Normal Magic
+	Class == "Tinctures"
+	SetFontSize 18
+	DisableDropSound True
+
+# Weapons: wands only (shield in the off hand)
+Hide # minion weapons not used
+	Rarity <= Rare
+	Class == "Bows" "Claws" "Daggers" "One Hand Axes" "One Hand Maces" "One Hand Swords" "Quivers" "Rune Daggers" "Sceptres" "Staves" "Thrusting One Hand Swords" "Two Hand Axes" "Two Hand Maces" "Two Hand Swords" "Warstaves"
+	SetFontSize 18
+	DisableDropSound True
+
+# Other wands (no minion mods): magic / rare shown plain until the minion wands drop
+Show # minion other wands early
+	Rarity Magic Rare
+	Class == "Wands"
+	AreaLevel <= 20
+	SetFontSize 40
+
+# White item types the build uses. build_filter.py adds "AreaLevel <= hide_normal_after"
+# (config [leveling]); after it every other white gear piece is hidden in the campaign.
+# Hides above still win (armour/ES hybrid only). Minion bases above show white all campaign.
+Show # whites
+	Rarity Normal
+	Class == "Wands" "Shields" "Body Armours" "Boots" "Gloves" "Helmets"

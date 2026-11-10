@@ -33,7 +33,7 @@ quick one-line switch):
 - `[rares] base_tiers` -> true, `weapons` / `armour` / `jewellery` -> `["all"]`,
   `min_ilvl.*` -> 68: every endgame rare shown
 - `[leveling] unused_whites_min_tier` -> your `bases.min_tier`: white bases your build never
-  uses stay hidden in maps (rf: wands, pure ES, ...)
+  uses stay hidden in maps (rf: wands, pure ES, ...; minion: pure armour, evasion, pure ES, non-wand weapons, ...)
 - `modules.toml`: every `Show` block that is `false` -> `true` (FilterBlade's off rules: lower
   flask / strand / cluster / heist tiers, fractured items, ...), every `Hide` block that is
   `true` -> `false` (abyss / generic / cluster junk, heist t3, talismans, rare hide layer,

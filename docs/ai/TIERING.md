@@ -41,7 +41,8 @@ What counts on a base: uniques that can drop in maps.
 
 ### 1b. Fallback path (EV off, or no drop-anywhere uniques on the base)
 1. `base_price`: "lowest" = cheapest unique, "highest" = priciest unique -> tier.
-2. Best variant (any listing) >= jackpot and tier not top -> **blue**.
+2. Best variant (any listing) >= jackpot -> `jackpot_tier`: top, or a shown tier ranked above
+   blue (high / mid), keeps its tier; anything else -> **blue** (never downgraded or hidden).
 3. Tier off -> **hidden**.
 4. Hidden but best >= never_hide floor -> **blue** (`variable_jackpot_only` = true: floor = jackpot,
    else `never_hide_tier`).
@@ -75,7 +76,7 @@ Filter sees only `Foulborn True` + base. No EV (no drop rates).
 1. Per unique: listings summed over variants >= `[foulborn] min_listings` = confident.
 2. Base price = CHEAPEST variant of any confident Foulborn unique (code ignores `base_price`).
 3. Best variant >= `[foulborn] jackpot_divine` (own, lower than the top-level one: Wombgift-only
-   drops) and not top -> **blue**. Never-hide floor in 5 uses this jackpot too.
+   drops) -> `jackpot_tier` (as 1b.2: top / shown high / mid kept, else **blue**). Never-hide floor in 5 uses this jackpot too.
 4. Below `[foulborn] min_tier` / small_loot -> **hidden**.
 5. Hidden but best >= never_hide floor -> **blue**. `unknown_as_variable` + thin unique -> **blue**.
 6. Boss-only (wiki restricted) Foulborn uniques count for cheapest, never best; base with only those -> hidden.
@@ -132,6 +133,11 @@ the rest by module `jewels` [2805] eco tiers / [2806] random (`[jewels]`, after 
 
 ## 8. Vendor recipes (`[vendor_recipes.*]`)
 Ingredient shown at recipe `tier` = FLOOR: worth more keeps its own tier, cheaper / hidden gets recipe tier.
+`tier = "price"` (`recipe_levels`): recipe tier = reward stackable price x `reward_count` per
+ingredient; quality recipes: x quality / `per_quality` (one item >= `full_quality` = full reward),
+one `Quality >= N` block per reached tier. Value in a hidden tier -> lowest shown tier:
+an enabled recipe shows everything its `conds` accept (gems / flasks `Quality >= 1`); two rules disagree -> lower threshold wins.
+No confident reward price -> reward's NeverSink fallback tier threshold; none -> blue variable.
 `uniques` recipes: vendor value floors unique prices (section 1).
 
 ## 9. Copied NeverSink rules (no poe.ninja price)
@@ -153,12 +159,13 @@ good-mod / fractured / strand / perfect item keeps that look: more info than bas
 before gear_special / crafting, so a priced base keeps its price tier over those. Bases priced below `min_tier` are not decided by price (no base Hide
 exists, league.filter's [1500] economy bases only Show too), so the module Show applies. Uniques
 never match (blocks Normal-Rare; [0901] + `Rarity <= Rare`). Recipes stay `[vendor_recipes.*]`:
-[1401] / [2601] RGB = `chromatic`, 6 sockets = `jeweller`, [[0500]] breach-ring entries =
+[1401] / [2601] RGB = `chromatic` (campaign: `chromatic_campaign`, on), 6 sockets = `jeweller`, [[0500]] breach-ring entries =
 `grasping_mail` (no module block); Stacked Deck = stackable price.
 Maps `[maps]` (module `maps`: special maps always, `progression`, `corrupted_min_tier`).
 Campaign `[leveling]` (module `leveling`, `AreaLevel <= area_level_max` only, gear `Rarity <= Rare`:
 never a unique; after recipes / cluster prices, before stackables / uniques / bases, so campaign
-Shows beat price Hides): build module + `[leveling]` hides first, then [2802] jewels, [[3800]]
+Shows beat price Hides): build module (`rules/leveling/<build>.filter`: rf, minion = minion
+wand / Bone Ring / minion spirit shield bases any rarity, armour/ES hybrid (pure armour only below that slot's first armour/ES drop level), wands only) + `[leveling]` hides first (`show_3_links_until`: any 3L, any base / rarity, `link_classes` only (also build / module link Shows), before the magic hide and build module; `show_jewels`), then [2802] jewels, [[3800]]
 currency styles (visibility stays `campaign_unhide` + price), [[5000]] outdated
 flask Hides, [[5100]]-[[5405]] flasks / rares / normal + magic gear. Most keys follow `strictness`
 (NeverSink tag: `%D<n>` Show while < n, `%H<n>` Hide from n, magic blockers Hide from 3, untagged

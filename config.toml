@@ -92,7 +92,8 @@ jackpot_divine = 13
 
 # ===========================================================================
 
-# "auto" = current challenge league from poe.ninja (softcore, trade)
+# "auto" = current challenge league from poe.ninja (softcore, trade). Or a name from
+# leagues.toml (every build rewrites it from poe.ninja: current / not-yet-priced / old leagues).
 league = "auto"
 
 # Filter file name (without .filter) and where to write it
@@ -513,7 +514,8 @@ t5 = "hide"
 # 1c Belt of the Deceiver = 1c tier, no matter what else rolls on it. base_price = "highest":
 # tiered by its priciest confident unique instead (shows more, clicks more junk).
 # Exception: variable bases (cheap, but some unique on it >= top-level jackpot_divine, e.g.
-# Heavy Belt -> Mageblood) get the blue "variable, worth identifying" style.
+# Heavy Belt -> Mageblood) get the blue "variable, worth identifying" style. A base whose
+# cheapest is already top / high / mid keeps that tier (louder than blue).
 # Safety: a base is NEVER hidden if any unique on it (any listing count) is worth
 # >= never_hide_tier (tier name, default top = 1 div); it goes variable instead
 # (Leather Belt -> Headhunter).
@@ -601,8 +603,15 @@ unknown_chase_tier = 2
 # bases), styled as `tier`. The tier is a FLOOR: an ingredient whose own price tier is better
 # keeps that (a 2 div unique Fugitive Ring stays a tink, a pricey ilvl 86 crafting base or an
 # [overrides] base keeps its tier, a blue variable base stays blue); a cheaper or hidden one
-# gets the recipe tier. tier = a price tier or "variable" (blue: beats every price tier except
-# top, so a tink stays a tink). enabled = false -> recipe off.
+# gets the recipe tier. tier = a price tier, "variable" (blue: beats every price tier except
+# top, so a tink stays a tink) or "price" (smart: the tier of what one ingredient vendors for,
+# below). enabled = false -> recipe off.
+# tier = "price": value = poe.ninja price of `reward` x `reward_count` (a value in a hidden tier
+#   -> lowest shown tier: price only sets how loud, an enabled recipe shows every ingredient its
+#   `conds` accept, so the lower threshold wins; reward unpriced -> its NeverSink tier, else blue).
+#   `per_quality` (0 = off): reward per this much total quality, so a 10% gem = 10/40 prism;
+#   one Quality >= N level per tier (better quality, better tier). `full_quality` (0 = off): one
+#   item at this quality alone gives the full reward (a single 20% gem = 1 prism).
 # Ingredients, one of:
 #   bases = exact BaseTypes, any rarity (normal, magic, rare, unique), optional `class`
 #   conds = filter conditions, all required (no bases = any base), optional `class` (one or a
@@ -642,11 +651,16 @@ reward = "Fracturing Shard"
 reward_count = 1
 note = "sell to vendor -> 1 Fracturing Shard"
 
-# Currency recipes, as in NeverSink's regular filter (low tier: white text + beam, Diamond).
+# Currency recipes, as in NeverSink's regular filter, but tier = "price": shown as loud as the
+# currency they make is worth now (Diamond icon), at least the lowest shown tier.
 [vendor_recipes.chromatic]
 # Chromatic Orb: an item with R-G-B linked sockets, any size.
 enabled = false
-tier = "low"
+tier = "price"
+reward = "Chromatic Orb"
+reward_count = 1
+per_quality = 0
+full_quality = 0
 rarity = ["Normal", "Magic", "Rare"]
 conds = ['SocketGroup "RGB"']
 # FilterBlade's RGB options ([1401] / [2601]): sizes = any of "small" (2x2, 1x1-1x4), "medium"
@@ -656,30 +670,55 @@ sizes = []
 area_level = []
 note = "1 Chromatic Orb each"
 
+[vendor_recipes.chromatic_campaign]
+# Chromatic Orb recipe in the campaign only (area_level = [1, [leveling] area_level_max]);
+# the endgame one is [vendor_recipes.chromatic]. false = no RGB items in the campaign either.
+# Fixed tier: in the campaign a chromatic is worth picking up whatever its price.
+enabled = true
+tier = "low"
+rarity = ["Normal", "Magic", "Rare"]
+conds = ['SocketGroup "RGB"']
+sizes = []
+area_level = [1, 67]
+note = "1 Chromatic Orb each"
+
 [vendor_recipes.jeweller]
 # 7 Jeweller's Orbs: an item with 6 sockets (5/6 links: show_5_links / show_6_links).
 enabled = false
-tier = "low"
+tier = "price"
+reward = "Jeweller's Orb"
+reward_count = 7
+per_quality = 0
+full_quality = 0
 rarity = ["Normal", "Magic", "Rare"]
 conds = ["Sockets >= 6"]
 note = "7 Jeweller's Orbs each"
 
 [vendor_recipes.gemcutter]
-# Gemcutter's Prism: gems with 40% total quality (or one 20%). 20% and Awakened gems keep
-# their own rules (rules/top.filter).
+# Gemcutter's Prism: gems with 40% total quality (or one 20%). Priced gem variants (emit_gems),
+# 20% and Awakened gems (rules/top.filter) keep their own rules. conds Quality >= 1 = every
+# quality gem shows; tier = "price": louder as its share of a prism is worth more.
 enabled = true
-tier = "low"
+tier = "price"
+reward = "Gemcutter's Prism"
+reward_count = 1
+per_quality = 40
+full_quality = 20
 class = ["Skill Gems", "Support Gems"]
-conds = ["Quality >= 20"]
+conds = ["Quality >= 1"]
 note = "40% total quality -> 1 Gemcutter's Prism"
 
 [vendor_recipes.glassblower]
 # Glassblower's Bauble: white flasks with 40% total quality (NeverSink shows the 20% ones).
 enabled = true
-tier = "low"
+tier = "price"
+reward = "Glassblower's Bauble"
+reward_count = 1
+per_quality = 40
+full_quality = 0
 rarity = ["Normal"]
 class = ["Hybrid Flasks", "Life Flasks", "Mana Flasks", "Utility Flasks"]
-conds = ["Quality >= 20"]
+conds = ["Quality >= 1"]
 note = "40% total quality -> 1 Glassblower's Bauble"
 
 # ---------------------------------------------------------------------------
@@ -788,7 +827,8 @@ sources = ["Blight"]   # Blight encounters, including Blight-ravaged maps
 # One Foulborn unique has many mutated-mod variants (Doomsower 120c .. 263k c) and the
 # filter can't see which mods dropped, only "Foulborn True" + BaseType. So per base:
 #   tier     = cheapest variant of any Foulborn unique on it (Goldwyrm 3.5c -> low)
-#   variable = best variant >= [foulborn] jackpot_divine (worth checking the mods)
+#   variable = best variant >= [foulborn] jackpot_divine (worth checking the mods);
+#              a cheapest already top / high / mid keeps that louder tier
 #   hidden   = below min_tier (and below [small_loot] when that's on), unless some
 #              variant >= uniques.never_hide_tier (then variable)
 # min_listings counts all variants of one unique together (variants are thin).
@@ -1053,7 +1093,9 @@ enabled = true
 # strictness = NeverSink levels: 0 soft (everything), 1 regular, 2 semi-strict,
 #              3 strict (+ hides large magic items), 4 very strict
 # build = build module rules/leveling/<build>.filter, checked first ("" = none).
-#         New build: copy rf.filter, edit, set the name here.
+#         "rf" = Pohx RF (armour / evasion, 2H axes then RF). "minion" = SRS + zombies
+#         (armour/ES hybrid; pure armour only until that slot's first armour/ES base drops; never evasion or pure ES; wands + shields; minion wands / Bone Ring / minion
+#         spirit shields always shown, any rarity). New build: copy one, edit, set the name here.
 # hide_normal_after: last area level where white (normal) gear shows. With a build: only the
 #         types in its "Show # whites" block, other white gear is always hidden. No build: all
 #         white gear. Flasks not included. Other build module Shows still win (rf: Iron Ring, 4-links).
@@ -1061,16 +1103,25 @@ enabled = true
 #         (flasks / tinctures stay, jewellery stays with show_jewellery). Vendor items enabled
 #         by show_magic_vendor still show; this hide beats the build module. Leave out = off.
 # keep_build_weapons_magic: true = magic weapons the build module Shows (rf: 2H axes / maces
-#         until the RF swap) still show after hide_magic_after. false = hidden too.
+#         until the RF swap; minion: wands) and exact bases it Shows (minion: Bone Ring, minion
+#         spirit shields) still show after hide_magic_after. false = hidden too.
 # show_jewellery: amulets, rings, belts of any rarity (white too) always shown in the
 #         campaign, before the build module (its Hides don't apply to them).
+# show_jewels: jewels + abyss jewels of any rarity always shown in the campaign, before the
+#         build module (its Hides don't apply to them).
+# show_3_links_until: every 3-link (any base type, any rarity incl. white) shown up to this
+#         area level, before hide_magic_after and the build module (their Hides don't apply).
+#         "" = off.
+# link_classes: the only classes campaign link rules (3L / 4L: show_3_links_until, build module
+#         link Shows, NeverSink leveling link blocks) show; other classes (weapons, boots) with
+#         links fall through to the normal rules. [] = every class.
 # show_gems: all skill + support gems shown in the campaign (maps: only the bottom.filter gem rules).
 # show_magic_vendor / show_rare_vendor: independently show magic / rare vendor items in the
 #         campaign, before hide_magic_after and the build module (their Hides don't apply).
 # show_magic_rare_cells: maximum inventory cells for those items, measured per base with its
 #         Width x Height (for example, small shields show while 2x4 shields do not at 4). 0 = off.
 # unused_whites_min_tier: with a build, white crafting bases in maps that the build module
-#         hides (rf: pure ES, unused weapons, jewels, ...) stay hidden unless priced at this
+#         hides (rf: pure ES, unused weapons, ...) stay hidden unless priced at this
 #         tier or better ("" = off). For a lowered bases.min_tier: other white bases show.
 # league_start_hide_unused: league start (flag or tools/league_start.py) sets
 #         unused_whites_min_tier to your bases.min_tier. false = it doesn't.
@@ -1081,11 +1132,14 @@ enabled = true
 enabled = true
 strictness = 2
 area_level_max = 67
-build = "rf"
+build = "minion"
 hide_normal_after = 2
 hide_magic_after = 7
 keep_build_weapons_magic = true
 show_jewellery = true
+show_jewels = true
+show_3_links_until = 24
+link_classes = ["Body Armours", "Gloves", "Helmets", "Shields"]
 show_gems = true
 show_magic_vendor = true
 show_rare_vendor = true
