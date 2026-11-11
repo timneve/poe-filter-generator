@@ -861,8 +861,9 @@ types = ["Invitation", "Wombgift"]
 # from min_tier up (level 1 gems list at 5-10c that nobody pays). Cheaper gems: hidden by
 # rules/bottom.filter, except rules/top.filter's Awakened / 20% shows and the gemcutter
 # recipe (like NeverSink, which hides plain level 1 gems). league_start: lowest tier.
-# No exact price -> blue (variable): thin listings (any price), and level 21+ / quality 21+
-# gems with no confident price. A confident price below min_tier still hides that variant.
+# No exact price -> blue (variable): thin listings except plain, uncorrupted level 1-19 / 0-quality
+# vendor gems (hidden as worthless), and level 21+ / quality 21+ gems with no confident price.
+# Confident prices below min_tier still hide that variant.
 # A variant's price is capped by a confident better variant (20/0 never above 20/20).
 # A gem poe.ninja doesn't list at all (new exceptional supports): blue. Cheap level 18-20 gems are
 # left to price (FilterBlade shows every one; your choice).

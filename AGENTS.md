@@ -17,6 +17,7 @@ no network in tests. Player-facing behavior: `README.md`. Read only the doc you 
 |---|---|---|
 | `build_filter.py` | ~2700 | PoE1: fetch (every poe.ninja category, `NINJA_TYPES`) -> price -> emit filter text -> write + report. Entry `main()`; `build_text()` = no-network core |
 | `config.toml` | ~1260 | PoE1 settings, heavily commented. Source of truth for tiers/styles/toggles |
+| `config_standard.toml` | ~1260 | Full copy of `config.toml` for Standard league (own `league` / `output_name`); `build_filter.py --config config_standard.toml`. Key added to config.toml -> add here too |
 | `modules.toml` | ~670 | per-block on/off of our rule modules (FilterBlade-style options), `[<module>.blocks]` |
 | `rules/modules/*.filter` | - | Our rule modules (imported once from NeverSink, then ours). See `docs/ai/MODULES.md` |
 | `tools/import_neversink.py` | ~200 | Make / refresh a module from `reference/league.filter` sections (`--game poe2`: PoE2 export -> `rules/modules_poe2/`; `--stock`: note blocks differing from stock NeverSink) (owns the NeverSink parser `parse_ref_blocks`) |
@@ -76,6 +77,7 @@ no network in tests. Player-facing behavior: `README.md`. Read only the doc you 
 python -m unittest discover tests          # all tests (tests/ is not a package)
 python -m unittest discover tests -k ev    # filter by name
 python build_filter.py [--refresh] [--league NAME]
+python build_filter.py --config config_standard.toml   # Standard filter (pricefilter-standard)
 python build_filter_poe2.py [--refresh]
 ```
 `LiveCache` tests need `cache/<league>/` populated (run a build once).

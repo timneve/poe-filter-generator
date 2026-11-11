@@ -114,7 +114,8 @@ Foulborn catch-all (`[foulborn] unpriced`) sits before the hidden normal tiers.
 ## 5. Gems (`price_gems`)
 1. Every poe.ninja variant (level / quality / corrupted) priced; capped by a confident better variant.
 2. >= `[gems] min_tier` -> its tier. Below -> hidden (bottom.filter), except top.filter Awakened / 20%.
-3. Thin listings -> **blue**. Level 21+ / quality 21+ without confident price -> **blue**.
+3. Thin listings -> **blue**, except plain, uncorrupted level 1-19 / 0-quality vendor gems, which
+   are hidden as worthless when thin-listed. Level 21+ / quality 21+ without confident price -> **blue**.
 4. Transfigured gems -> **blue**.
 5. Gem poe.ninja doesn't list at all (new exceptional supports: Item Quantity / Transfusion) -> **blue**
    (`emit_unknown_gems`, last gem rule); listed gems no rule showed -> hidden there.

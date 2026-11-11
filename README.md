@@ -21,6 +21,11 @@ Every build also writes `leagues.toml` (PoE1) / `leagues_poe2.toml` (PoE2): the 
 poe.ninja knows (current, not priced yet, old). Copy one into `league` in `config.toml` /
 `config_poe2.toml` to pin it; default `"auto"` picks the current softcore trade league.
 
+Standard (PoE1): `update_standard.bat` (= `python build_filter.py --config config_standard.toml`) builds a second filter,
+`pricefilter-standard.filter`, priced from Standard. Builds reuse price data for `cache_minutes`
+(60 by default), then fetch fresh data; add `--refresh` to force a download. `config_standard.toml`
+is a full copy of `config.toml` (only `league` / `output_name` differ), so tune it separately.
+
 - `config.toml` - tiers (fractions of a divine: top 1, high 1/4, mid 1/16, minor 1/64, low 1/256,
   brown 1/1024, dust = everything cheaper), variable line (divine), confidence limits, overrides, styles,
   `show_gold` (default off: all gold hidden; on: in maps stacks of at least `gold_min_stack` (10000) shown,
@@ -266,7 +271,8 @@ other bases in the Shields class are larger. Vendor Shows take priority over cam
   20% / Awakened hand rules and the gemcutter recipe (a priced gem keeps its tier), from
   `[gems] min_tier` up (default mid: level 1 gems list at 5-10c nobody pays). Fewer than
   `uniques.min_listings` listings: shown blue, whatever the price (probably valuable, no exact
-  price). A variant is never priced above a confidently priced better one (same corruption,
+  price), except plain, uncorrupted level 1-19 / 0-quality vendor gems, which are hidden as worthless.
+  A variant is never priced above a confidently priced better one (same corruption,
   level and quality at least as high: poe.ninja's 1 div "20" Spectral Helix vs 9c for 20/20 =
   price-fix listings). Level 21+ / quality 21+ gems without a confident price: blue too; a confident price
   below `min_tier` hides that exact variant. Transfigured gems always show (blue, NeverSink

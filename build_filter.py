@@ -1,6 +1,6 @@
 """Build a PoE1 loot filter where visibility is driven by poe.ninja prices.
 
-Usage:  python build_filter.py [--refresh] [--league NAME]
+Usage:  python build_filter.py [--refresh] [--league NAME] [--config config_standard.toml]
 
 Layout of the generated filter:
   defaults                  no borders, gear text colour (Continue blocks)
@@ -187,7 +187,7 @@ def fetch_all(league, cfg, refresh):
     for t in STASH_TYPES:
         out["stash"][t] = fetch_feed(f"{NINJA}/economy/stash/current/item/overview?{q(t)}",
                                      cache / f"st_{t}.json", age, refresh, f"stash {t}")
-    wiki = fetch_wiki_uniques(cfg, refresh)
+    wiki = released_wiki_rows(fetch_wiki_uniques(cfg, refresh))
     out["nomap"] = non_map_drops(wiki, cfg)
     out["wiki_bases"] = wiki_unique_bases(wiki)
     out["content"] = content_bases(wiki, cfg)
@@ -240,28 +240,40 @@ def check_ninja_categories(refresh):
 
 
 def fetch_wiki_uniques(cfg, refresh):
-    """poewiki unique drop info (league independent): [{name, base, restricted, enabled, source}].
-    One row per (name, base): a unique like Precursor's Emblem exists on several bases."""
+    """poewiki unique drop info (league independent): [{name, base, restricted, enabled, source,
+    released}]. One row per (name, base): a unique like Precursor's Emblem exists on several bases.
+    released = release date of the unique's wiki release_version ("" unknown), see released_wiki_rows."""
     cache_file = ROOT / "cache" / "wiki_uniques.json"
     age = cfg["uniques"]["wiki_cache_days"] * 1440
     if not refresh and cache_file.exists() and time.time() - cache_file.stat().st_mtime < age * 60:
         rows = json.loads(cache_file.read_text(encoding="utf-8"))
-        if not rows or "base" in rows[0]:  # older cache has no base: refetch
+        if not rows or "released" in rows[0]:  # older cache has no release date: refetch
             return rows
     rows = []
     try:
+        dates, seen = {}, 0
+        while True:  # > 500 versions: page through
+            qs = urllib.parse.urlencode({"action": "cargoquery", "format": "json", "tables": "versions",
+                                         "limit": 500, "offset": seen, "fields": "version,release_date"})
+            with urllib.request.urlopen(urllib.request.Request(f"{WIKI}?{qs}", headers=UA), timeout=30) as r:
+                page = [x["title"] for x in json.loads(r.read().decode("utf-8"))["cargoquery"]]
+            dates.update({x["version"]: (x["release date"] or "")[:10] for x in page})
+            seen += len(page)
+            if len(page) < 500:
+                break
         while True:
             qs = urllib.parse.urlencode({
                 "action": "cargoquery", "format": "json", "tables": "items", "limit": 500,
                 "offset": len(rows), "where": 'rarity_id="unique"', "group_by": "name,base_item",
-                "fields": "name,base_item,drop_enabled,is_drop_restricted,drop_monsters,drop_areas,drop_text"})
+                "fields": "name,base_item,drop_enabled,is_drop_restricted,drop_monsters,drop_areas,drop_text,release_version"})
             req = urllib.request.Request(f"{WIKI}?{qs}", headers=UA)
             with urllib.request.urlopen(req, timeout=30) as r:
                 page = [x["title"] for x in json.loads(r.read().decode("utf-8"))["cargoquery"]]
             rows += [{"name": html.unescape(x["name"]), "base": html.unescape(x["base item"] or ""),
                       "restricted": x["is drop restricted"] == "1",
                       "enabled": x["drop enabled"] == "1",
-                      "source": html.unescape(" | ".join(x[k] or "" for k in ("drop monsters", "drop areas", "drop text")))}
+                      "source": html.unescape(" | ".join(x[k] or "" for k in ("drop monsters", "drop areas", "drop text"))),
+                      "released": dates.get(x["release version"] or "", "")}
                      for x in page]
             if len(page) < 500:
                 break
@@ -273,6 +285,15 @@ def fetch_wiki_uniques(cfg, refresh):
         return []
     cache_file.write_text(json.dumps(rows), encoding="utf-8")
     return rows
+
+
+def released_wiki_rows(rows, today=None):
+    """Wiki rows whose patch is out: release date before today (UTC). The wiki adds next league's
+    uniques days early; their new base (Putrid Seed on "Mycelium Core", 3.30) is unknown to the
+    game client until launch and one unknown BaseType makes the game reject the whole filter.
+    Launch day itself counts as unreleased (patch time unknown): rebuild the day after."""
+    today = today or time.strftime("%Y-%m-%d", time.gmtime())
+    return [r for r in rows if r.get("released", "") < today]
 
 
 def non_map_drops(rows, cfg):
@@ -1365,7 +1386,7 @@ def recipe_blocks(cfg, tiers, name, rec, tier, qual, ubases, fbases, cbases):
     cls = [f"Class == {q(classes)}"] if classes else []
     style = style_for(cfg, tier, BASE_SHAPE)
     bases = rec.get("bases")
-    conds = list(rec.get("conds", [])) + qual
+    conds = list(dict.fromkeys(list(rec.get("conds", [])) + qual))  # level's Quality >= 1 = conds' one
     if bases:
         items, uniques = ["Rarity < Unique", f"BaseType == {q(bases)}"], [b for b in bases if not better(b)]
     else:
@@ -2027,35 +2048,54 @@ def alt_gem(line):
     return isinstance(kind, dict) and bool(kind.get("discriminator"))
 
 
+def alt_gem_bases(data):
+    """{alternate gem name: plain gem BaseType} from every gem feed with a tradeFilter (SkillGem)."""
+    return {l["name"]: l["tradeFilter"]["query"]["type"]["option"]
+            for t in ("SkillGem", "ImbuedGem") for l in data["stash"].get(t, {}).get("lines", []) if alt_gem(l)}
+
+
+def gem_lines(data, kind):
+    """poe.ninja gem feed `kind` ("SkillGem" / "ImbuedGem") without alternate gems. ImbuedGem
+    lines carry no tradeFilter (Standard), so alternate names (alt_gem_bases) are dropped by
+    name too, else "Bladefall of Trarthus" lands in a BaseType and the game rejects the filter."""
+    alts = alt_gem_bases(data)
+    return [l for l in data["stash"].get(kind, {}).get("lines", []) if l["name"] not in alts]
+
+
 def price_gems(data, cfg, tiers):
     """Gem prices per poe.ninja variant (level / quality / corrupted: "1", "1/20", "20/20",
-    "21/23c", ...), like NeverSink's leveled / quality gem rules, confident only ->
-    {(tier, level, quality, corrupted): {names}}. Thin listings (below uniques.min_listings):
-    blue "variable", whatever the price (probably valuable, no exact price). Price capped by
-    gem_caps (never above a confident better variant); a thin variant capped into a hidden
-    tier hides (confident upper bound). Alternate gems (alt_gem) skipped: their name in BaseType makes the game reject the filter, see emit_gems.
-    Confident price below [gems] min_tier (or [small_loot]'s, gems don't stack) or in a hidden
-    tier: no Show, rules/bottom.filter hides it; a gem_special variant keeps tier "hide" so
-    emit_gem_fallback hides it before its blue catch-all."""
+    "21/23c", ...), like NeverSink's leveled / quality gem rules ->
+    {(tier, level, quality, corrupted): {names}}. Thin listings (below uniques.min_listings)
+    are blue, except plain vendor gems (levels 1-19, 0 quality, uncorrupted; excluding Awakened /
+    exceptional gems), which are hidden when thin and use their price tier when confidently
+    listed. Price is capped by gem_caps (never above a confidently listed better variant); a thin
+    variant capped into a hidden tier hides. Alternate gems (gem_lines) are skipped: their name in
+    BaseType makes the game reject the filter, see emit_gems. A gem_special variant priced below
+    min_tier stays hidden before emit_gem_fallback's blue catch-all."""
     min_rank = min_shown_rank(cfg, tiers, cfg.get("gems", {}).get("min_tier", "minor"))
     min_listings = cfg["uniques"]["min_listings"]
     out = {}
     for t in ("SkillGem", "ImbuedGem"):
-        lines = [l for l in data["stash"].get(t, {}).get("lines", [])
-                 if l.get("listingCount", 0) and not alt_gem(l)]
+        lines = [l for l in gem_lines(data, t) if l.get("listingCount", 0)]
         caps = gem_caps(lines, min_listings)
         for i, line in enumerate(lines):
             cap = caps.get(i, math.inf)
             thin = line["listingCount"] < min_listings
             tier = tiers.of(min(line["chaosValue"], cap))
-            if tiers.rank(tier) > min_rank or hidden(cfg, tier):
+            level, quality = line.get("gemLevel", 1), line.get("gemQuality") or 0
+            ordinary_vendor_gem = (
+                1 <= level < 20 and quality == 0 and not line.get("corrupted")
+                and not line["name"].startswith(("Awakened ", "Enlighten", "Empower", "Enhance"))
+            )
+            if ordinary_vendor_gem and thin:
+                tier = "hide"
+            elif tiers.rank(tier) > min_rank or hidden(cfg, tier):
                 # confident price, or a thin one capped by a confident better variant
                 tier = "hide" if not thin or cap < line["chaosValue"] else "variable"
             elif thin:
                 tier = "variable"
             if hidden(cfg, tier):
                 tier = "hide"
-            level, quality = line.get("gemLevel", 1), line.get("gemQuality") or 0
             if tier != "hide" or gem_special(level, quality):
                 out.setdefault((tier, level, quality, bool(line.get("corrupted"))), set()).add(line["name"])
     return out
@@ -2145,8 +2185,7 @@ def emit_unknown_gems(cfg, data):
     if hidden(cfg, "variable"):
         return ""
     gems = 'Class == "Skill Gems" "Support Gems"'
-    known = sorted({l["name"] for t in ("SkillGem", "ImbuedGem") for l in data["stash"].get(t, {}).get("lines", [])
-                    if not alt_gem(l)})
+    known = sorted({l["name"] for t in ("SkillGem", "ImbuedGem") for l in gem_lines(data, t)})
     if not known:  # no gem feed: nothing to tell unlisted gems apart, bottom.filter decides
         return ""
     out = ""
@@ -2523,8 +2562,9 @@ def campaign_icon_sound(text, sound):
 
 # ---------------------------------------------------------------- main
 
-def load_cfg():
-    cfg = split_tiers(tomllib.loads((ROOT / "config.toml").read_text(encoding="utf-8")))
+def load_cfg(config="config.toml"):
+    """config = settings file (relative to ROOT), e.g. config_standard.toml (build --config)."""
+    cfg = split_tiers(tomllib.loads((ROOT / config).read_text(encoding="utf-8")))
     raw = tomllib.loads((ROOT / "unique_tiers.toml").read_text(encoding="utf-8"))
     cfg["unique_tiers"] = {n: int(t) for t, names in raw.items() for n in names}
     cfg["modules"] = tomllib.loads((ROOT / "modules.toml").read_text(encoding="utf-8"))
@@ -2763,13 +2803,21 @@ def build_text(cfg, data, league):
             "ref_currency": ref_currency, "card_volumes": card_volumes, "clusters": clusters, "gems": gems}
 
 
+def report_name(config):
+    """config.toml -> report.html, config_standard.toml -> report_standard.html."""
+    stem = Path(config).stem
+    return "report.html" if stem == "config" else f"report{stem[len('config'):]}.html"
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--refresh", action="store_true", help="ignore price cache")
     ap.add_argument("--league", help="override league name")
+    ap.add_argument("--config", default="config.toml",
+                    help="settings file, e.g. config_standard.toml (own league / output_name)")
     args = ap.parse_args()
 
-    cfg = load_cfg()
+    cfg = load_cfg(args.config)
     league = detect_league(cfg, args)
     print(f"League: {league}")
     check_ninja_categories(args.refresh)
@@ -2821,7 +2869,7 @@ def main():
     print(f"Foulborn bases: {len(r['fbases'])}  ({count(t for t, *_ in r['fbases'].values())})")
     print(f"Crafting base rules: {len(cbases)} entries")
     print(f"Written: {out_file}")
-    print(f"Report:  {report.write(cfg, data, text, r, league, ROOT / 'out' / 'report.html')}")
+    print(f"Report:  {report.write(cfg, data, text, r, league, ROOT / 'out' / report_name(args.config))}")
 
 
 if __name__ == "__main__":

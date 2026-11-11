@@ -4,14 +4,14 @@
 
 ```
 main()
-  load_cfg()            config.toml -> split_tiers -> + unique_tiers.toml, modules.toml, fallback_tiers.toml -> apply_league_start (league_start_values written into cfg; build_text does it on a copy when a test sets the flag)
+  load_cfg(config)      config.toml (or --config file, e.g. config_standard.toml) -> split_tiers -> + unique_tiers.toml, modules.toml, fallback_tiers.toml -> apply_league_start (league_start_values written into cfg; build_text does it on a copy when a test sets the flag)
   detect_league()       "auto" = first poe.ninja economy league not Standard/HC/SSF/Ruthless; always fetches index-state
                         -> write_league_list -> leagues.toml (PoE2: leagues_poe2.toml); offline + fixed league = no fetch error
   fetch_all()           -> data dict (cached JSON, cache_minutes); each feed via fetch_feed: HTTP 4xx
                         (category removed by a patch) -> warning + {} (prices nothing), not a crash
   build_text(cfg,data)  -> (filter_text, r)    # pure: no network, no writes. Tests call this
   write out/<output_name>.filter, copy to output_dirs, print summary
-  report.write()        -> out/report.html
+  report.write()        -> out/report.html (report_name: config_standard.toml -> report_standard.html)
 ```
 
 ## `data` dict (from `fetch_all`)
@@ -38,7 +38,7 @@ Cache files: `cache/<league>/ex_<T>.json`, `st_<T>.json`, `cache/wiki_uniques.js
    - `price_linked_jackpots` -> `{links: {bases}}` (5L/6L unique >= jackpot)
    - `price_crafting_bases` -> `[(tier, ilvl_min, ilvl_max|None, influence|None, base, chaos)]` (feeds `BASE_TYPES`: BaseType + Flask)
    - `price_clusters` -> `{(tier, base, passives, ilvl_lo, ilvl_hi|None, node|None): chaos}` (ClusterJewel, `CLUSTER_ILVL` buckets, `CLUSTER_NODES` enchant -> node; unknown enchant -> variable, no node cond)
-   - `price_gems` -> `{(tier, level, quality, corrupted): {names}}` (SkillGem/ImbuedGem, every poe.ninja variant, price capped by `gem_caps` (cheapest confident strictly better variant: same corrupted, level >=, quality >=); thin listings -> variable whatever the price unless capped into a hidden tier; `alt_gem` lines skipped; confident below `[gems] min_tier` / `small_loot` / hidden tier dropped, or tier "hide" if `gem_special` (level / quality 21+))
+   - `price_gems` -> `{(tier, level, quality, corrupted): {names}}` (SkillGem/ImbuedGem, every poe.ninja variant, price capped by `gem_caps` (cheapest confident strictly better variant: same corrupted, level >=, quality >=); thin listings -> variable except plain, uncorrupted level 1-19 / 0-quality vendor gems, which are hidden as worthless; `gem_lines` drops alternate gems (`alt_gem_bases` names, also in ImbuedGem which has no tradeFilter); below `[gems] min_tier` / `small_loot` / hidden tier dropped, or tier "hide" if `gem_special` (level / quality 21+))
    - `fallback_tiers(cfg, "cards" / "currency")` (currency, corpses, vials) -> fallback tiers from `fallback_tiers.toml` (made by `tools/import_fallback_tiers.py`; the build does not read `reference/` for them)
 5. Emit, concatenated in this order (first non-`Continue` match wins in game):
 
@@ -111,8 +111,8 @@ Star = uniques + tink, Square = unique maps, Circle = currency/cards, Hexagon = 
 
 ## Function index (grep `def name`)
 
-- Fetch: `fetch_json`, `detect_league`, `write_league_list` (shared with PoE2), `fetch_feed`, `fetch_all`, `ninja_categories`, `check_ninja_categories`, `fetch_wiki_uniques`, `non_map_drops`, `wiki_unique_bases`, `content_bases`, `content_policy`, `no_map_drop`
-- Price: `Tiers`, `exchange_divine`, `apply_divine_tiers`, `price_stackables`, `card_trade_volumes`, `jackpot_chaos`, `never_hide_floor`, `jackpot_tier`, `small_loot`, `min_shown_rank`, `shown_unique_tiers`, `unique_drop_weights`, `unique_vendor_values`, `price_unique_bases`, `price_foulborn_bases`, `price_linked_jackpots`, `price_crafting_bases`, `price_clusters`, `module_cluster_nodes`, `alt_gem`, `price_gems`, `gem_caps`, `gem_special`, `gem_variant_conds`, `fallback_tiers`, `fallback_groups`
+- Fetch: `fetch_json`, `detect_league`, `write_league_list` (shared with PoE2), `fetch_feed`, `fetch_all`, `ninja_categories`, `check_ninja_categories`, `fetch_wiki_uniques`, `released_wiki_rows`, `non_map_drops`, `wiki_unique_bases`, `content_bases`, `content_policy`, `no_map_drop`
+- Price: `Tiers`, `exchange_divine`, `apply_divine_tiers`, `price_stackables`, `card_trade_volumes`, `jackpot_chaos`, `never_hide_floor`, `jackpot_tier`, `small_loot`, `min_shown_rank`, `shown_unique_tiers`, `unique_drop_weights`, `unique_vendor_values`, `price_unique_bases`, `price_foulborn_bases`, `price_linked_jackpots`, `price_crafting_bases`, `price_clusters`, `module_cluster_nodes`, `alt_gem`, `alt_gem_bases`, `gem_lines`, `price_gems`, `gem_caps`, `gem_special`, `gem_variant_conds`, `fallback_tiers`, `fallback_groups`
 - Emit helpers: `q(names)` quoted sorted list, `block(action, conds, style, comment)`, `hidden`, `style_for`, `action_for`, `section`
 - Emit: see table above (incl. `emit_special_maps`, `emit_map_progression`, `emit_rares`, `emit_rare_hide_layer`, `rare_tier_blocks`, `rare_decorator_style`, `emit_cluster_prices`, `emit_jewels`, `emit_heist`, `emit_gold`, `emit_misc`, `emit_flasks`, `emit_exotics`, `emit_id_mods`, `emit_priced_bases_first`, `emit_gear_special`, `emit_perfection` (`overquality_driven`), `emit_links`, `emit_endgame_crafting`, `module_elsewhere` (driven for keys decided by price / a vendor recipe: no block), `emit_gems`, `emit_gem_fallback`, `emit_unknown_gems`, `emit_unique_exceptions`, `fallback_stacks` (stack Shows for unpriced items in a hidden fallback tier, inside `emit_stackables`); `module_blocks` = our `rules/modules` blocks with `modules.toml` toggles (docs/ai/MODULES.md; `extra_conds` = per-key extra condition lines; `driven(block)` = emitter for keys whose toggle is a string, else ValueError; `restyle(key, style)` = per-block style change); `_transform_block` = one module block -> text (`classes` / `drop_classes` / `only` / `unhide`). NeverSink export parsing (`parse_ref_blocks`, `section_heads`) lives in `tools/import_neversink.py`: the build never reads `reference/` (test `NoReference`); leveling helpers `leveling_module_blocks`, `leveling_strictness_block`, `leveling_strictness_action`, `leveling_price_shown`, `leveling_price_first`, `unused_white_hides`, `build_magic_weapons`, `link_classes_only`, `campaign_unhide`, `rarities_of`, `hidden_game_colours`, `maximize_item_sizes`, `campaign_only`, `campaign_icon_sound`
 - Main: `load_cfg`, `split_tiers` (config fractions -> `tiers_divine`, `tiers` at `FALLBACK_DIVINE`), `apply_league_start` (writes `league_start_values` into cfg + `cfg["modules"]` once, `_league_start_applied`), `league_start_values(conf, modules)` -> (config changes, modules changes) as {key path: value} = THE league-start table (also `tools/league_start.py`), `set_path`, `_has`, `hand_rules` (`Hide # gems.show_all` -> Show with `[gems] show_all`), `build_text`, `main`. No emitter reads `league_start` (only the header line)

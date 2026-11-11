@@ -148,6 +148,27 @@ class Synthetic(unittest.TestCase):
         cyclone = {"class": "Skill Gems", "basetype": "Cyclone", "transfigured": True}
         self.assertTrue(fs.visible(fs.parse(text), cyclone))
 
+    def test_imbued_alt_gem_name_not_emitted(self):
+        # ImbuedGem lines have no tradeFilter: alternate name known from SkillGem, dropped by name
+        alt = {"name": "Bladefall of Trarthus", "gemLevel": 1, "chaosValue": 5000, "listingCount": 50,
+               "tradeFilter": {"query": {"type": {"option": "Bladefall", "discriminator": "alt_z"}}}}
+        self.data["stash"]["SkillGem"] = {"lines": [alt]}
+        self.data["stash"]["ImbuedGem"] = {"lines": [
+            {"name": "Bladefall of Trarthus", "variant": "Culling Strike", "chaosValue": 5000,
+             "listingCount": 50, "tradeFilter": None}]}
+        text, _ = bf.build_text(self.cfg, self.data, "Test")
+        self.assertNotIn('"Bladefall of Trarthus"', text)
+
+    def test_unreleased_wiki_uniques_skipped(self):
+        # wiki lists next league's uniques early; their new base is unknown to the client until
+        # launch (Putrid Seed on "Mycelium Core", 3.30) -> game rejects the whole filter
+        rows = [{"name": "Putrid Seed", "released": "2026-11-13"},
+                {"name": "Headhunter", "released": "2015-12-11"}, {"name": "Old", "released": ""}]
+        names = lambda today: [r["name"] for r in bf.released_wiki_rows(rows, today)]
+        self.assertEqual(names("2026-11-11"), ["Headhunter", "Old"])
+        self.assertEqual(names("2026-11-13"), ["Headhunter", "Old"])  # launch day: patch time unknown
+        self.assertEqual(names("2026-11-14"), ["Putrid Seed", "Headhunter", "Old"])
+
     def test_gem_variants_priced_like_neversink(self):
         # level / quality / corrupted variants each priced (NeverSink: GemLevel / Quality rules);
         # a priced 20/20 gem keeps its tier over the cyan 20% rule and the gemcutter recipe floor
@@ -160,13 +181,23 @@ class Synthetic(unittest.TestCase):
             {"name": "Holy Flame Totem", "gemLevel": 20, "chaosValue": 900, "listingCount": 2}]}
         blocks, _ = self.build()
         gem = {"class": "Skill Gems", "basetype": "Holy Flame Totem"}
-        # thin 20/0 price: shown blue, not trusted for its tier
+        # A thin level-20 variant stays blue; plain vendor level 1-19 gems are worthless when thin-listed.
         self.assertIn("gem variable 20 ", fs.evaluate(blocks, dict(gem, gem_level=20))[0].comment)
         self.assertIn("gem top 20/20", fs.evaluate(blocks, dict(gem, gem_level=20, quality=20))[0].comment)
         self.assertIn("gem mid 21/23c", fs.evaluate(blocks, dict(gem, gem_level=21, quality=23, corrupted=True))[0].comment)
         self.assertFalse(fs.visible(blocks, dict(gem, gem_level=1)))  # 1.5c: wrist saver
         # 20/20 price never reaches a corrupted 20/20
         self.assertNotIn("gem top", fs.evaluate(blocks, dict(gem, gem_level=20, quality=20, corrupted=True))[0].comment)
+
+    def test_thin_low_level_vendor_gems_are_hidden(self):
+        self.data["stash"]["SkillGem"] = {"lines": [
+            {"name": "Swordstorm", "gemLevel": 1, "chaosValue": 8, "listingCount": 1},
+            {"name": "Swordstorm", "gemLevel": 19, "chaosValue": 8, "listingCount": 1}]}
+        self.cfg["gems"]["min_tier"] = "mid"
+        blocks, _ = self.build()
+        for level in (1, 19):
+            gem = {"class": "Skill Gems", "basetype": "Swordstorm", "gem_level": level}
+            self.assertFalse(fs.visible(blocks, gem))
 
     def test_gem_price_capped_by_better_variant(self):
         # poe.ninja "20" Spectral Helix at 1 div (price-fix listings) vs 9c for 20/20: a worse
@@ -208,7 +239,7 @@ class Synthetic(unittest.TestCase):
         self.assertIn("gem minor 1", fs.evaluate(blocks, gem)[0].comment)
 
     def test_gem_blue_fallback(self):
-        # probably valuable, no exact price -> blue: thin listings (any price), unlisted 21 /
+        # probably valuable, no exact price -> blue: thin special variants, unlisted 21 /
         # 23% variants. A confident price in a hidden tier still hides its exact variant.
         self.cfg["gems"]["min_tier"] = "mid"
         self.data["stash"]["SkillGem"] = {"lines": [
@@ -2864,14 +2895,16 @@ class Synthetic(unittest.TestCase):
 # ------------------------------------------------------------------ live cache
 
 def latest_cache():
-    dirs = [d for d in (ROOT / "cache").glob("*") if (d / "st_BaseType.json").exists()]
+    """Newest challenge-league cache (Standard skipped: its build is config_standard.toml)."""
+    dirs = [d for d in (ROOT / "cache").glob("*") if (d / "st_BaseType.json").exists()
+            and "standard" not in d.name.lower()]
     return max(dirs, key=lambda d: (d / "st_BaseType.json").stat().st_mtime) if dirs else None
 
 
 def load_cache(d, cfg):
     rd = lambda f: json.loads((d / f).read_text(encoding="utf-8"))
     wiki = ROOT / "cache" / "wiki_uniques.json"
-    rows = json.loads(wiki.read_text(encoding="utf-8")) if wiki.exists() else []
+    rows = bf.released_wiki_rows(json.loads(wiki.read_text(encoding="utf-8")) if wiki.exists() else [])
     return {"exchange": {t: rd(f"ex_{t}.json") for t in bf.EXCHANGE_TYPES},
             "stash": {t: rd(f"st_{t}.json") for t in bf.STASH_TYPES},
             "nomap": bf.non_map_drops(rows, cfg), "wiki_bases": bf.wiki_unique_bases(rows),
@@ -2925,6 +2958,15 @@ class LiveCache(unittest.TestCase):
         # unlinked normal unique on a base the EV hides on purpose (not worth picking up on average)
         v = self.r["ubases"].get(line.get("baseType"))
         return not line.get("links") and not line["name"].startswith("Foulborn ")             and v is not None and v[4] is not None and v[0] == "hide"
+
+    def test_no_alt_gem_basetype(self):
+        # transfigured / Trarthus names are no BaseType: game rejects the whole filter
+        # ("Bladefall of Trarthus" via ImbuedGem, which has no tradeFilter)
+        alts = set(bf.alt_gem_bases(self.data))
+        self.assertTrue(alts)
+        bad = {v for b in self.blocks for key, _, vals, _ in b.conds if key == "BaseType"
+               for v in vals if v in alts}
+        self.assertFalse(bad, f"alternate gem names in BaseType: {sorted(bad)[:20]}")
 
     def test_ev_hidden_bases(self):
         # EV-hidden base: EV really below the shown floor, and not on the hand list
@@ -3101,8 +3143,9 @@ class LiveCache(unittest.TestCase):
         if t in ("SkillGem", "ImbuedGem"):
             # every variant (level / quality / corrupted) can drop: Vaal side areas, strongboxes, rewards
             # alternate gems: BaseType is the plain gem (Cyclone of Tumult -> Cyclone)
-            alt = bf.alt_gem(line)
-            basetype = line["tradeFilter"]["query"]["type"]["option"] if alt else name
+            # ImbuedGem lines have no tradeFilter: alternate name -> plain gem via alt_gem_bases
+            basetype = bf.alt_gem_bases(self.data).get(name, name)
+            alt = basetype != name
             return {"class": "Support Gems" if name.endswith(" Support") else "Skill Gems", "basetype": basetype,
                     "quality": line.get("gemQuality") or 0, "gem_level": line.get("gemLevel", 1),
                     "corrupted": bool(line.get("corrupted")), "transfigured": alt}
@@ -3131,10 +3174,11 @@ class LiveCache(unittest.TestCase):
         for t in bf.BASE_TYPES + bf.CHECK_TYPES:
             lines = self.data["stash"][t]["lines"]
             if t in ("SkillGem", "ImbuedGem"):  # price capped by a confident better variant
-                gems = [l for l in lines if l.get("listingCount", 0) and not bf.alt_gem(l)]
+                alts = bf.alt_gem_bases(self.data)
+                gems = [l for l in lines if l.get("listingCount", 0) and l["name"] not in alts]
                 caps = bf.gem_caps(gems, min_listings)
                 lines = [l for i, l in enumerate(gems) if caps.get(i, math.inf) >= floor] \
-                    + [l for l in lines if l.get("listingCount", 0) and bf.alt_gem(l)]
+                    + [l for l in lines if l.get("listingCount", 0) and l["name"] in alts]
             for line in lines:
                 if line["chaosValue"] < floor or line.get("listingCount", 0) < min_listings:
                     continue
