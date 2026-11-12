@@ -61,6 +61,7 @@ Price-driven systems (poe.ninja tiers) stay; a module only covers what price can
 | `reference_currency_tiers` / `reference_card_tiers` fallbacks, [[3000]] gems, [[3600]]-[[4400]] currency specials, [[4800]] uniques | price fallbacks + `unique_exceptions` | done: `fallback_tiers.toml` (`tools/import_fallback_tiers.py`), coverage below; [4801] / [4803] / [4804] overqual -> module `unique_exceptions` |
 | Parity test: items league.filter shows (filtersim on reference) are shown by ours unless price-hidden | `tests/test_parity.py` | done (summary below) |
 | Build reads no `reference/` (only importer) | cleanup | done (`neversink_blocks` + unused read removed, parser moved to `tools/import_neversink.py`, test `NoReference`) |
+| [0800] unidentified item tier (3.28; PoE1 NeverSink has no export yet) | `unid_tier` | done: generated from the PoE2 [0800] grid by `tools/make_unid_tier.py` (PoE1 rr ranks), test `test_unid_tier_module_matches_poe2_grid`; switch to `import_neversink.py` once NeverSink PoE1 has the section |
 | PoE2: FilterBlade export appended whole | `rules/modules_poe2/` | step 1 done (see PoE2 below) |
 
 ## Price-fallback coverage (league.filter [[3000]], [[3600]]-[[4400]], [[4800]])

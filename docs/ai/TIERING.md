@@ -120,6 +120,7 @@ Foulborn catch-all (`[foulborn] unpriced`) sits before the hidden normal tiers.
 5. Gem poe.ninja doesn't list at all (new exceptional supports: Item Quantity / Transfusion) -> **blue**
    (`emit_unknown_gems`, last gem rule); listed gems no rule showed -> hidden there.
 6. Cheap level 18-20 gems: price decides (user decision; league.filter lt2 / lt3 show every one).
+7. Imbued gems (poe.ninja ImbuedGem, Standard only): can't drop, never fetched (`SKIPPED_TYPES`).
 
 ## 6. Crafting bases (`price_crafting_bases`)
 1. Per exact base + influence + ilvl range. Needs `min_listings` AND `min_samples`.
@@ -212,6 +213,16 @@ jackpot). Maven's invitations, lab / incursion items ([4900]): after uniques; st
 (Maven's chisels / writ) and the unpriced Map Fragments / Misc Map Items blue fallback decide
 first, so `questlike.invitations` only acts on unpriced non-fragment "Maven's" items. [0100]
 6L overrides (`6l.*`): `show_6_links` (top.filter, superset) instead.
+
+## 9b. New league content / unidentified tier (3.28)
+- `[league_mechanic]`: new names / classes without confident price or NeverSink fallback tier ->
+  `tier` (blue) + Moon, never hidden (`emit_league_mechanic`, before the stackable class fallbacks).
+  `Fated True` -> same look before every Hide except top.filter / gems / recipes / id mods / exotics
+  (`emit_fated`): a Fated unique shows blue, not its price tier.
+- `[unid_tier]` (module `unid_tier`, FilterBlade PoE2 [0800] grid 1:1): rare / magic unID gear and
+  jewellery shown by `UnidentifiedItemTier` >= 4 / 3 / 2 x base rank a / b / c (PoE1 NeverSink rare
+  tiers t1 / t2 / t3), any other base at tier >= 5 / 4; each cell a toggle. Shows only, after
+  id_mods and priced-base copies, before recipes / rares. LS: every cell on.
 
 ## 10. Hand rules / toggles
 `rules/top.filter` (5L/6L, mirrored, quest items, Awakened / 20% gems), `rules/bottom.filter` (hide gear,

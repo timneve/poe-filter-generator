@@ -78,15 +78,6 @@ Show # currency->leveling.essences %D5
 	PlayEffect White
 	MinimapIcon 2 Grey Circle
 
-Show # currency->leveling.t1binding %D5
-	Class == "Stackable Currency"
-	BaseType == "Orb of Binding"
-	AreaLevel <= 67
-	SetFontSize 45
-	PlayAlertSound 2 300
-	PlayEffect White
-	MinimapIcon 1 Grey Circle
-
 Show # currency->leveling.t2chance %D4
 	Class == "Stackable Currency"
 	BaseType == "Orb of Chance"

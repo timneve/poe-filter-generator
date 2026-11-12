@@ -17,19 +17,14 @@ sys.path.insert(0, str(ROOT / "tools"))
 import build_filter as bf  # noqa: E402
 import filtersim as fs  # noqa: E402
 import league_start as ls  # noqa: E402
-from test_filter import add_exchange, add_unique, empty_data, latest_cache, load_cache  # noqa: E402
+from test_filter import BASE, load_base_cfg, add_exchange, add_unique, empty_data, latest_cache, load_cache  # noqa: E402
 
 FILES = ("config.toml", "modules.toml")
 
 
 def load_cfg(root):
     """bf.load_cfg with config.toml / modules.toml from root (other files from the repo)."""
-    cfg = bf.split_tiers(tomllib.loads((root / "config.toml").read_text(encoding="utf-8")))
-    raw = tomllib.loads((ROOT / "unique_tiers.toml").read_text(encoding="utf-8"))
-    cfg["unique_tiers"] = {n: int(t) for t, names in raw.items() for n in names}
-    cfg["modules"] = tomllib.loads((root / "modules.toml").read_text(encoding="utf-8"))
-    cfg["fallback_tiers"] = tomllib.loads((ROOT / "fallback_tiers.toml").read_text(encoding="utf-8"))
-    return cfg
+    return load_base_cfg(root)
 
 
 def body(text):
@@ -72,8 +67,8 @@ class LeagueStartScript(unittest.TestCase):
         self.root = Path(tempfile.mkdtemp())
         self.addCleanup(shutil.rmtree, self.root, True)
         for f in FILES:
-            shutil.copy2(ROOT / f, self.root / f)
-        self.orig = {f: (ROOT / f).read_bytes() for f in FILES}
+            shutil.copy2(BASE / f, self.root / f)
+        self.orig = {f: (BASE / f).read_bytes() for f in FILES}
         self.backup = self.root / "league_start" / "backup"
 
     def run_tool(self, *args):
@@ -86,7 +81,7 @@ class LeagueStartScript(unittest.TestCase):
         self.run_tool("start")
         for f in FILES:
             self.assertEqual((self.backup / f).read_bytes(), self.orig[f])
-            old, new = (ROOT / f).read_text(encoding="utf-8"), (self.root / f).read_text(encoding="utf-8")
+            old, new = (BASE / f).read_text(encoding="utf-8"), (self.root / f).read_text(encoding="utf-8")
             comments = lambda t: [l for l in t.splitlines() if l.lstrip().startswith("#") or not l.strip()]
             self.assertEqual(comments(old), comments(new), f)       # every comment / blank line kept
             self.assertEqual(len(old.splitlines()), len(new.splitlines()), f)
@@ -154,7 +149,7 @@ class LeagueStartScript(unittest.TestCase):
     def test_start_equals_league_start_flag(self):
         """Same filter: start-written files (flag off) vs repo files with league_start = true."""
         self.run_tool("start")
-        script, flag = load_cfg(self.root), load_cfg(ROOT)
+        script, flag = load_cfg(self.root), load_cfg(BASE)
         flag["league_start"] = True
         bf.apply_league_start(flag)
         for cfg in (script, flag):  # fake data: no EV drop weights; gold on (gold_min_stack loosened)
@@ -175,7 +170,7 @@ class LeagueStartScript(unittest.TestCase):
     @unittest.skipUnless(latest_cache(), "no cache/ (run build_filter.py once)")
     def test_start_equals_flag_live_cache(self):
         self.run_tool("start")
-        script, flag = load_cfg(self.root), load_cfg(ROOT)
+        script, flag = load_cfg(self.root), load_cfg(BASE)
         flag["league_start"] = True
         bf.apply_league_start(flag)
         a, _ = bf.build_text(script, load_cache(latest_cache(), script), "Live")

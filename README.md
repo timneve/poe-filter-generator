@@ -143,12 +143,23 @@ no hidden tiers, wrist saver off, all unique tiers on, other min tiers at the lo
 unpriced tiers shown, content modules, vendor recipes and rule modules on, every normal map tier and corrupted map
 shown, every gem (`[gems] show_all`), all gold (`show_gold` + `show_small_gold`: small stacks keep their small
 look), 5L / 6L / mirrored / overquality / contracts / Forbidden Tome shown, every endgame rare (`[rares]`
-base tiers "all" from ilvl 68), every module Show block that is off in FilterBlade on (not animated weapons,
+base tiers "all" from ilvl 68), every unidentified item tier cell (`[unid_tier.blocks]`), Fated items, every module Show block that is off in FilterBlade on (not animated weapons,
 the empty cluster economy tiers, the crafting matrix) and every module Hide off (not the map tier Hides, which
 progression shows anyway, and the campaign's leveling Hides). Only plain gear in maps and white crafting
 bases the `[leveling] build` never uses (rf: pure ES, unused weapons; minion: pure armour, evasion, pure ES, non-wand weapons; unless worth
 `bases.min_tier`: `[leveling] unused_whites_min_tier`, `league_start_hide_unused`) stay hidden.
 Set it back to `false` after a few days.
+
+## New league content (3.28 Covens of Umbra)
+Items we can't price yet show blue with a Moon minimap icon, never hidden: the Viscera class, new /
+renamed currency, Threads, Cursed Poppet, Mycelium Core (`[league_mechanic] classes` / `names`), and
+`Fated` items (`[league_mechanic] fated`). Once poe.ninja (or NeverSink's fallback tier) has a price,
+that price decides instead.
+Unidentified gear by its new item tier (`UnidentifiedItemTier`): the same grid as FilterBlade's PoE2
+"Rares: Tier 2+" section, magic and rare, gear and jewellery: TIER 4-5 / 3 / 2 x RANK A / B / C
+(rank = NeverSink's PoE1 rare base tier 1 / 2 / 3) plus "any remaining" tier 5 / 4. Every cell is
+a checkbox in `modules.toml [unid_tier.blocks]` (e.g. `"ut->rare.gear2c" = false`); `[unid_tier]
+enabled` = whole section. Regenerate with `python tools/make_unid_tier.py`.
 
 ## Campaign
 `[leveling]` uses our module `rules/modules/leveling.filter`: NeverSink's leveling rules

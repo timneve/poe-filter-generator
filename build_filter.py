@@ -51,10 +51,11 @@ UNIQUE_TYPES = [
 BASE_TYPES = ["BaseType", "Flask"]
 # Fetched but not priced here: tests/test_filter.py replays their valuable items through the
 # filter (clusters = NeverSink eco tiers, gems / maps = hand rules, rest = blue safety net).
-CHECK_TYPES = ["ClusterJewel", "SkillGem", "ImbuedGem", "ForbiddenJewel", "ShrineBelt", "ScryingOrb",
+CHECK_TYPES = ["ClusterJewel", "SkillGem", "ForbiddenJewel", "ShrineBelt", "ScryingOrb",
                "IncursionTemple", "Map", "BlightedMap", "BlightRavagedMap", "ValdoMap"]
 # Never fetched: not a ground drop
-SKIPPED_TYPES = {"Beast": "captured with Bestiary nets, never a ground item"}
+SKIPPED_TYPES = {"Beast": "captured with Bestiary nets, never a ground item",
+                 "ImbuedGem": "Standard-only gem + imbued support, never a ground drop"}
 # Every poe.ninja category must be in exactly one list above (ninja_categories warns at build)
 NINJA_TYPES = (EXCHANGE_TYPES + STASH_STACKABLE_TYPES + UNIQUE_TYPES + BASE_TYPES + CHECK_TYPES
                + list(SKIPPED_TYPES))
@@ -87,6 +88,7 @@ SHAPE = {
     "Corpse": "Moon", "Incubator": "Hexagon", "Memory": "Hexagon",
 }
 UNIQUE_SHAPE, BASE_SHAPE, MAP_SHAPE = "Star", "Diamond", "Square"
+LEAGUE_SHAPE = "Moon"  # [league_mechanic]: new league content without a price
 CLUSTER_SHAPE = "Pentagon"  # cluster jewels (poe.ninja prices + module eco tiers)
 SPLINTER_SHAPE = "Kite"  # any name containing "Splinter" (breach, timeless, simulacrum, ritual...)
 PINNED_TOP_STACKABLES = {"Divine Orb", "Hinekora's Lock", "Mirror of Kalandra"}
@@ -1243,6 +1245,7 @@ def emit_stackables(cfg, tiers, prices, ref_currency, ref_cards, card_volumes):
         out += fallback_stacks(cfg, ref_currency, prices, fallback_groups(cfg, "currency"),
                                ex.get("reference_currency_stacks", {}), [], "currency")
         out += reference(ref_currency, [], "currency")
+    out += emit_league_mechanic(cfg, prices, ref_currency)  # new league stuff: blue + Moon, before class fallbacks
     for classes, shape in CURRENCY_CLASSES:
         setting = "unknown" if ex["unpriced_currency"] == "reference" else ex["unpriced_currency"]
         out += fallback(classes, setting, classes[0].lower(), shape)
@@ -2049,17 +2052,16 @@ def alt_gem(line):
 
 
 def alt_gem_bases(data):
-    """{alternate gem name: plain gem BaseType} from every gem feed with a tradeFilter (SkillGem)."""
+    """{alternate gem name: plain gem BaseType} from the SkillGem feed's tradeFilter."""
     return {l["name"]: l["tradeFilter"]["query"]["type"]["option"]
-            for t in ("SkillGem", "ImbuedGem") for l in data["stash"].get(t, {}).get("lines", []) if alt_gem(l)}
+            for l in data["stash"].get("SkillGem", {}).get("lines", []) if alt_gem(l)}
 
 
-def gem_lines(data, kind):
-    """poe.ninja gem feed `kind` ("SkillGem" / "ImbuedGem") without alternate gems. ImbuedGem
-    lines carry no tradeFilter (Standard), so alternate names (alt_gem_bases) are dropped by
-    name too, else "Bladefall of Trarthus" lands in a BaseType and the game rejects the filter."""
+def gem_lines(data):
+    """poe.ninja SkillGem lines without alternate gems (their name in a BaseType makes the game
+    reject the filter). ImbuedGem is never fetched (SKIPPED_TYPES: can't drop)."""
     alts = alt_gem_bases(data)
-    return [l for l in data["stash"].get(kind, {}).get("lines", []) if l["name"] not in alts]
+    return [l for l in data["stash"].get("SkillGem", {}).get("lines", []) if l["name"] not in alts]
 
 
 def price_gems(data, cfg, tiers):
@@ -2075,29 +2077,28 @@ def price_gems(data, cfg, tiers):
     min_rank = min_shown_rank(cfg, tiers, cfg.get("gems", {}).get("min_tier", "minor"))
     min_listings = cfg["uniques"]["min_listings"]
     out = {}
-    for t in ("SkillGem", "ImbuedGem"):
-        lines = [l for l in gem_lines(data, t) if l.get("listingCount", 0)]
-        caps = gem_caps(lines, min_listings)
-        for i, line in enumerate(lines):
-            cap = caps.get(i, math.inf)
-            thin = line["listingCount"] < min_listings
-            tier = tiers.of(min(line["chaosValue"], cap))
-            level, quality = line.get("gemLevel", 1), line.get("gemQuality") or 0
-            ordinary_vendor_gem = (
-                1 <= level < 20 and quality == 0 and not line.get("corrupted")
-                and not line["name"].startswith(("Awakened ", "Enlighten", "Empower", "Enhance"))
-            )
-            if ordinary_vendor_gem and thin:
-                tier = "hide"
-            elif tiers.rank(tier) > min_rank or hidden(cfg, tier):
-                # confident price, or a thin one capped by a confident better variant
-                tier = "hide" if not thin or cap < line["chaosValue"] else "variable"
-            elif thin:
-                tier = "variable"
-            if hidden(cfg, tier):
-                tier = "hide"
-            if tier != "hide" or gem_special(level, quality):
-                out.setdefault((tier, level, quality, bool(line.get("corrupted"))), set()).add(line["name"])
+    lines = [l for l in gem_lines(data) if l.get("listingCount", 0)]
+    caps = gem_caps(lines, min_listings)
+    for i, line in enumerate(lines):
+        cap = caps.get(i, math.inf)
+        thin = line["listingCount"] < min_listings
+        tier = tiers.of(min(line["chaosValue"], cap))
+        level, quality = line.get("gemLevel", 1), line.get("gemQuality") or 0
+        ordinary_vendor_gem = (
+            1 <= level < 20 and quality == 0 and not line.get("corrupted")
+            and not line["name"].startswith(("Awakened ", "Enlighten", "Empower", "Enhance"))
+        )
+        if ordinary_vendor_gem and thin:
+            tier = "hide"
+        elif tiers.rank(tier) > min_rank or hidden(cfg, tier):
+            # confident price, or a thin one capped by a confident better variant
+            tier = "hide" if not thin or cap < line["chaosValue"] else "variable"
+        elif thin:
+            tier = "variable"
+        if hidden(cfg, tier):
+            tier = "hide"
+        if tier != "hide" or gem_special(level, quality):
+            out.setdefault((tier, level, quality, bool(line.get("corrupted"))), set()).add(line["name"])
     return out
 
 
@@ -2185,7 +2186,7 @@ def emit_unknown_gems(cfg, data):
     if hidden(cfg, "variable"):
         return ""
     gems = 'Class == "Skill Gems" "Support Gems"'
-    known = sorted({l["name"] for t in ("SkillGem", "ImbuedGem") for l in gem_lines(data, t)})
+    known = sorted({l["name"] for l in gem_lines(data)})
     if not known:  # no gem feed: nothing to tell unlisted gems apart, bottom.filter decides
         return ""
     out = ""
@@ -2254,6 +2255,50 @@ def build_magic_weapons(text):
             ok = NORMAL_HIDE_CLASSES if re.search(r"(?m)^\s*BaseType ==", blk) else WEAPON_CLASSES
             out += [c for c in re.findall(r'"([^"]+)"', cls.group(1)) if c in ok and c not in out]
     return out
+
+
+def emit_league_mechanic(cfg, prices, ref_currency):
+    """[league_mechanic]: new league content without a price -> blue ("tier") + Moon icon.
+    Inside emit_stackables, after prices / reference tiers, before the unpriced class fallbacks:
+    names = exact BaseTypes nothing priced, classes = whole classes (Viscera)."""
+    lm = cfg.get("league_mechanic", {})
+    if not lm.get("enabled"):
+        return ""
+    tier, overridden = lm["tier"], set(cfg.get("overrides", {}))
+    names = [n for n in lm.get("names", []) if n not in prices and n not in overridden and n not in ref_currency
+             and n not in PINNED_TOP_STACKABLES]
+    out = ""
+    if names:
+        out += block(action_for(cfg, tier), [f"BaseType == {q(names)}"], style_for(cfg, tier, LEAGUE_SHAPE),
+                     "new league item, no price yet (config.toml [league_mechanic] names)")
+    if lm.get("classes"):
+        out += block(action_for(cfg, tier), [f"Class == {q(lm['classes'])}"], style_for(cfg, tier, LEAGUE_SHAPE),
+                     "new league class, no price yet (config.toml [league_mechanic] classes)")
+    return out
+
+
+def emit_fated(cfg):
+    """[league_mechanic] fated: "Fated True" items blue + Moon. Before leveling / stackables /
+    uniques / bases / rares (their Hides can't reach it); top.filter, gems, id mods, exotics,
+    recipes and cluster prices decide first."""
+    lm = cfg.get("league_mechanic", {})
+    if not (lm.get("enabled") and lm.get("fated")):
+        return ""
+    return section("Fated items (config.toml [league_mechanic] fated)") + block(
+        action_for(cfg, lm["tier"]), ["Fated True"], style_for(cfg, lm["tier"], LEAGUE_SHAPE), "fated item")
+
+
+def emit_unid_tiers(cfg):
+    """[unid_tier]: module unid_tier = FilterBlade's PoE2 [0800] "High Unidentified Mod Tier" grid
+    (made by tools/make_unid_tier.py): rare / magic x gear / jewellery x UnidentifiedItemTier >= 4 /
+    3 / 2 x base rank a / b / c (PoE1 NeverSink rare tiers t1 / t2 / t3) + any-remaining >= 5 / 4,
+    each cell a modules.toml [unid_tier.blocks] toggle, FilterBlade's own style. Position = NeverSink
+    [0800]: after id_mods / flasks / perfection / exotics and the priced-base copies (a priced base
+    keeps its price tier), before gear_special / recipes / leveling / rares (their Hides)."""
+    if not cfg.get("unid_tier", {}).get("enabled", True):
+        return ""
+    return (section("Unidentified item tier (config.toml [unid_tier], modules.toml [unid_tier.blocks])")
+            + module_blocks(cfg, "unid_tier", "unid tier"))
 
 
 def campaign_unhide(cfg, text):
@@ -2598,7 +2643,8 @@ LS_KEEP_HIDES = {  # on Hides that stay on
 }
 # Config tables whose `enabled` league start turns on (rule modules + priced sections).
 LS_ENABLE_TABLES = ("bases", "rares", "id_mods", "flasks", "exotics", "gear_special", "crafting", "maps",
-                    "jewels", "heist", "misc", "unique_exceptions", "leveling")
+                    "jewels", "heist", "misc", "unique_exceptions", "leveling",
+                    "league_mechanic", "unid_tier")
 
 
 def league_start_values(conf, modules):
@@ -2618,6 +2664,8 @@ def league_start_values(conf, modules):
          ("maps", "corrupted_min_tier"): 0,
          }
     c.update({("overquality", k): True for k in conf.get("overquality", {})})  # every quality rule on
+    c[("league_mechanic", "fated")] = True
+
     c = {p: v for p, v in c.items() if present(*p)}
     c.update({("uniques", "show", t): True for t in conf["uniques"].get("show", {})})
     for sec in ("foulborn", "bases"):
@@ -2771,11 +2819,13 @@ def build_text(cfg, data, league):
         emit_perfection(cfg),  # [0901] perfection / overquality ([overquality]); before recipes: 30% RGB keeps its alert
         emit_exotics(cfg),  # same; after id_mods like league.filter ([0600]-[0802] before [0902]-[1300])
         emit_priced_bases_first(cfg, tiers, cbases),  # priced crafting bases beat the gear_special / crafting Shows only
+        emit_unid_tiers(cfg),  # [0800] unID tier grid (PoE2 FilterBlade): after priced bases, before gear_special / recipes / rares
         emit_gear_special(cfg),  # [0302] influenced, [[0400]] eldritch, [[0500]] exotic bases (after id/exotic info)
         emit_links(cfg),  # [[1400]] 5-links ([1401]); league.filter: after [1300], before [1500] bases
         emit_vendor_recipes(cfg, tiers, ubases, fbases, cbases, prices, ref_currency),
         emit_gem_fallback(cfg, gems),  # after the gemcutter floor; explicit hides before blue
         emit_cluster_prices(cfg, tiers, clusters),
+        emit_fated(cfg),  # [league_mechanic] fated: before campaign / stackable / unique / rare Hides
         emit_leveling(cfg, leveling_price_shown(cfg, tiers, prices)),  # price_shown: [[3800]] price first
         campaign_unhide(cfg, emit_overrides(cfg, prices)),
         campaign_unhide(cfg, emit_stackables(cfg, tiers, prices, ref_currency, ref_cards, card_volumes)),

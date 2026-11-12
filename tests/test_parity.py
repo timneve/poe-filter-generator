@@ -216,7 +216,7 @@ def price_reason(tc, it):
     if it.get("class") in ("Skill Gems", "Support Gems"):
         # the variant at or below the item's level / quality: emit_gems' GemLevel >= / Quality >=
         floor = tc.cfg["tiers"][cfg.get("gems", {}).get("min_tier", "minor")]
-        for t in ("SkillGem", "ImbuedGem"):
+        for t in ("SkillGem",):
             for l in data["stash"][t]["lines"]:
                 if (l["name"] == it.get("basetype") and not bf.alt_gem(l)
                         and l.get("listingCount", 0) >= cfg["uniques"]["min_listings"]

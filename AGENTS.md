@@ -21,12 +21,14 @@ no network in tests. Player-facing behavior: `README.md`. Read only the doc you 
 | `modules.toml` | ~670 | per-block on/off of our rule modules (FilterBlade-style options), `[<module>.blocks]` |
 | `rules/modules/*.filter` | - | Our rule modules (imported once from NeverSink, then ours). See `docs/ai/MODULES.md` |
 | `tools/import_neversink.py` | ~200 | Make / refresh a module from `reference/league.filter` sections (`--game poe2`: PoE2 export -> `rules/modules_poe2/`; `--stock`: note blocks differing from stock NeverSink) (owns the NeverSink parser `parse_ref_blocks`) |
+| `tools/make_unid_tier.py` | ~90 | Makes `rules/modules/unid_tier.filter` (FilterBlade PoE2 [0800] unID-tier grid, PoE1 rr base ranks) + `[unid_tier.blocks]` toggles; arg = other modules.toml (e.g. `league_start/backup/modules.toml`) |
 | `tools/import_fallback_tiers.py` + `fallback_tiers.toml` | ~90 / ~970 | NeverSink currency / card group per name (fallback when poe.ninja has no confident price); tool makes the TOML once, build reads the TOML |
 | `tools/league_start.py` | ~300 | League start as real values: `start` (backup to `league_start/backup/`, gitignored, then writes `build_filter.league_start_values` into config.toml / modules.toml as text, comments kept), `status`, `restore [KEY]`, `finish`; `--root` for tests. Player guide `docs/LEAGUE_START.md` |
 | `leagues.toml` / `leagues_poe2.toml` | small | Generated every build (`write_league_list`): poe.ninja league names (current / no_prices / old) to pick `league` from. Don't edit |
 | `unique_tiers.toml` | ~200 | unique name -> drop-rarity tier 0..5 (for `[uniques.ev]` drop weights) |
 | `rules/top.filter` / `rules/bottom.filter` | 66 / 22 | Hand-written blocks before / after price rules |
 | `rules/leveling/rf.filter`, `minion.filter` | 156 / 120 | Campaign build modules (`[leveling] build = "rf"` / `"minion"`) |
+| `.claude/skills/filterblade-parity` | - | "like NeverSink / FilterBlade" = read the filter section + check filterblade.xyz, mirror 1:1, parity test |
 | `filtersim.py` | ~140 | Mini filter evaluator (tests + report), PoE1 + PoE2 + every `reference/league.filter` condition. Unknown condition -> raises |
 | `report.py` | ~720 | Writes `out/report.html` (mostly an embedded HTML/JS `PAGE` string) |
 | `assets/chaos.png`, `assets/divine.png` | - | Currency icons, inlined into the report as data URIs by `report.icon()` |

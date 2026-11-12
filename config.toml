@@ -25,7 +25,7 @@ variable_after = "minor"
 # quiet_tiers: unintrusive brown instead of the tier's own style: brown text, grey beam,
 #              grey icon, no sound (keeps the tier's font size). Style in [style.quiet].
 #              e.g. late league: quiet_tiers = ["low"], later ["low", "mid"].
-hide_tiers = ["brown", "dust"]
+hide_tiers = []
 quiet_tiers = ["low"]
 
 # ENDGAME RARES: module rares (rules/modules/rares.filter = NeverSink [[1700]]-[2201], [2602], [[2700]]).
@@ -46,15 +46,15 @@ quiet_tiers = ["low"]
 # kept pale + cool so it reads apart from the orange-gold mid tier and the tan brown tier),
 # no sound / beam / icon; the rest stay hidden. Price rules (crafting bases, links) still win.
 rares.enabled = true
-rares.base_tiers = false
-rares.weapons = ["t1"]
-rares.armour = ["t1"]
-rares.jewellery = ["t1"]     # amulets, rings, belts
+rares.base_tiers = true
+rares.weapons = ["all"]
+rares.armour = ["all"]
+rares.jewellery = ["all"]     # amulets, rings, belts
 rares.text_color = "rare"
 # Per group: only rares at this item level or higher (68 = all endgame).
-rares.min_ilvl.weapons = 75
-rares.min_ilvl.armour = 75
-rares.min_ilvl.jewellery = 75
+rares.min_ilvl.weapons = 68
+rares.min_ilvl.armour = 68
+rares.min_ilvl.jewellery = 68
 # Per item class: false = never show that rare class, whatever its tier.
 # weapons
 rares.show."Bows" = true
@@ -102,17 +102,17 @@ output_dirs = ["~/Documents/My Games/Path of Exile"]
 
 # Hide Forbidden Tome regardless of its price or fallback class rule. false = shown: overrides
 # the [maps] module's Sanctum Research Hides (modules.toml "exoticmap->sanctum.*").
-hide_forbidden_tome = true
+hide_forbidden_tome = false
 
 # Heist contracts (any rarity, also unique). false = all hidden, before any price rule.
 # true = all shown: overrides the [maps] module's plain-contract Hide
 # (modules.toml "heist->contract.handpicked"). Quest contracts (Quest Items) always shown.
-show_contracts = false
+show_contracts = true
 
 # Show generic 5-link / 6-link items.
-show_5_links = false
-show_6_links = false
-show_mirrored = false
+show_5_links = true
+show_6_links = true
+show_mirrored = true
 
 # Vendor recipes: see [vendor_recipes.*] further down.
 
@@ -121,9 +121,9 @@ show_mirrored = false
 # gold_min_stack alone decides the big look (modules.toml gold.* keys follow it).
 # show_small_gold: true = smaller stacks also shown in maps, in the small campaign-gold look.
 # League start: show_gold + show_small_gold true (all gold, big stacks still big).
-show_gold = false
+show_gold = true
 gold_min_stack = 10000
-show_small_gold = false
+show_small_gold = true
 
 # Item classes always shown at top tier (tink), priced or not, never hidden: first block, beats
 # prices, [overrides] and modules (like the pinned Divine / Mirror / Hinekora's Lock).
@@ -229,9 +229,9 @@ unpriced_currency = "reference"
 # cheap quotes). Beats unpriced_currency / reference. A confident price or [overrides] still wins.
 # e.g. "Some Cheap Oil" = "dust". Hard-to-price oils (Clear / Sepia) are pinned in [overrides].
 [exchange.unpriced_tiers]
-"Scroll Fragment" = "hide"   # NeverSink hides them
-"Amber Oil" = "hide"         # league.filter (FilterBlade) hides these cheap oils
-"Verdant Oil" = "hide"
+"Scroll Fragment" = "dust"   # NeverSink hides them
+"Amber Oil" = "dust"         # league.filter (FilterBlade) hides these cheap oils
+"Verdant Oil" = "dust"
 # Thin / no poe.ninja price, NeverSink's fallback group would hide them, but the FilterBlade
 # filter shows them: unconfident + maybe valuable -> blue
 "Omen of Refreshment" = "variable"
@@ -273,11 +273,10 @@ unpriced_currency = "reference"
 "Abandoned Wealth" = ["Exalted Orb", 3, 5]
 "Acclimatisation" = ["Orb of Alteration", 20, 2]
 "Alluring Bounty" = ["Exalted Orb", 10, 7]
-"Ambitious Obsession" = ["Skittering Delirium Orb", 1, 4]
+"Ambitious Obsession" = ["Threaded Delirium Orb", 1, 4]
 "Avian Pursuit" = ["Vivid Crystallised Lifeforce", 1500, 3]
 "Brother's Gift" = ["Divine Orb", 5, 1]
 "Brother's Stash" = ["Exalted Orb", 5, 1]
-"Buried Treasure" = ["Sulphite Scarab", 1, 3]
 "Chaotic Disposition" = ["Chaos Orb", 5, 1]
 "Checkmate" = ["Simulacrum Splinter", 76, 8]
 "Coveted Possession" = ["Regal Orb", 5, 9]
@@ -290,7 +289,6 @@ unpriced_currency = "reference"
 "Loyalty" = ["Orb of Fusing", 3, 5]
 "Lucky Connections" = ["Orb of Fusing", 20, 7]
 "Lucky Deck" = ["Stacked Deck", 10, 9]
-"Man With Bear" = ["Bestiary Scarab", 1, 3]
 "No Traces" = ["Orb of Scouring", 30, 9]
 "Outfoxed" = ["Veiled Exalted Orb", 1, 2]
 "Rain of Chaos" = ["Chaos Orb", 1, 8]
@@ -495,10 +493,10 @@ t1 = "top"
 t2 = "high"
 t3 = "mid"
 tnew = "unknown"
-t4c = "hide"
-t4 = "hide"
-t5c = "hide"
-t5 = "hide"
+t4c = "dust"
+t4 = "dust"
+t5c = "dust"
+t5 = "dust"
 
 # ---------------------------------------------------------------------------
 # Uniques, [uniques.ev] on (default): a base is tiered by the EXPECTED VALUE of one
@@ -527,10 +525,10 @@ t5 = "hide"
 show.top   = true
 show.high  = true
 show.mid   = true
-show.minor = false
-show.low   = false
-show.brown = false
-show.dust  = false
+show.minor = true
+show.low   = true
+show.brown = true
+show.dust  = true
 never_hide_tier = "top"
 # Without EV ([uniques.ev] off, or bases with no drop-anywhere uniques): base tier from its
 # "lowest" or "highest" confident unique price. Jackpot / never_hide_tier rescue apply either way.
@@ -538,7 +536,7 @@ base_price = "lowest"
 # Late league wrist saver: true = never_hide_tier rescue off, a cheap base goes blue
 # "variable" only when some unique on it is >= jackpot_divine (Moonstone Ring: 1c Heartbound
 # Loop / Timeclasp mostly, 200c Anathema -> hidden). Foulborn too. league_start forces false.
-variable_jackpot_only = true
+variable_jackpot_only = false
 # Unique item classes always blue "variable", whatever their price tier (normal + Foulborn);
 # only a base priced top (every unique on it >= 1 div) keeps its tink. [] = off.
 variable_classes = ["Jewels", "Abyss Jewels"]
@@ -549,7 +547,7 @@ include_replicas = false
 unpriced = "unknown"
 # Unique maps as reference/league.filter [3201]: corrupted ones shown (blue star), the rest
 # hidden, before any price rule. false = price unique maps like other uniques (Square icon).
-hide_maps = true
+hide_maps = false
 # Hand list: unique bases always shown (blue "variable" when their EV would hide them).
 # Start: NeverSink "High Variety - Top Multi-Bases" ($tier->multispecialhigh, regular filter).
 
@@ -655,7 +653,7 @@ note = "sell to vendor -> 1 Fracturing Shard"
 # currency they make is worth now (Diamond icon), at least the lowest shown tier.
 [vendor_recipes.chromatic]
 # Chromatic Orb: an item with R-G-B linked sockets, any size.
-enabled = false
+enabled = true
 tier = "price"
 reward = "Chromatic Orb"
 reward_count = 1
@@ -684,7 +682,7 @@ note = "1 Chromatic Orb each"
 
 [vendor_recipes.jeweller]
 # 7 Jeweller's Orbs: an item with 6 sockets (5/6 links: show_5_links / show_6_links).
-enabled = false
+enabled = true
 tier = "price"
 reward = "Jeweller's Orb"
 reward_count = 7
@@ -793,11 +791,11 @@ sources = ["BreachBoss"]
 "Xoph's Nurture" = "price"
 
 [content.ultimatum]
-enabled = false
+enabled = true
 sources = ["Ultimatum"]   # Trialmaster boss drops + Ultimatum rewards
 
 [content.blight]
-enabled = false
+enabled = true
 sources = ["Blight"]   # Blight encounters, including Blight-ravaged maps
 
 [content.blight.drops]
@@ -841,7 +839,7 @@ sources = ["Blight"]   # Blight encounters, including Blight-ravaged maps
 # Best variant >= this -> blue "variable", never hidden.
 jackpot_divine = 0.5
 min_listings = 5
-min_tier = "low"
+min_tier = "dust"
 # Foulborn base with no confident price: tier name, "hide" or "unknown"
 unpriced = "unknown"
 
@@ -852,7 +850,7 @@ unpriced = "unknown"
 # show. enabled = false -> only each section's own min_tier applies.
 # ---------------------------------------------------------------------------
 [small_loot]
-enabled = true
+enabled = false
 min_tier = "minor"
 types = ["Invitation", "Wombgift"]
 
@@ -871,8 +869,8 @@ types = ["Invitation", "Wombgift"]
 # Show, no "known on poe.ninja" gem Hide); priced gems keep their tier. League start: true.
 # ---------------------------------------------------------------------------
 [gems]
-min_tier = "mid"
-show_all = false
+min_tier = "dust"
+show_all = true
 
 # ---------------------------------------------------------------------------
 # Overquality: every quality-threshold rule in one place (modules.toml value
@@ -901,25 +899,25 @@ show_all = false
 [overquality]
 # any gear
 quality_30 = true
-quality_27 = false
-quality_21 = false
+quality_27 = true
+quality_21 = true
 # top bases
 armour_t1_28 = true
-armour_t1_21 = false
+armour_t1_21 = true
 weapon_t1_28 = true
 weapon_t1_24 = true
-weapon_t2_28 = false
-weapon_t2_24 = false
+weapon_t2_28 = true
+weapon_t2_24 = true
 chancing_bases_28 = true
 # flasks / tinctures
-any_flask_21 = false
+any_flask_21 = true
 tinctures_26 = true
 tinctures_21 = true
 utility_flasks_26 = true
 utility_flasks_21 = true
 utility_corrupted_30 = true
 life_mana_flasks_30 = true
-life_mana_flasks_21 = false
+life_mana_flasks_21 = true
 # uniques
 uniques_21 = true
 
@@ -1036,8 +1034,59 @@ enabled = true
 # ---------------------------------------------------------------------------
 [maps]
 enabled = true
-progression = "none"
-corrupted_min_tier = 16
+progression = "all"
+corrupted_min_tier = 0
+
+# ---------------------------------------------------------------------------
+# NEW LEAGUE CONTENT we can't price yet (3.28 Covens of Umbra): shown in `tier` (blue "variable"
+# = probably valuable, no exact price) with a Moon minimap icon, never hidden.
+#   classes  every item of these classes (Viscera = Coven body parts). A poe.ninja price
+#            (once it lists them) decides first; these blocks come right after the stackable prices.
+#   names    new / renamed items by exact BaseType. Same: confident price or NeverSink fallback tier
+#            decides first, the rest -> this blue + Moon (instead of the plain unpriced fallback).
+#   fated    "Fated True" items (new filter condition, unknown meaning yet): blue + Moon, before
+#            campaign / unique / base / rare rules (only rules/top.filter, gems, id mods, exotics,
+#            recipes, clusters come first). A Fated unique shows blue, not its price tier.
+# enabled = false: none of it (Viscera / fated items fall to the bottom blue safety net, names to the
+# normal unpriced fallback). league_start: enabled + fated on.
+# ---------------------------------------------------------------------------
+[league_mechanic]
+enabled = true
+tier = "variable"
+fated = true
+classes = ["Viscera"]
+names = [
+  # currency
+  "Essence of Trickery", "Frayed Thread", "Royal Visage", "Soul Core of Instability",
+  "Allflame Ember of the Cloister", "Allflame Ember of the Multitude", "Allflame Ember of the Divine",
+  "Immortal Astrolabe", "Feral Astrolabe", "Royal Astrolabe", "Cryptic Astrolabe",
+  "Afarud Enshrouding Crystal",
+  # renamed (old NeverSink fallback tier no longer matches)
+  "Soul Core of Intellect", "Soul Core of Might", "Soul Core of Finesse",
+  "Threaded Delirium Orb", "Maven's Chisel of Threads",
+  # map fragments
+  "Expedition Thread", "Abyss Thread", "Breach Thread", "Ritual Thread", "Ultimatum Thread",
+  "Legion Thread", "Blight Thread", "Bestiary Thread", "Betrayal Thread", "Incursion Thread",
+  "Cursed Poppet",
+  # jewel (any rarity: a unique one shows blue too)
+  "Mycelium Core",
+]
+
+# ---------------------------------------------------------------------------
+# UNIDENTIFIED ITEM TIER (3.28, condition UnidentifiedItemTier 0-5 = how good an unID item's hidden
+# mods roll): module rules/modules/unid_tier.filter = FilterBlade's PoE2 "Rares: Tier 2+" /
+# "High Unidentified Mod Tier" grid, same options, each a checkbox in modules.toml [unid_tier.blocks]:
+#   ut->rare.gear4a  GEAR, RARE, TIER 4-5, RANK A   (gear3a = tier 3, gear2a = tier 2; b / c ranks)
+#   ut->rare.j4a ... JEWELLERY (amulets, rings, belts), same grid
+#   ut->rare.anyremaining5gear / 4gear / 5j / 4j   tier 5 / 4+ on any other base
+#   ut->magic.*      the same for magic items
+# Rank = NeverSink's PoE1 rare base tier (rules/modules/rares.filter): a = t1, b = t2, c = t3.
+# Maps only (AreaLevel >= 68). Shows only, FilterBlade's style (alert + beam on the high cells).
+# After ID mods and priced crafting bases (those keep their look), before rares / their Hides.
+# Regenerate: python tools/make_unid_tier.py. enabled = false: none. league_start: every cell on.
+# ---------------------------------------------------------------------------
+[unid_tier]
+enabled = true
 
 # ---------------------------------------------------------------------------
 # Jewels: our module rules/modules/jewels.filter (from the FilterBlade filter, its own style;
@@ -1145,7 +1194,7 @@ show_gems = true
 show_magic_vendor = true
 show_rare_vendor = true
 show_magic_rare_cells = 4
-unused_whites_min_tier = ""
+unused_whites_min_tier = "top"
 league_start_hide_unused = true
 show_all_stackables = true
 # Campaign blocks with a minimap icon but no sound get this (Orb of Chance etc. = NeverSink single chaos sound; 4 = maps only)
@@ -1161,7 +1210,7 @@ review_tier = "mid"
 # ---------------------------------------------------------------------------
 [bases]
 enabled = true
-min_tier = "top"       # only show bases worth at least this tier
+min_tier = "dust"       # only show bases worth at least this tier
 min_listings = 10
 min_samples = 10
 include_dual_influence = false
@@ -1172,8 +1221,8 @@ include_dual_influence = false
 # ---------------------------------------------------------------------------
 [overrides]
 # name = tier name | "hide" | "variable" | "unknown"
-"Scroll of Wisdom" = "hide"
-"Portal Scroll" = "hide"
+"Scroll of Wisdom" = "dust"
+"Portal Scroll" = "dust"
 # Thin, erratic poe.ninja quotes: always white (minor), whatever the price says.
 "Clear Oil" = "dust"
 "Sepia Oil" = "dust"

@@ -66,7 +66,7 @@ Show # heisttarget.any
 # [4600] Enshrouded Items
 
 Show # enshrouded.enshroudedgear
-	BaseType == "Enshrouded Body Armour" "Enshrouded Boots" "Enshrouded Gloves" "Enshrouded Helmet" "Enshrouded Shield"
+	BaseType == "Enshrouded Body Armour" "Enshrouded Boots" "Enshrouded Gloves" "Enshrouded Helmet" "Enshrouded Quiver" "Enshrouded Shield"
 	SetFontSize 45
 	PlayAlertSound 1 300
 	PlayEffect Red

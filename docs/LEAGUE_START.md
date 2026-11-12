@@ -61,6 +61,7 @@ the whole table). Rebuild after each step. Typical order (`ls` = `python tools/l
 | day 1 | junk rares | `ls restore rares.min_ilvl rares.weapons rares.armour rares.jewellery rares.base_tiers` (or step `["t1","t2","t3"]` -> `["t1"]`) |
 | day 1 | rare hide layer, junk jewels / heist gear | `ls restore rares.blocks jewels.blocks heist.blocks` |
 | day 1-2 | dust tier | edit `hide_tiers = ["dust"]` |
+| day 2-3 | low unID item tier cells | edit cells in `modules.toml [unid_tier.blocks]`, e.g. `"ut->magic.gear2c" = false` (FilterBlade default = all on) |
 | day 2 | small gold piles | `ls restore show_small_gold` (later `show_gold`) |
 | day 2 | generic 5L / mirrored / overquality | `ls restore show_5_links show_mirrored overquality` |
 | day 2 | ilvl 82+ junk bases | `ls restore bases.min_tier leveling.unused_whites_min_tier` |

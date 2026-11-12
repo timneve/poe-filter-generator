@@ -31,6 +31,7 @@ BOOL = {"Corrupted": "corrupted", "Mirrored": "mirrored", "Identified": "identif
         "BlightedMap": "blighted", "UberBlightedMap": "uber_blighted", "ZanaMemory": "zana_memory",
         "HasImplicitMod": "implicit", "Imbued": "imbued", "SynthesisedItem": "synthesised",
         "HasCruciblePassiveTree": "crucible", "Vestigial": "vestigial", "Replica": "replica",
+        "Fated": "fated",  # PoE1 3.28 (Covens of Umbra)
         # PoE2
         "AnyEnchantment": "enchanted", "TwiceCorrupted": "twice_corrupted",
         "IsVaalUnique": "vaal_unique", "HasVaalUniqueMod": "vaal_unique_mod",

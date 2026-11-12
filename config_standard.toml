@@ -276,11 +276,10 @@ unpriced_currency = "reference"
 "Abandoned Wealth" = ["Exalted Orb", 3, 5]
 "Acclimatisation" = ["Orb of Alteration", 20, 2]
 "Alluring Bounty" = ["Exalted Orb", 10, 7]
-"Ambitious Obsession" = ["Skittering Delirium Orb", 1, 4]
+"Ambitious Obsession" = ["Threaded Delirium Orb", 1, 4]
 "Avian Pursuit" = ["Vivid Crystallised Lifeforce", 1500, 3]
 "Brother's Gift" = ["Divine Orb", 5, 1]
 "Brother's Stash" = ["Exalted Orb", 5, 1]
-"Buried Treasure" = ["Sulphite Scarab", 1, 3]
 "Chaotic Disposition" = ["Chaos Orb", 5, 1]
 "Checkmate" = ["Simulacrum Splinter", 76, 8]
 "Coveted Possession" = ["Regal Orb", 5, 9]
@@ -293,7 +292,6 @@ unpriced_currency = "reference"
 "Loyalty" = ["Orb of Fusing", 3, 5]
 "Lucky Connections" = ["Orb of Fusing", 20, 7]
 "Lucky Deck" = ["Stacked Deck", 10, 9]
-"Man With Bear" = ["Bestiary Scarab", 1, 3]
 "No Traces" = ["Orb of Scouring", 30, 9]
 "Outfoxed" = ["Veiled Exalted Orb", 1, 2]
 "Rain of Chaos" = ["Chaos Orb", 1, 8]
@@ -1041,6 +1039,57 @@ enabled = true
 enabled = true
 progression = "none"
 corrupted_min_tier = 16
+
+# ---------------------------------------------------------------------------
+# NEW LEAGUE CONTENT we can't price yet (3.28 Covens of Umbra): shown in `tier` (blue "variable"
+# = probably valuable, no exact price) with a Moon minimap icon, never hidden.
+#   classes  every item of these classes (Viscera = Coven body parts). A poe.ninja price
+#            (once it lists them) decides first; these blocks come right after the stackable prices.
+#   names    new / renamed items by exact BaseType. Same: confident price or NeverSink fallback tier
+#            decides first, the rest -> this blue + Moon (instead of the plain unpriced fallback).
+#   fated    "Fated True" items (new filter condition, unknown meaning yet): blue + Moon, before
+#            campaign / unique / base / rare rules (only rules/top.filter, gems, id mods, exotics,
+#            recipes, clusters come first). A Fated unique shows blue, not its price tier.
+# enabled = false: none of it (Viscera / fated items fall to the bottom blue safety net, names to the
+# normal unpriced fallback). league_start: enabled + fated on.
+# ---------------------------------------------------------------------------
+[league_mechanic]
+enabled = true
+tier = "variable"
+fated = true
+classes = ["Viscera"]
+names = [
+  # currency
+  "Essence of Trickery", "Frayed Thread", "Royal Visage", "Soul Core of Instability",
+  "Allflame Ember of the Cloister", "Allflame Ember of the Multitude", "Allflame Ember of the Divine",
+  "Immortal Astrolabe", "Feral Astrolabe", "Royal Astrolabe", "Cryptic Astrolabe",
+  "Afarud Enshrouding Crystal",
+  # renamed (old NeverSink fallback tier no longer matches)
+  "Soul Core of Intellect", "Soul Core of Might", "Soul Core of Finesse",
+  "Threaded Delirium Orb", "Maven's Chisel of Threads",
+  # map fragments
+  "Expedition Thread", "Abyss Thread", "Breach Thread", "Ritual Thread", "Ultimatum Thread",
+  "Legion Thread", "Blight Thread", "Bestiary Thread", "Betrayal Thread", "Incursion Thread",
+  "Cursed Poppet",
+  # jewel (any rarity: a unique one shows blue too)
+  "Mycelium Core",
+]
+
+# ---------------------------------------------------------------------------
+# UNIDENTIFIED ITEM TIER (3.28, condition UnidentifiedItemTier 0-5 = how good an unID item's hidden
+# mods roll): module rules/modules/unid_tier.filter = FilterBlade's PoE2 "Rares: Tier 2+" /
+# "High Unidentified Mod Tier" grid, same options, each a checkbox in modules.toml [unid_tier.blocks]:
+#   ut->rare.gear4a  GEAR, RARE, TIER 4-5, RANK A   (gear3a = tier 3, gear2a = tier 2; b / c ranks)
+#   ut->rare.j4a ... JEWELLERY (amulets, rings, belts), same grid
+#   ut->rare.anyremaining5gear / 4gear / 5j / 4j   tier 5 / 4+ on any other base
+#   ut->magic.*      the same for magic items
+# Rank = NeverSink's PoE1 rare base tier (rules/modules/rares.filter): a = t1, b = t2, c = t3.
+# Maps only (AreaLevel >= 68). Shows only, FilterBlade's style (alert + beam on the high cells).
+# After ID mods and priced crafting bases (those keep their look), before rares / their Hides.
+# Regenerate: python tools/make_unid_tier.py. enabled = false: none. league_start: every cell on.
+# ---------------------------------------------------------------------------
+[unid_tier]
+enabled = true
 
 # ---------------------------------------------------------------------------
 # Jewels: our module rules/modules/jewels.filter (from the FilterBlade filter, its own style;
