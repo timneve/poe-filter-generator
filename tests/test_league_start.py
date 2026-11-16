@@ -41,7 +41,8 @@ def some_data():
     add_unique(data, "Heavy Belt", "Cheap Belt", 1)
     data["stash"]["SkillGem"]["lines"].append({"name": "Fireball", "gemLevel": 1, "gemQuality": 0,
                                                "chaosValue": 1, "listingCount": 50})
-    for name, chaos, item_type in [("Imbued Wand", 2, "Wand"), ("Saintly Chainmail", 2, "Body Armour"),
+    # Saintly Chainmail 10c: above [bases] dump_floor (5c), so priced
+    for name, chaos, item_type in [("Imbued Wand", 2, "Wand"), ("Saintly Chainmail", 10, "Body Armour"),
                                    ("Profane Wand", 500, "Wand")]:
         data["stash"]["BaseType"]["lines"].append({"name": name, "levelRequired": 82, "chaosValue": chaos,
                                                    "listingCount": 50, "count": 10, "itemType": item_type})

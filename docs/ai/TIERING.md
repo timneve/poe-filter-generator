@@ -19,6 +19,7 @@ Simple steps per item kind. Code names in `backticks`. Block order (which rule w
 - League start also turns module Hides off (except `LS_KEEP_HIDES`) and shows every rare
   (`[rares]` base tiers all, ilvl 68+), all gold (`show_small_gold`: small look kept).
 - `[gems] show_all`: every gem shown (bottom.filter `Hide # gems.show_all` -> Show, no known-gem Hide).
+- `[gems] hide_level1`: plain lvl 1 / 0% / uncorrupted non-exceptional gems hidden (`emit_level1_gem_hide`, wins over show_all).
 - `[leveling] unused_whites_min_tier` (with `build`): white bases the build module hides stay hidden in
   maps unless priced at that tier (`unused_white_hides`, in `emit_crafting_bases`).
 
@@ -87,6 +88,17 @@ Foulborn only ever takes its own price: normal unique tier blocks carry `Foulbor
 5c Foulborn Cutlass fell into the shown normal Cutlass tier, 780c United in Dream -> red), and the
 Foulborn catch-all (`[foulborn] unpriced`) sits before the hidden normal tiers.
 
+## 2b. Viscera (`price_viscera_bases`, `[viscera]`, 3.28 league class)
+
+Filter sees only `Class "Viscera"` + BaseType: not the implicit (one poe.ninja line each) nor the
+Greater / Lesser name prefix (`viscera_base` strips it: same BaseType). Like Foulborn:
+1. Base price = cheapest line with listings >= `[viscera] min_listings`.
+2. Best line (any listing) >= top-level `jackpot_divine` -> `jackpot_tier` (top / shown high / mid kept, else **blue**).
+3. Below `min_tier` (or `[small_loot]` with "Viscera" in `types`) -> **hidden**; hidden but best >= never_hide floor -> **blue**.
+4. `unknown_as_variable` + a thin-listed line on the base -> **blue** instead of a quieter / hidden tier;
+   base with only thin lines -> **blue**.
+5. Base poe.ninja doesn't list -> `[league_mechanic] classes` blue + Moon. Moon icon for all.
+
 ## 3. Stackables: currency, fragments, scarabs, essences, ... (`price_stackables`, `emit_stackables`)
 1. Divine / Mirror / Hinekora's Lock -> **top**, fixed (`PINNED_TOP_STACKABLES`).
 2. poe.ninja exchange price, volume >= `[exchange] min_volume`. Thin price: only used to SHOW.
@@ -115,15 +127,20 @@ Foulborn catch-all (`[foulborn] unpriced`) sits before the hidden normal tiers.
 1. Every poe.ninja variant (level / quality / corrupted) priced; capped by a confident better variant.
 2. >= `[gems] min_tier` -> its tier. Below -> hidden (bottom.filter), except top.filter Awakened / 20%.
 3. Thin listings -> **blue**, except plain, uncorrupted level 1-19 / 0-quality vendor gems, which
-   are hidden as worthless when thin-listed. Level 21+ / quality 21+ without confident price -> **blue**.
+   are hidden as worthless when thin-listed or at poe.ninja's 1c floor (`NINJA_FLOOR_CHAOS`;
+   ~600 plain level 1 gems sit there, vendor sells them; even with min_tier dust). Level 21+ / quality 21+ without confident price -> **blue**.
 4. Transfigured gems -> **blue**.
 5. Gem poe.ninja doesn't list at all (new exceptional supports: Item Quantity / Transfusion) -> **blue**
    (`emit_unknown_gems`, last gem rule); listed gems no rule showed -> hidden there.
 6. Cheap level 18-20 gems: price decides (user decision; league.filter lt2 / lt3 show every one).
-7. Imbued gems (poe.ninja ImbuedGem, Standard only): can't drop, never fetched (`SKIPPED_TYPES`).
+7. `[gems] hide_level1`: `plain_level1_gem` (not `exceptional_gem`: ninja gemKind, `EXCEPTIONAL_GEMS`, Awakened)
+   never priced; `emit_level1_gem_hide` (before `emit_unknown_gems`, after campaign) hides the known names.
+   Except `jackpot_gem` (plain lvl 1 line confidently >= `jackpot_divine`, e.g. Elemental Penetration): priced, never hidden.
+8. Imbued gems (poe.ninja ImbuedGem, Standard only): can't drop, never fetched (`SKIPPED_TYPES`).
 
 ## 6. Crafting bases (`price_crafting_bases`)
 1. Per exact base + influence + ilvl range. Needs `min_listings` AND `min_samples`.
+   Price <= `dump_floor` chaos (ninja 1-2c bulk-dump floor) = unpriced: gear modules decide.
 2. Each price covers only its own ilvl range.
 3. Below `[bases] min_tier` -> not shown by price. Jackpot inside group -> **blue**.
 4. Shown-tier / blue entries also copied before the gear modules (`emit_priced_bases_first`): price
@@ -139,6 +156,7 @@ Ingredient shown at recipe `tier` = FLOOR: worth more keeps its own tier, cheape
 ingredient; quality recipes: x quality / `per_quality` (one item >= `full_quality` = full reward),
 one `Quality >= N` block per reached tier. Value in a hidden tier -> lowest shown tier:
 an enabled recipe shows everything its `conds` accept (gems / flasks `Quality >= 1`); two rules disagree -> lower threshold wins.
+`min_tier` (default config: `"low"`): price tier never quieter than that (a 1% gem = low); min_tier in a config-hidden tier (Standard) -> still Show, quiet look (grey beam + icon).
 No confident reward price -> reward's NeverSink fallback tier threshold; none -> blue variable.
 `uniques` recipes: vendor value floors unique prices (section 1).
 
@@ -152,28 +170,36 @@ relics are Normal-Rare in league.filter). Exception: unique Harbinger pieces (`R
 no poe.ninja price) shown as league.filter. Rare relics / trinkets shown (FilterBlade default).
 Gear special `[gear_special]` (module `gear_special`: [0302] influenced rares, [[0400]] eldritch,
 [[0500]] exotic bases after exotics; [0901] perfection + `[overquality]` (own option, also with
-the module off; 30% = top tink style, first in [0901]: beats the ilvl 83+ perfection blocks) after id_mods, before exotics / recipes) and crafting
-`[crafting]` (module `crafting`: [1401] 5-links after exotics; [2301] early crafting, [2302]
-matrix, [[2400]] chancing after the rare gear tiers, before the hide layer): Shows only. Price vs
+the module off; 30% = top tink style, first in [0901]: beats the ilvl 83+ perfection blocks) after id_mods, before exotics / recipes) and links /
+chancing `[links]` / `[chancing]` (module `crafting`: [1401] 5-links after exotics; [2301] 4-link armour,
+[[2400]] chancing after the rare gear tiers, before the hide layer; FilterBlade's crafting base lists = price only): Shows only. Price vs
 module: `emit_priced_bases_first` puts the crafting-base Shows (confident price at a shown
 `[bases]` tier, jackpot -> blue) after id_mods / flasks / perfection / exotics (an identified
 good-mod / fractured / strand / perfect item keeps that look: more info than base price) but
-before gear_special / crafting, so a priced base keeps its price tier over those. Bases priced below `min_tier` are not decided by price (no base Hide
+before gear_special / crafting, so a priced base keeps its price tier over those. Flasks: only the mods / fractured / overquality flask blocks come before it; the plain flask
+Shows (ilvl 82-85, low quality, any utility in maps) come right after, so a priced flask base
+(Silver Flask ilvl 85) shows its price tier, cheaper ones the grey module look. `[flasks] show_plain`
+false (default): no plain flask Shows, so a flask base is a crafting base: shown only at a
+confident price at a shown tier, cheap (<= `dump_floor`) / unpriced fall to the later Hides
+(campaign: leveling rules). Flask bases whose
+Class no `[leveling]` unused-white Hide names skip the `unused_whites_min_tier` hold-back. Bases priced below `min_tier` are not decided by price (no base Hide
 exists, league.filter's [1500] economy bases only Show too), so the module Show applies. Uniques
 never match (blocks Normal-Rare; [0901] + `Rarity <= Rare`). Recipes stay `[vendor_recipes.*]`:
-[1401] / [2601] RGB = `chromatic` (campaign: `chromatic_campaign`, on), 6 sockets = `jeweller`, [[0500]] breach-ring entries =
+[1401] / [2601] RGB = `chromatic` (every area incl. campaign), 6 sockets = `jeweller`, [[0500]] breach-ring entries =
 `grasping_mail` (no module block); Stacked Deck = stackable price.
 Maps `[maps]` (module `maps`: special maps always, `progression`, `corrupted_min_tier`).
 Campaign `[leveling]` (module `leveling`, `AreaLevel <= area_level_max` only, gear `Rarity <= Rare`:
 never a unique; after recipes / cluster prices, before stackables / uniques / bases, so campaign
 Shows beat price Hides): build module (`rules/leveling/<build>.filter`: rf, minion = minion
-wand / Bone Ring / minion spirit shield bases any rarity, armour/ES hybrid (pure armour only below that slot's first armour/ES drop level), wands only) + `[leveling]` hides first (`show_3_links_until`: any 3L, any base / rarity, `link_classes` only (also build / module link Shows), before the magic hide and build module; `show_jewels`), then [2802] jewels, [[3800]]
+wand / Bone Ring / minion spirit shield bases any rarity; the module's leading Shows (before its first Hide) go before the `[leveling]` extras so their sound / icon / beam win over e.g. `show_jewellery`, armour/ES hybrid (pure armour only below that slot's first armour/ES drop level), wands only) + `[leveling]` hides first (`show_3_links_until` / `show_4_links_until`: any 3L / 4L, any base / rarity, `link_classes` only (also build / module link Shows), before the magic hide and build module; `show_jewels`), then [2802] jewels, [[3800]]
 currency styles (visibility stays `campaign_unhide` + price), [[5000]] outdated
 flask Hides, [[5100]]-[[5405]] flasks / rares / normal + magic gear. Most keys follow `strictness`
 (NeverSink tag: `%D<n>` Show while < n, `%H<n>` Hide from n, magic blockers Hide from 3, untagged
 Hides Show); [[3800]] too, but price first (`leveling_price_shown` / `leveling_price_first`: names a
 price rule shows dropped, `StackSize < n` below the stack reaching a shown tier; pinned / overrides
-count); options: quicksilver / utility alerts true (as before), decorators / spirit shields false;
+count); build-module Shows price first too (`campaign_price_first`: currency names as [[3800]],
+`Rarity Unique` Shows drop `leveling_unique_bases`). "Shown tier" = `price_beats_campaign`: shown, not
+quiet, rank <= `[leveling] price_over_tier` ("" = any shown): price wins only when higher; options: quicksilver / utility alerts true (as before), decorators / spirit shields false;
 league_start turns options on, not strictness keys. [5406] / [5407] = `rules/bottom.filter`.
 Map items (module `maps` [[3400]] / [[3500]], after stackables, before uniques): price decides first
 where poe.ninja has one; reliquary keys (`Vault Keys`) are always top (`always_top_classes`, section 3);
@@ -205,7 +231,7 @@ in their `Class` lists. `s2602_1` (FilterBlade corrupted-unique Show) off: `[cor
 does it inside `emit_uniques`. Leveling `[leveling]`.
 Gold (`emit_gold`, first): `show_gold` false = all hidden; true = in maps (`AreaLevel >= 68`) stacks
 >= `gold_min_stack` shown (module `misc` gold.stack3 look), smaller hidden; campaign gold shown small;
-`show_small_gold` (LS on): no small-gold Hide, smaller stacks keep the small look. Module gold.* keys are config-driven (one source of truth). Misc `[misc]`
+`show_small_gold` (LS on): no small-gold Hide, smaller stacks keep the small look. Module gold.* keys are config-driven (one source of truth). Every gold Show font `GOLD_FONT_SIZE` (18, smallest; `maximize_item_sizes` skips gold, PoE2 sets it) + `GOLD_BACKGROUND` (`SetBackgroundColor 0 0 0 0`). Misc `[misc]`
 (module `misc`): heist targets, enshrouded gear, magic / rare / normal
 idols: Shows after special maps, before uniques (league.filter "override uniques": a unique-rarity
 heist target / enshrouded item keeps this look; none is a poe.ninja category, Shows hide no
@@ -215,14 +241,19 @@ first, so `questlike.invitations` only acts on unpriced non-fragment "Maven's" i
 6L overrides (`6l.*`): `show_6_links` (top.filter, superset) instead.
 
 ## 9b. New league content / unidentified tier (3.28)
+- Threads (core game since 3.28, `Map Fragments`): poe.ninja exchange `Thread` feed, priced as stackables (Hexagon);
+  still listed in `[league_mechanic] fragments` (blue while unpriced, `icon_floor`).
 - `[league_mechanic]`: new names / classes without confident price or NeverSink fallback tier ->
-  `tier` (blue) + Moon, never hidden (`emit_league_mechanic`, before the stackable class fallbacks).
-  `Fated True` -> same look before every Hide except top.filter / gems / recipes / id mods / exotics
+  `tier` (blue) + Moon (`fragments`: Hexagon), never hidden (`emit_league_mechanic`, before the stackable class fallbacks).
+  `icon_floor`: priced / reference-tier `names` in a tier without beam + icon (brown = beam only, dust, hidden,
+  small_loot) -> Show in the quiet look (grey beam + icon) instead (`floored` in `emit_stackables`).
+  `Fated True` -> same look (rare gear only in `fated_tiers.<group>` rr base tiers, rest = normal rare) before every Hide except top.filter / gems / recipes / id mods / exotics
   (`emit_fated`): a Fated unique shows blue, not its price tier.
-- `[unid_tier]` (module `unid_tier`, FilterBlade PoE2 [0800] grid 1:1): rare / magic unID gear and
-  jewellery shown by `UnidentifiedItemTier` >= 4 / 3 / 2 x base rank a / b / c (PoE1 NeverSink rare
-  tiers t1 / t2 / t3), any other base at tier >= 5 / 4; each cell a toggle. Shows only, after
-  id_mods and priced-base copies, before recipes / rares. LS: every cell on.
+- `rare_base_blocks` (Fated / `[unid_tier]` / `[memory_strands]`): one block per rr tier, groups wanting the same tier share it (NeverSink's generic `rr.tN` lists mix weapon + armour bases; `rr.t1` has no weapons), "all" = one any-base block per group.
+- `[unid_tier]` (like `[rares]` base tiers / Fated, `rare_base_blocks` shared with Fated): rare / magic unID
+  gear + jewellery on the `weapons` / `armour` / `jewellery` rr base tiers ("t1".."t5", "all") with
+  `UnidentifiedItemTier >= min_tier.<rarity>` (0-5, 0 = not tiered), maps only, price tier `tier` style.
+  Shows only, after id_mods and priced-base copies, before recipes / rares. LS: groups ["all"], min_tier 2.
 
 ## 10. Hand rules / toggles
 `rules/top.filter` (5L/6L, mirrored, quest items, Awakened / 20% gems), `rules/bottom.filter` (hide gear,
@@ -236,6 +267,7 @@ confident poe.ninja price in a hidden tier, or a listed decision (config toggles
 groups ranked cheap, card 3-stacks and level 18-20 gems left to price). New gap = fix or add a reason.
 
 ## Known gaps vs user's intended logic (fix = ask user first)
+- `[memory_strands]` (NeverSink [0902] as config, `rare_base_blocks` like `[unid_tier]`): MemoryStrands >= `min_strands` on the listed rr base tiers, >= `any_base_min_strands` on any base, 1+ when fractured / veiled; right after `emit_unid_tiers`.
 - EV path step 2: hidden EV tier hides even a pool jackpot (Headhunter on Leather Belt).
   User rule: jackpot -> blue first.
 - Foulborn base price always cheapest, ignores `base_price`.

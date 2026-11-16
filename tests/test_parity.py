@@ -43,9 +43,10 @@ EXPLAINED = [
     # --- explicit config decisions (config.toml, documented there)
     (r"^override hide$", "decision: config.toml [overrides] = hide"),
     (r"config tier hide$", "decision: config.toml [exchange.unpriced_tiers] hide (FilterBlade conditional Hides)"),
-    (r"^unpriced cards, reference tier hide", "decision: unpriced low-volume card, regular NeverSink group "
-                                              "t4 / t4c / t5 / t5c -> hide ([exchange.reference_card_tiers]): "
-                                              "ranked cheap by NeverSink, not 'maybe valuable'"),
+    (r"^unpriced cards, reference tier (hide|dust|brown)", "decision: unpriced low-volume card, regular NeverSink "
+                                                           "group t4 / t4c / t5 / t5c -> hide or a hidden tier "
+                                                           "([exchange.reference_card_tiers]): ranked cheap by "
+                                                           "NeverSink, not 'maybe valuable'"),
     (r"^unpriced currency, reference tier (dust|brown)", "decision: unpriced currency, NeverSink tier 5+ "
                                                          "([exchange.reference_currency_tiers]): ranked cheap"),
     (r"show_contracts|hide_forbidden_tome|show_gold", "decision: config.toml toggle"),
@@ -199,13 +200,22 @@ def overquality_reason(cfg, ref_block):
 
 def reason_for(tc, block, it, ref_block=None):
     reason = (explain(block.comment) or price_reason(tc, it)
-              or (overquality_reason(tc.cfg, ref_block) if ref_block else None))
+              or (overquality_reason(tc.cfg, ref_block) if ref_block else None)
+              or (module_off_reason(tc.cfg, ref_block) if ref_block else None))
     if reason and reason.startswith("price"):
         if it.get("class") == "Divination Cards" and it.get("stack", 1) > 1:
             return STACKED_CARDS
         if it.get("class") in ("Skill Gems", "Support Gems") and 18 <= it.get("gem_level", 1) <= 20:
             return GEMS_18_20
     return reason
+
+
+def module_off_reason(cfg, ref_block):
+    """league.filter's rare section ($type->rare->...) while config.toml rares.enabled = false
+    (whole module off: explicit config decision)."""
+    if "$type->rare->" in (ref_block.comment or "") and not cfg.get("rares", {}).get("enabled", True):
+        return "decision: config.toml rares.enabled = false (whole rares module off)"
+    return None
 
 
 def price_reason(tc, it):
@@ -234,6 +244,9 @@ def price_reason(tc, it):
                  and l.get("levelRequired", 0) <= it.get("ilvl", 0)]
         if lines:
             l = max(lines, key=lambda l: l.get("levelRequired", 0))  # covers its own ilvl range only
+            if (l.get("listingCount", 0) >= b["min_listings"] and l.get("count", 0) >= b["min_samples"]
+                    and l["chaosValue"] <= b["dump_floor"]):
+                return "price: crafting base at poe.ninja's dump floor ([bases] dump_floor), gear modules decide"
             if (l.get("listingCount", 0) >= b["min_listings"] and l.get("count", 0) >= b["min_samples"]
                     and tc.r["tiers"].rank(tc.r["tiers"].of(l["chaosValue"])) > tc.r["tiers"].rank(b["min_tier"])):
                 return "price: crafting base (base + influence + ilvl) confidently below [bases] min_tier"

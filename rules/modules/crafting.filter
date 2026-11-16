@@ -21,7 +21,7 @@ Show # socketslinks.5link6sockets %D4
 	SetFontSize 45
 	PlayAlertSound 2 300
 	PlayEffect Blue
-	MinimapIcon 2 Blue Hexagon
+	MinimapIcon 2 Blue Diamond
 
 Show # socketslinks.5links %D3
 	LinkedSockets >= 5

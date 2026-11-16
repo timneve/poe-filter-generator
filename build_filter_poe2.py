@@ -34,6 +34,8 @@ NO_STACK = {"UncutGems", "LineageSupportGems"}
 LEVELED_FEEDS = {"UncutGems"}
 LEVELED = re.compile(r"^(.*) \(Level (\d+)\)$")
 HIDDEN_STYLE = ["SetFontSize 18", "DisableDropSound True"]
+GOLD_FONT_SIZE = 18  # smallest font the game allows; every gold Show uses it (maximize_item_sizes)
+GOLD_BACKGROUND = "SetBackgroundColor 0 0 0 0"  # gold label fully transparent (maximize_item_sizes)
 STYLES = {
     "top": ["SetFontSize 45", "SetTextColor red", "SetBorderColor red",
             "SetBackgroundColor tink_bg", "PlayAlertSound 6 300", "PlayEffect Red",
@@ -279,11 +281,16 @@ def no_borders(cfg, text):
 
 
 def maximize_item_sizes(text):
-    """Every shown item at full text size (hidden ones stay small)."""
+    """Every shown item at full text size (hidden ones stay small); gold the opposite: smallest
+    (GOLD_FONT_SIZE) on a fully transparent background (GOLD_BACKGROUND)."""
     out = []
     for blk in re.split(r"(?m)(?=^(?:Show|Hide|Minimal)\b)", text):
+        size = GOLD_FONT_SIZE if re.search(r'(?m)^\s*BaseType == "Gold"\s*$', blk) else 45
         if blk.startswith(("Show", "Minimal")):
-            blk = re.sub(r"(?m)^(\s*SetFontSize\s+)\d+\b", r"\g<1>45", blk)
+            blk = re.sub(r"(?m)^(\s*SetFontSize\s+)\d+\b", rf"\g<1>{size}", blk)
+            if size == GOLD_FONT_SIZE:
+                blk = re.sub(r"(?m)^\s*SetBackgroundColor\b.*\n", "", blk)
+                blk = re.sub(r"(?m)^(\s*)(SetFontSize .*)$", rf"\1\2\n\1{GOLD_BACKGROUND}", blk, count=1)
         out.append(blk)
     return "".join(out)
 

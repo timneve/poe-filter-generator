@@ -40,15 +40,15 @@ Anything with no PoE1 / PoE2 counterpart: ask, don't drop or invent.
 
 - Prefer a rule module (`rules/modules/<name>.filter`, per-block toggles in `modules.toml`,
   `module_blocks`): every FilterBlade checkbox = one toggle. Import with `tools/import_neversink.py`
-  when NeverSink has the section; otherwise generate it from the source structure with a script
-  (e.g. `tools/make_unid_tier.py`), never hand-type NeverSink text.
+  when NeverSink has the section; otherwise generate it from the source structure with a script,
+  never hand-type NeverSink text.
 - Follow `docs/ai/MODULES.md` rules (position = NeverSink section order, price beats module only
   where FilterBlade lets economy decide, league_start turns off Shows on).
 
 ## 5. Prove parity in tests
 
 - A test that our module equals the source structure (keys, order, tier / rarity conditions,
-  styles, tags), e.g. `test_unid_tier_module_matches_poe2_grid`.
+  styles, tags).
 - filtersim tests per cell family with real items, one toggle off, `enabled = false`, league start.
 - Never delete a test to make a redesign pass without telling the user why it is obsolete and what
   replaces it.

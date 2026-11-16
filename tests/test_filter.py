@@ -67,6 +67,11 @@ def add_unique(data, base, name, chaos, listings=100, item_type="Belt", t="Uniqu
                                       "listingCount": listings, "itemType": item_type})
 
 
+def add_viscera(data, name, variant, chaos, listings=20):
+    data["stash"]["Viscera"]["lines"].append({"name": name, "variant": variant, "chaosValue": chaos,
+                                             "listingCount": listings, "itemType": "Head"})
+
+
 def unid_unique(base, cls, foulborn=False):
     return {"rarity": "Unique", "basetype": base, "class": cls, "ilvl": 84, "foulborn": foulborn}
 
@@ -137,6 +142,18 @@ class Synthetic(unittest.TestCase):
         self.assertEqual(rules[0]["conditions"][0]["values"], ["Unique"])
         self.assertEqual(rules[1]["conditions"][0]["values"], ["Shagreen Boots"])
 
+    def test_removed_basetypes_stripped(self):
+        cfg = {"removed_basetypes": ["Gone Scarab", "Gone Vial"]}
+        text = ('Show # a\n\tBaseType == "Gone Scarab" "Kept Orb"\n\tSetFontSize 45\n\n'
+                'Show # b\n\tBaseType == "Gone Vial"\n\tSetFontSize 45\n\n# section\n'
+                'Hide # c\n\tBaseType "Gone Scarab" "Other"\n')
+        out = bf.strip_removed_basetypes(cfg, text)
+        self.assertNotIn("Gone", out)
+        self.assertIn('BaseType == "Kept Orb"', out)
+        self.assertNotIn("Show # b", out)
+        self.assertIn("# section", out)
+        self.assertIn('BaseType "Other"', out)
+
     def test_unique_maps_square_icon(self):
         # unique map = map icon (Square), also module blocks (corrupted, restex)
         blocks, _ = self.build()
@@ -158,10 +175,15 @@ class Synthetic(unittest.TestCase):
             {"name": "Heavy Strike of Trarthus", "gemLevel": 1, "chaosValue": 5000, "listingCount": 50,
              "metadata": {"gemKind": "trarthus"},
              "tradeFilter": {"query": {"type": {"option": "Heavy Strike", "discriminator": "alt_y"}}}},
+            # 3.28 Vaal transfigured, poe.ninja sometimes sends tradeFilter null (broke the game load)
+            {"name": "Vaal Fireball (Fireball of Radiation)", "baseType": "Vaal Fireball", "gemLevel": 20,
+             "gemQuality": 20, "corrupted": True, "chaosValue": 5000, "listingCount": 4, "tradeFilter": None},
             {"name": "Faster Casting Support", "gemLevel": 1, "chaosValue": 5000, "listingCount": 50}]}
         text, _ = bf.build_text(self.cfg, self.data, "Test")
         self.assertNotIn('"Cyclone of Tumult"', text)
         self.assertNotIn('"Heavy Strike of Trarthus"', text)
+        self.assertNotIn("Fireball of Radiation", text)
+        self.assertEqual(bf.alt_gem_bases(self.data)["Vaal Fireball (Fireball of Radiation)"], "Vaal Fireball")
         self.assertIn('"Faster Casting Support"', text)
         cyclone = {"class": "Skill Gems", "basetype": "Cyclone", "transfigured": True}
         self.assertTrue(fs.visible(fs.parse(text), cyclone))
@@ -209,6 +231,29 @@ class Synthetic(unittest.TestCase):
         # 20/20 price never reaches a corrupted 20/20
         self.assertNotIn("gem top", fs.evaluate(blocks, dict(gem, gem_level=20, quality=20, corrupted=True))[0].comment)
 
+    def test_price_recipe_min_tier(self):
+        # 1% gem: its prism share is dust, min_tier lifts it to low (campaign and maps)
+        rec = self.cfg["vendor_recipes"]["gemcutter"]
+        rec.update(enabled=True, min_tier="low")
+        add_exchange(self.data, "Currency", "Gemcutter's Prism", 0.5)
+        blocks, _ = self.build()
+        icon = lambda style: [l for l in style if l.startswith(("MinimapIcon", "PlayEffect"))]
+        low = icon(bf.style_for(self.cfg, "low", bf.GEM_SHAPE))
+        for area in (10, 83):
+            b, _ = fs.evaluate(blocks, {"class": "Skill Gems", "basetype": "Fireball", "rarity": "Normal",
+                                        "quality": 1, "area_level": area})
+            self.assertEqual((b.comment, icon(b.style)), ("vendor recipe: gemcutter", low), area)
+        # low hidden by config (Standard): still shown, quiet grey beam + icon
+        self.cfg["hide_tiers"] = ["low", "brown", "dust"]
+        blocks, _ = self.build()
+        b, _ = fs.evaluate(blocks, {"class": "Skill Gems", "basetype": "Fireball", "rarity": "Normal", "quality": 1})
+        self.assertEqual(b.action, "Show")
+        self.assertIn("PlayEffect Grey", b.style)
+        self.assertTrue(any(l.startswith("MinimapIcon 2 Grey") for l in b.style))
+        rec["min_tier"] = "minor"
+        levels = bf.recipe_levels(self.cfg, bf.Tiers(self.cfg), rec, {"Gemcutter's Prism": (0.5,)})
+        self.assertEqual(levels, [("minor", ["Quality >= 1"])])
+
     def test_thin_low_level_vendor_gems_are_hidden(self):
         self.data["stash"]["SkillGem"] = {"lines": [
             {"name": "Swordstorm", "gemLevel": 1, "chaosValue": 8, "listingCount": 1},
@@ -218,6 +263,38 @@ class Synthetic(unittest.TestCase):
         for level in (1, 19):
             gem = {"class": "Skill Gems", "basetype": "Swordstorm", "gem_level": level}
             self.assertFalse(fs.visible(blocks, gem))
+
+    def test_hide_level1_hides_plain_vendor_gems_only(self):
+        # Cold Snap lvl 1 confidently priced high: hidden anyway (vendor sells it), also with show_all.
+        # Exceptional (gemKind tag / NeverSink list), 20% and lvl 2 stay shown; off -> price decides.
+        self.data["stash"]["SkillGem"] = {"lines": [
+            {"name": "Cold Snap", "gemLevel": 1, "chaosValue": 50, "listingCount": 102},
+            {"name": "Congregation Support", "gemLevel": 1, "chaosValue": 500, "listingCount": 30,
+             "metadata": {"gemKind": "exceptional"}},
+            {"name": "Pact of Beidat", "gemLevel": 1, "chaosValue": 400, "listingCount": 39}]}
+        self.cfg["gems"].update(min_tier="low", show_all=True, hide_level1=True)
+        blocks, _ = self.build()
+        gem = lambda name, **kw: {"class": "Skill Gems", "basetype": name, "gem_level": 1, **kw}
+        self.assertFalse(fs.visible(blocks, gem("Cold Snap")))
+        self.assertTrue(fs.visible(blocks, gem("Cold Snap", quality=20)))
+        self.assertTrue(fs.visible(blocks, gem("Cold Snap", gem_level=2)))
+        self.assertTrue(fs.visible(blocks, gem("Congregation Support")))
+        self.assertTrue(fs.visible(blocks, gem("Pact of Beidat")))
+        self.cfg["gems"]["hide_level1"] = False
+        blocks, _ = self.build()
+        self.assertTrue(fs.visible(blocks, gem("Cold Snap")))
+
+    def test_floor_priced_vendor_gems_are_hidden(self):
+        # Cold Snap lvl 1 at 1c / 102 listings = poe.ninja floor, vendor sells it: hidden.
+        # A plain lvl 1 gem confidently above the floor (drop-only support) keeps its tier.
+        self.data["stash"]["SkillGem"] = {"lines": [
+            {"name": "Cold Snap", "gemLevel": 1, "chaosValue": 1, "listingCount": 102},
+            {"name": "Pulverise Support", "gemLevel": 1, "chaosValue": 50, "listingCount": 30}]}
+        self.cfg["gems"]["min_tier"] = "dust"
+        self.cfg["gems"]["show_all"] = False
+        blocks, _ = self.build()
+        self.assertFalse(fs.visible(blocks, {"class": "Skill Gems", "basetype": "Cold Snap", "gem_level": 1}))
+        self.assertTrue(fs.visible(blocks, {"class": "Support Gems", "basetype": "Pulverise Support", "gem_level": 1}))
 
     def test_gem_price_capped_by_better_variant(self):
         # poe.ninja "20" Spectral Helix at 1 div (price-fix listings) vs 9c for 20/20: a worse
@@ -468,6 +545,10 @@ class Synthetic(unittest.TestCase):
         self.cfg["show_5_links"] = True
         blocks = fs.parse(bf.hand_rules(self.cfg, "top"))
         self.assertEqual(fs.evaluate(blocks, dict(rare_armour, links=5))[0].action, "Show")
+        five_style = " ".join(fs.evaluate(blocks, dict(rare_armour, links=5))[1])
+        self.assertNotIn("SetBackgroundColor", five_style)  # 5L = high style, never tink
+        self.assertNotIn("SetBorderColor", five_style)
+        self.assertIn("SetBackgroundColor", " ".join(fs.evaluate(blocks, dict(rare_armour, links=6))[1]))  # 6L tinks
 
         self.cfg["show_6_links"] = False
         blocks = fs.parse(bf.hand_rules(self.cfg, "top"))
@@ -494,9 +575,10 @@ class Synthetic(unittest.TestCase):
         for key, item in recipes.items():
             block, style = fs.evaluate(blocks, item)
             self.assertEqual(block.comment, f"vendor recipe: {key}")
-            self.assertTrue(any(l.startswith("MinimapIcon") and l.endswith("Diamond") for l in style), key)
+            shape = "Triangle" if key == "gemcutter" else "Diamond"  # gems: triangle
+            self.assertTrue(any(l.startswith("MinimapIcon") and l.endswith(shape) for l in style), key)
         self.assertNotIn("recipe", fs.evaluate(blocks, gem20)[0].comment)  # own cyan 20% rule
-        self.assertIn("MinimapIcon 1 Red Diamond", fs.evaluate(blocks, awakened)[1])
+        self.assertIn("MinimapIcon 1 Red Triangle", fs.evaluate(blocks, awakened)[1])
         self.assertEqual(fs.evaluate(blocks, flask_low)[0].comment, "vendor recipe: glassblower")  # brown share: lowest shown
         self.assertFalse(fs.visible(blocks, dict(flask, quality=0)))
         self.assertFalse(fs.visible(blocks, dict(rgb, socket_group="RGG")))
@@ -590,6 +672,50 @@ class Synthetic(unittest.TestCase):
         self.assertEqual(fs.evaluate(blocks, ring)[0].action, "Show")
         self.assertIn(("top", 84, 84, "Elder", "Some Base", 600),
                       [e for e in r["cbases"] if e[4] == "Some Base"])
+
+    def test_priced_flask_base_beats_plain_flask_module(self):
+        # Silver Flask ilvl 85 worth a price tier: its price style, not the grey endgameflasks.utility85 Show
+        # (also with a build: utility flasks are in no unused-white Hide, so no hold-back)
+        self.cfg["leveling"]["build"] = "rf"
+        self.cfg["leveling"]["unused_whites_min_tier"] = "top"
+        self.cfg["bases"]["min_tier"] = "minor"  # 60c = high: priced (league start backup may hold "top")
+        self.data["stash"]["Flask"]["lines"].append(
+            {"name": "Silver Flask", "levelRequired": 85, "chaosValue": 60, "listingCount": 500,
+             "count": 300, "itemType": "Utility Flask"})
+        self.cfg["flasks"]["show_plain"] = True
+        self.cfg["modules"]["flasks"]["blocks"]["endgameflasks.utility85"] = True  # backup may hold false
+        blocks, r = self.build()
+        tier = next(e[0] for e in r["cbases"] if e[4] == "Silver Flask")
+        flask = {"class": "Utility Flasks", "basetype": "Silver Flask", "rarity": "Normal", "ilvl": 85,
+                 "area_level": 80}
+        self.assertIn(f"base {tier} ilvl85+", fs.evaluate(blocks, flask)[0].comment)
+        # cheap flask base: still the module's plain flask Show
+        self.assertIn("endgameflasks", fs.evaluate(blocks, dict(flask, basetype="Sapphire Flask"))[0].comment)
+
+    def test_plain_flasks_priced_like_crafting_bases(self):
+        # [flasks] show_plain false: no plain flask Shows; priced flask base keeps its tier,
+        # a 2c one (<= dump_floor) and an unpriced one are hidden in maps like cheap crafting bases
+        self.cfg["leveling"]["build"] = None
+        self.cfg["bases"]["min_tier"] = "minor"
+        self.cfg["flasks"]["show_plain"] = False
+        lines = self.data["stash"]["Flask"]["lines"]
+        lines.append({"name": "Silver Flask", "levelRequired": 85, "chaosValue": 60, "listingCount": 500,
+                      "count": 300, "itemType": "Utility Flask"})
+        lines.append({"name": "Bismuth Flask", "levelRequired": 84, "chaosValue": 2, "listingCount": 500,
+                      "count": 300, "itemType": "Utility Flask"})
+        blocks, r = self.build()
+        flask = {"class": "Utility Flasks", "basetype": "Silver Flask", "rarity": "Normal", "ilvl": 85,
+                 "area_level": 83}
+        self.assertIn("ilvl85+", fs.evaluate(blocks, flask)[0].comment)
+        for base, ilvl in (("Bismuth Flask", 84), ("Aquamarine Flask", 85)):
+            for rarity in ("Normal", "Magic"):
+                item = dict(flask, basetype=base, ilvl=ilvl, rarity=rarity)
+                self.assertFalse(fs.visible(blocks, item), (base, rarity, fs.evaluate(blocks, item)[0]))
+        self.assertFalse(any("endgameflasks.utility" in b.comment for b in blocks))
+        # good mods still shown
+        good = dict(flask, basetype="Bismuth Flask", ilvl=84, rarity="Magic", identified=True,
+                    mods=["of the Owl", "Surgeon's"])
+        self.assertTrue(fs.visible(blocks, good))
 
     def test_crafting_base_requires_minimum_sample_count(self):
         self.data["stash"]["BaseType"]["lines"].append(
@@ -808,6 +934,22 @@ class Synthetic(unittest.TestCase):
         self.cfg["content"]["blight"]["drops"] = {name: "price"}
         self.cfg["content"]["blight"]["enabled"] = True
         self.assertTrue(fs.visible(self.build()[0], amulet))
+
+    def test_content_source_match_is_case_sensitive(self):
+        # "Blight" must not hit Brinerot's "Wb/WbLightning..." monster metadata; "Ultimatum"
+        # still hits "LeagueUltimatum".
+        cfg = {"content": {"blight": {"sources": ["Blight"]}, "ultimatum": {"sources": ["Ultimatum"]}}}
+        rows = [
+            {"name": "Brinerot Mark", "base": "Unset Ring", "restricted": True, "enabled": True,
+             "source": "Metadata/Monsters/Wb/WbLightningLeader1 |  | Drop from [[Brinerot]] Warband"},
+            {"name": "Putrid Seed", "base": "Mycelium Core", "restricted": True, "enabled": True,
+             "source": " |  | Can drop in a Mycotic [[Blight (game content)|Blight]] encounter."},
+            {"name": "Ambition", "base": "Vaal Aspect", "restricted": True, "enabled": True,
+             "source": "Metadata/Monsters/LeagueUltimatum/TrialMaster/TrialMasterBoss |  | "},
+        ]
+        self.assertEqual(bf.content_bases(rows, cfg), {
+            "blight": {"Mycelium Core": {"Putrid Seed"}},
+            "ultimatum": {"Vaal Aspect": {"Ambition"}}})
 
     def test_content_module_on_off(self):
         # Titan Greaves: 30c Kaom's Roots + 1c Breach-boss unique. Breach off -> Kaom's tier, on -> blue
@@ -1094,7 +1236,20 @@ class Synthetic(unittest.TestCase):
                 self.assertTrue(any(s.startswith("PlayEffect") for s in b["style"]), b["key"])
         # user pref: no temporary beams anywhere (league start = every module block on)
         self.cfg["league_start"] = True
-        self.assertNotRegex(bf.build_text(self.cfg, self.data, "x")[0], r"PlayEffect \w+ Temp")
+        text = bf.build_text(self.cfg, self.data, "x")[0]
+        self.assertNotRegex(text, r"PlayEffect \w+ Temp")
+        # user pref: every beam has a minimap icon too (beam_icon fills NeverSink copies without one),
+        # except brown tier: grey beam, no icon
+        brown_bg = f"SetBackgroundColor {self.cfg['colors']['brown_bg']}"
+        brown = 0
+        for b in bf.BLOCK_RE.findall(text):
+            if b.startswith("Show") and brown_bg in b:
+                brown += 1
+                self.assertIn("PlayEffect Grey", b, b.split("\n")[0])
+                self.assertNotIn("MinimapIcon", b, b.split("\n")[0])
+            elif b.startswith("Show") and "PlayEffect" in b:
+                self.assertIn("MinimapIcon", b, b.split("\n")[0])
+        self.assertGreater(brown, 0)
 
     def test_overquality_groups_all_quality_rules(self):
         # every quality-threshold module block is a config.toml [overquality] key (one place)
@@ -1277,6 +1432,40 @@ class Synthetic(unittest.TestCase):
         self.assertEqual(r["fbases"]["Cutlass"][0], "variable")
         self.assertTrue(fs.visible(blocks, unid_unique("Cutlass", "One Hand Swords", foulborn=True)))
 
+    def test_viscera_priced_per_base(self):
+        # filter sees only Class "Viscera" + BaseType: Greater / Lesser prefix and implicit
+        # variants share one base; cheapest confident line = tier, jackpot line -> blue
+        self.cfg["jackpot_divine"] = 1  # 400c
+        self.cfg["hide_tiers"] = ["brown", "dust"]
+        self.cfg["uniques"]["never_hide_tier"] = "top"
+        add_viscera(self.data, "Sirus' Head", "Transfiguration of Body", 30)
+        add_viscera(self.data, "Greater Sirus' Head", "Explode", 60)
+        add_viscera(self.data, "Coven Queen's Crown", "Junk", 1.5)  # low: ranks below blue
+        add_viscera(self.data, "Coven Queen's Crown", "Spectres", 30000, listings=2)  # thin jackpot
+        add_viscera(self.data, "Bear Head", "Junk", 0.5)
+        add_viscera(self.data, "Lesser Scout's Bow", "Thin", 10, listings=2)  # nothing confident
+        vis = lambda base: {"class": "Viscera", "basetype": base}
+        blocks, r = self.build()
+        self.assertEqual(r["vbases"]["Sirus' Head"][:2], ("high", 30))
+        self.assertNotIn("Greater Sirus' Head", r["vbases"])
+        self.assertEqual(r["vbases"]["Coven Queen's Crown"][0], "variable")
+        self.assertEqual(r["vbases"]["Bear Head"][0], "hide")  # below min_tier (low)
+        self.assertEqual(r["vbases"]["Scout's Bow"][0], "variable")  # unknown_as_variable
+        self.assertIn("viscera high", fs.evaluate(blocks, vis("Sirus' Head"))[0].comment)
+        icon = next(l for l in fs.evaluate(blocks, vis("Sirus' Head"))[1] if l.startswith("MinimapIcon"))
+        self.assertTrue(icon.endswith("Moon"), icon)
+        self.assertTrue(fs.visible(blocks, vis("Coven Queen's Crown")))
+        self.assertFalse(fs.visible(blocks, vis("Bear Head")))  # hidden tier: exact Hide before the blue class
+        self.assertIn("league_mechanic", fs.evaluate(blocks, vis("Stag Head"))[0].comment)  # unpriced: blue
+        self.cfg["viscera"]["min_tier"] = "top"
+        blocks, r = self.build()
+        self.assertFalse(fs.visible(blocks, vis("Sirus' Head")))
+        self.assertTrue(fs.visible(blocks, vis("Coven Queen's Crown")))  # jackpot never hidden
+        self.cfg["viscera"]["enabled"] = False
+        blocks, r = self.build()
+        self.assertEqual(r["vbases"], {})
+        self.assertIn("league_mechanic", fs.evaluate(blocks, vis("Bear Head"))[0].comment)
+
     def test_jackpot_keeps_better_tier_than_variable(self):
         # cheapest unique on the base just under top (high), best a jackpot: the jackpot must
         # not drop it to blue variable (ranks below high); stays high. Normal + Foulborn.
@@ -1456,7 +1645,7 @@ class Synthetic(unittest.TestCase):
         self.assertNotIn("Thin Junk", r["prices"])
         self.assertTrue(fs.visible(blocks, {"class": "Divination Cards", "basetype": "Thin Card"}))
         _, style = fs.evaluate(blocks, {"class": "Divination Cards", "basetype": "Thin Card"})
-        self.assertIn("SetTextColor 215 215 215 255", style)
+        self.assertIn("SetTextColor 165 190 225 255", style)
         self.assertIn("PlayEffect Blue", style)
         self.assertIn("DisableDropSound True", style)
         self.assertFalse(any(line.startswith("PlayAlertSound") for line in style))
@@ -1524,7 +1713,7 @@ class Synthetic(unittest.TestCase):
     def test_card_missing_from_neversink_groups_uses_unknown_style_without_sound(self):
         blocks, _ = self.build()
         block, style = fs.evaluate(blocks, {"class": "Divination Cards", "basetype": "Card From Next League"})
-        self.assertIn("SetTextColor 215 215 215 255", style)
+        self.assertIn("SetTextColor 165 190 225 255", style)
         self.assertIn("PlayEffect Blue", style)
         self.assertIn("MinimapIcon 1 Blue Circle", style)
         self.assertIn("DisableDropSound True", style)
@@ -1546,6 +1735,7 @@ class Synthetic(unittest.TestCase):
             ("Artifact", "Greater Broken Circle Artifact", "Circle"),
             ("DeliriumOrb", "Delirium Orb", "Circle"),
             ("Tattoo", "Honoured Tattoo", "Moon"),
+            ("Thread", "Ritual Thread", "Hexagon"),
         ]
         for item_type, name, _ in categories:
             add_exchange(self.data, item_type, name, 5)
@@ -1749,6 +1939,28 @@ class Synthetic(unittest.TestCase):
         self.assertTrue(fs.visible(blocks, {"class": "Life Flasks", "basetype": "Small Life Flask",
                                             "rarity": "Unique", "area_level": 40}))
 
+    def test_leveling_price_over_tier(self):
+        # price first over build-module Shows, only when the price tier is price_over_tier or better
+        lv = self.cfg["leveling"]
+        lv.update(enabled=True, build="rf", price_over_tier="high")
+        self.cfg["quiet_tiers"] = []
+        add_exchange(self.data, "Currency", "Orb of Alteration", 30)     # high: price wins
+        add_exchange(self.data, "Currency", "Orb of Transmutation", 1)   # low: campaign style stays
+        add_unique(self.data, "Leather Belt", "Mid Belt", 10)           # mid: below high
+        cur = lambda base: {"class": "Stackable Currency", "basetype": base, "stack": 1, "area_level": 20}
+        belt = dict(unid_unique("Leather Belt", "Belts"), area_level=20, ilvl=20)
+        comment = lambda item: fs.evaluate(blocks, item)[0].comment
+        blocks, r = self.build()
+        self.assertEqual(r["ubases"]["Leather Belt"][0], "mid")
+        self.assertNotIn("rf currency", comment(cur("Orb of Alteration")))
+        self.assertIn("rf currency", comment(cur("Orb of Transmutation")))
+        self.assertIn("rf uniques", comment(belt))
+        lv["price_over_tier"] = ""  # any shown price tier wins
+        blocks, _ = self.build()
+        self.assertNotIn("rf currency", comment(cur("Orb of Transmutation")))
+        self.assertNotIn("rf uniques", comment(belt))
+        self.assertIn("rf uniques", comment(dict(belt, basetype="Paua Amulet", **{"class": "Amulets"})))  # unpriced
+
     def test_leveling_module(self):
         # module leveling: [2802] [[3800]] [[5000]]-[[5405]], no build module / extras in the way
         lv = self.cfg["leveling"]
@@ -1869,6 +2081,21 @@ class Synthetic(unittest.TestCase):
         # maps untouched
         self.assertFalse(fs.visible(blocks, {"class": "Wands", "basetype": "Driftwood Wand", "rarity": "Magic"}))
 
+    def test_campaign_unid_tier(self):
+        self.cfg["leveling"].update(enabled=True, build="minion", hide_normal_after=2, hide_magic_after=7,
+                                    show_magic_rare_cells=0, show_unid_tier_magic=4, show_unid_tier_rare=4)
+        camp = {"area_level": 30, "ilvl": 30}
+        boots = {"class": "Boots", "basetype": "Leatherscale Boots", "evasion": 10, "rarity": "Magic"}
+        key = lambda b, item: (fs.evaluate(b, item)[0] or fs.Block("", "", 0)).comment
+        blocks, _ = self.build()
+        self.assertTrue(fs.visible(blocks, {**camp, **boots, "unid_tier": 4}))  # beats hide_magic_after
+        self.assertFalse(fs.visible(blocks, {**camp, **boots, "unid_tier": 3}))
+        self.assertIn("show_unid_tier_magic", key(blocks, {**camp, **boots, "unid_tier": 5}))
+        self.assertIn("show_unid_tier_rare", key(blocks, {**camp, **boots, "rarity": "Rare", "unid_tier": 4}))
+        self.cfg["leveling"].update(show_unid_tier_magic=0)
+        blocks, _ = self.build()
+        self.assertFalse(fs.visible(blocks, {**camp, **boots, "unid_tier": 5}))
+
     def test_vendor_rarity_toggles_are_independent(self):
         self.cfg["leveling"].update(enabled=True, build="rf", hide_normal_after=2, hide_magic_after=7,
                                     show_magic_rare_cells=4, show_magic_vendor=False, show_rare_vendor=True)
@@ -1889,7 +2116,8 @@ class Synthetic(unittest.TestCase):
     def test_rf_leveling(self):
         self.cfg["show_gold"] = True
         self.cfg["leveling"].update(enabled=True, build="rf", hide_normal_after=2, show_all_stackables=True,
-                                    show_jewellery=True, show_magic_rare_cells=0)
+                                    show_jewellery=True, show_magic_rare_cells=0, show_3_links_until=16,
+                                    show_4_links_until=67)
         add_exchange(self.data, "Currency", "Cheap Shard", 0.001)
         blocks, _ = self.build()
         camp = {"area_level": 20, "ilvl": 20}
@@ -1932,8 +2160,12 @@ class Synthetic(unittest.TestCase):
         for item, shown in [
             ({"class": "Gloves", "basetype": "Iron Gauntlets", "rarity": "Magic", "armour": 10, "area_level": 7}, True),
             ({"class": "Gloves", "basetype": "Iron Gauntlets", "rarity": "Magic", "armour": 10, "area_level": 8}, False),
-            ({"class": "Body Armours", "basetype": "Plate Vest", "rarity": "Magic", "armour": 10, "links": 4,
+            ({"class": "Body Armours", "basetype": "Plate Vest", "rarity": "Magic", "armour": 10, "links": 3,
               "area_level": 30}, False),  # after show_3_links_until
+            ({"class": "Body Armours", "basetype": "Plate Vest", "rarity": "Magic", "armour": 10, "links": 4,
+              "area_level": 60}, True),  # show_4_links_until = 67
+            ({"class": "Boots", "basetype": "Iron Greaves", "rarity": "Magic", "armour": 10, "links": 4,
+              "area_level": 60}, False),  # not in link_classes
             ({"class": "Gloves", "basetype": "Iron Gauntlets", "rarity": "Rare", "armour": 10}, True),
             ({"class": "Amulets", "basetype": "Coral Amulet", "rarity": "Magic"}, True),
             ({"class": "Two Hand Maces", "basetype": "Driftwood Club", "rarity": "Magic"}, True),
@@ -1948,6 +2180,18 @@ class Synthetic(unittest.TestCase):
         self.assertFalse(fs.visible(blocks, {"class": "Rings", "basetype": "Iron Ring", "rarity": "Normal"}))
         self.assertFalse(fs.visible(blocks, {"class": "Stackable Currency", "basetype": "Gold", "stack": 50}))
         self.assertFalse(fs.visible(blocks, {"class": "Stackable Currency", "basetype": "Cheap Shard"}))
+
+    def test_build_base_shows_beat_leveling_extras(self):
+        # build module's leading Shows (own sound / icon / beam) win over show_jewellery etc.
+        for build, base, cls in (("minion", "Bone Ring", "Rings"), ("minion", "Ivory Spirit Shield", "Shields")):
+            self.cfg["leveling"].update(enabled=True, build=build, show_jewellery=True, show_magic_rare_cells=4)
+            blocks, _ = self.build()
+            for rarity in ("Normal", "Magic", "Rare"):
+                b, style = fs.evaluate(blocks, {"class": cls, "basetype": base, "rarity": rarity, "area_level": 30,
+                                                "ilvl": 30, "es": 10})
+                self.assertEqual(b.action, "Show", (base, rarity))
+                for key in ("PlayAlertSound", "PlayEffect", "MinimapIcon"):
+                    self.assertTrue(any(s.startswith(key) for s in style), (base, rarity, key, style))
 
     def test_minion_leveling(self):
         self.cfg["leveling"].update(enabled=True, build="minion", hide_normal_after=2, hide_magic_after=7,
@@ -2015,8 +2259,9 @@ class Synthetic(unittest.TestCase):
                 "socket_group": "RRR", "area_level": 10}
         self.assertTrue(fs.visible(self.build()[0], axe3))
         self.cfg["leveling"]["link_classes"] = ["Body Armours", "Gloves", "Helmets", "Shields"]
+        self.cfg["vendor_recipes"]["chromatic"].update(enabled=True, area_level=[], sizes=[])
         blocks, _ = self.build()
-        # jewels always shown in the campaign (show_jewels); campaign chromatic recipe on
+        # jewels always shown in the campaign (show_jewels); chromatic recipe applies in the campaign
         rgb = {"class": "Gloves", "basetype": "Rawhide Gloves", "rarity": "Normal", "evasion": 10,
                "socket_group": "RGB", "sockets": 3, "links": 3}
         for item, shown in [
@@ -2025,15 +2270,32 @@ class Synthetic(unittest.TestCase):
             (rgb, True),
         ]:
             self.assertEqual(fs.visible(blocks, {**camp, **item}), shown, item)
-        self.assertEqual(fs.evaluate(blocks, {**camp, **rgb})[0].comment, "vendor recipe: chromatic_campaign")
-        self.assertFalse(fs.visible(blocks, rgb))  # maps: endgame chromatic (off)
+        self.assertEqual(fs.evaluate(blocks, {**camp, **rgb})[0].comment, "vendor recipe: chromatic")
         self.cfg["leveling"]["show_jewels"] = False
-        self.cfg["vendor_recipes"]["chromatic_campaign"]["enabled"] = False
+        self.cfg["vendor_recipes"]["chromatic"]["enabled"] = False
         blocks, _ = self.build()
         self.assertFalse(fs.visible(blocks, {**camp, "class": "Jewels", "basetype": "Cobalt Jewel", "rarity": "Magic"}))
         self.assertFalse(fs.visible(blocks, {**camp, **rgb}))
         # maps untouched
         self.assertFalse(fs.visible(blocks, {"class": "Rings", "basetype": "Bone Ring", "rarity": "Normal"}))
+
+    def test_basic_jewels_show_rare_magic_toggles(self):
+        # [jewels] show_rare / show_magic: basic jewels after the campaign, icon + beam when shown
+        def jewel(rarity):
+            return {"class": "Jewels", "basetype": "Crimson Jewel", "rarity": rarity, "item_level": 62,
+                    "area_level": 80}
+        for rare, magic in [(True, False), (False, True), (False, False)]:
+            self.cfg["jewels"].update(show_rare=rare, show_magic=magic)
+            blocks, _ = self.build()
+            for rarity, on in (("Rare", rare), ("Magic", magic), ("Normal", magic)):
+                self.assertEqual(fs.visible(blocks, jewel(rarity)), on, (rarity, rare, magic))
+                if on:
+                    style = fs.evaluate(blocks, jewel(rarity))[0].style
+                    self.assertTrue(any(s.startswith("MinimapIcon") for s in style), rarity)
+                    self.assertTrue(any(s.startswith("PlayEffect") for s in style), rarity)
+        # campaign show_jewels: icon + beam too
+        self.assertTrue(all(any(s.startswith(p) for s in st) for st in bf.GENERIC_JEWEL_STYLE.values()
+                            for p in ("MinimapIcon", "PlayEffect")))
 
     def test_league_start_shows_almost_everything(self):
         add_exchange(self.data, "Currency", "Cheap Shard", 0.01)
@@ -2173,8 +2435,9 @@ class Synthetic(unittest.TestCase):
         blocks, _ = self.build()
         for item in (viscera, thread, core):
             self.assertTrue(fs.visible(blocks, item), item)
-            self.assertTrue(moon(blocks, item), item)
+            self.assertEqual(moon(blocks, item), item is not thread, item)  # fragments: Hexagon
             self.assertIn("league_mechanic", fs.evaluate(blocks, item)[0].comment)
+        self.assertIn("MinimapIcon 1 Blue Hexagon", fs.evaluate(blocks, thread)[1])
         add_exchange(self.data, "Fragment", "Breach Thread", 0.001)  # confident price decides
         blocks, _ = self.build()
         self.assertNotIn("league_mechanic", fs.evaluate(blocks, thread)[0].comment)
@@ -2183,67 +2446,128 @@ class Synthetic(unittest.TestCase):
         self.assertTrue(fs.visible(blocks, viscera))  # bottom blue safety net
         self.assertFalse(moon(blocks, core))
 
+    def test_league_mechanic_icon_floor(self):
+        # cheap priced thread: still beam + icon (quiet look); toggle off -> price style decides
+        has = lambda b, it, p: any(l.startswith(p) for l in fs.evaluate(b, it)[1])
+        thread = {"class": "Map Fragments", "basetype": "Ultimatum Thread"}
+        for price in (0.001, 0.00001):  # brown tier, below lowest tier
+            self.setUp()
+            add_exchange(self.data, "Fragment", "Ultimatum Thread", price)
+            self.cfg["league_mechanic"]["icon_floor"] = True
+            blocks, _ = self.build()
+            self.assertTrue(fs.visible(blocks, thread), price)
+            self.assertTrue(has(blocks, thread, "PlayEffect"), price)
+            self.assertTrue(has(blocks, thread, "MinimapIcon"), price)
+            self.cfg["league_mechanic"]["icon_floor"] = False
+            blocks, _ = self.build()
+            self.assertFalse(has(blocks, thread, "PlayEffect"), price)
+
     def test_fated_items_shown(self):
         rare = {"class": "Boots", "basetype": "Iron Greaves", "rarity": "Rare", "ilvl": 70, "area_level": 83}
         self.cfg["league_start"] = False
         self.cfg["_league_start_applied"] = True  # no LS: plain rares hidden by the hide layer
         self.cfg["unid_tier"]["enabled"] = False
+        self.cfg["league_mechanic"]["fated"] = True  # base config may be the pre-LS backup (fated off)
+        self.cfg["league_mechanic"]["fated_tiers"] = {"weapons": [], "armour": ["all"], "jewellery": []}
         blocks, _ = self.build()
-        self.assertEqual(fs.evaluate(blocks, dict(rare, fated=True))[0].comment, "fated item")
+        self.assertIn("fated rare armour", fs.evaluate(blocks, dict(rare, fated=True))[0].comment)
         self.assertTrue(fs.visible(blocks, dict(rare, fated=True)))
+        magic = dict(rare, rarity="Magic", fated=True)
+        self.assertEqual(fs.evaluate(blocks, magic)[0].comment, "fated item")
+        jewel = dict(rare, basetype="Cobalt Jewel", fated=True)
+        jewel["class"] = "Jewels"
+        self.assertTrue(fs.visible(blocks, jewel))
         self.cfg["league_mechanic"]["fated"] = False
         blocks, _ = self.build()
         self.assertNotEqual(fs.evaluate(blocks, dict(rare, fated=True))[0].comment, "fated item")
 
-    def test_unid_tier_grid(self):
-        # FilterBlade PoE2 [0800] grid: rarity x gear / jewellery x tier 4+/3/2 x rank a/b/c + any remaining
+    def test_report_rare_base_tiers(self):
+        import report
+        self.assertEqual(report.RARE_GROUPS, bf.RARE_GROUPS)
+        self.cfg["league_mechanic"].update(enabled=True, fated=True, fated_tiers={
+            "weapons": [], "armour": ["t1"], "jewellery": ["all"]})
+        blocks, _ = self.build()
+        data = {"stash": {"BaseType": {"lines": [{"name": "Royal Plate", "itemType": "Body Armour"}]}}}
+        groups = {g["group"]: g for g in report.rare_base_tiers(self.cfg, data, blocks)}
+        self.assertEqual(set(groups), set(bf.RARE_GROUPS))
+        jew = {t["key"] for t in groups["jewellery"]["tiers"]}
+        self.assertIn("rr->belts.t1", jew)
+        self.assertFalse(any(k.startswith("rr.") for k in jew))  # generic gear tiers: no jewellery
+        t1 = next(t for t in groups["armour"]["tiers"] if t["key"] == "rr.t1")
+        self.assertTrue(t1["fated_on"])
+
+    def test_fated_base_tiers(self):
+        # fated_tiers per group: t1 armour / t1 jewellery shown, t2 armour + weapons off -> normal rare rules
+        self.cfg["league_start"] = False
+        self.cfg["_league_start_applied"] = True
+        self.cfg["unid_tier"]["enabled"] = False
+        self.cfg["league_mechanic"].update(enabled=True, fated=True, fated_tiers={
+            "weapons": [], "armour": ["t1"], "jewellery": ["t1", "t2", "t3"]})
+        blocks, _ = self.build()
+        it = lambda cls, base: {"class": cls, "basetype": base, "rarity": "Rare", "ilvl": 75,
+                                "area_level": 83, "fated": True}
+        key = lambda item: (fs.evaluate(blocks, item)[0] or fs.Block("", "", 0)).comment
+        self.assertIn("rr.t1", key(it("Body Armours", "Royal Plate")))
+        self.assertIn("rr->amuring.t3", key(it("Rings", "Gold Ring")))
+        self.assertIn("rr->belts.t1", key(it("Belts", "Stygian Vise")))
+        self.assertNotIn("fated", key(it("Gloves", "Vaal Gauntlets")))  # armour t2: off
+        self.assertNotIn("fated", key(it("Wands", "Convoking Wand")))  # weapons: off
+        self.cfg["league_mechanic"]["fated_tiers"]["armour"] = ["t9"]
+        with self.assertRaises(ValueError):
+            self.build()
+
+    def test_unid_tier_by_rare_base_tier(self):
+        # [unid_tier] works like rares.<group>: base tier lists per group + lowest unID tier per rarity
         it = lambda cls, base, tier, rarity="Rare", **kw: dict(
             {"class": cls, "basetype": base, "rarity": rarity, "ilvl": 75, "unid_tier": tier}, **kw)
         key = lambda b, item: (fs.evaluate(b, item)[0] or fs.Block("", "", 0)).comment
-        cell = lambda k: f"unid tier ut->{k} (module unid_tier)"
+        ut = self.cfg["unid_tier"]
+        ut.update(enabled=True, weapons=["t1"], armour=["t1", "t2"], jewellery=["all"], min_tier={"rare": 3, "magic": 5})
         blocks, _ = self.build()
-        cases = [
-            (it("Helmets", "Divine Crown", 5), "rare.gear4a"),     # rank a = rr.t1
-            (it("Helmets", "Divine Crown", 3), "rare.gear3a"),
-            (it("Helmets", "Ancient Mask", 2), "rare.gear2b"),     # rank b = rr.t2
-            (it("Boots", "Ambush Boots", 4), "rare.gear4c"),       # rank c = rr.t3
-            (it("Rings", "Gold Ring", 3), "rare.j3c"),
-            (it("Belts", "Stygian Vise", 4, "Magic"), "magic.j4a"),
-            (it("Boots", "Iron Greaves", 5), "rare.anyremaining5gear"),
-            (it("Boots", "Iron Greaves", 4, "Magic"), "magic.anyremaining4gear"),
-        ]
-        for item, k in cases:
-            self.assertEqual(key(blocks, item), cell(k), item)
+        shown = [it("Helmets", "Divine Crown", 3),            # armour t1
+                 it("Helmets", "Ancient Mask", 4),            # armour t2
+                 it("Rings", "Iron Ring", 3),                 # jewellery all
+                 it("Helmets", "Divine Crown", 5, "Magic")]
+        for item in shown:
+            self.assertIn("unid tier", key(blocks, item), item)
             self.assertTrue(fs.visible(blocks, item), item)
-        for item in (it("Boots", "Iron Greaves", 3), it("Helmets", "Divine Crown", 1),
-                     it("Helmets", "Divine Crown", 5, area_level=40)):
-            self.assertNotIn("module unid_tier", key(blocks, item), item)
-        self.cfg["modules"]["unid_tier"]["blocks"]["ut->rare.gear4a"] = False  # one checkbox off
+        for item in (it("Helmets", "Divine Crown", 0),          # not tiered
+                     it("Helmets", "Divine Crown", 2),          # below min_tier.rare
+                     it("Boots", "Ambush Boots", 5),            # armour t3: not listed
+                     it("Helmets", "Divine Crown", 4, "Magic"),  # below min_tier.magic
+                     it("Helmets", "Divine Crown", 5, area_level=40)):  # maps only
+            self.assertNotIn("unid tier", key(blocks, item), item)
+        self.cfg["rares"]["show"]["Helmets"] = False  # rares.show classes respected
         blocks, _ = self.build()
-        self.assertEqual(key(blocks, it("Helmets", "Divine Crown", 5)), cell("rare.gear3a"))
-        self.cfg["unid_tier"]["enabled"] = False
+        self.assertNotIn("unid tier", key(blocks, it("Helmets", "Divine Crown", 5)))
+        self.cfg["rares"]["show"]["Helmets"] = True
+        ut["min_tier"]["rare"] = 0
         blocks, _ = self.build()
-        self.assertNotIn("module unid_tier", key(blocks, it("Helmets", "Divine Crown", 5)))
+        self.assertNotIn("unid tier", key(blocks, it("Rings", "Iron Ring", 5)))
+        for bad in ({"armour": ["t9"]}, {"min_tier": {"rare": 6, "magic": 4}}):
+            saved = {k: ut[k] for k in bad}
+            ut.update(bad)
+            with self.assertRaises(ValueError):
+                self.build()
+            ut.update(saved)
+        del ut["weapons"]
+        with self.assertRaises(KeyError):  # no hidden settings
+            self.build()
+        ut["weapons"] = ["t1"]
+        ut["enabled"] = False
+        blocks, _ = self.build()
+        self.assertNotIn("unid tier", key(blocks, it("Rings", "Iron Ring", 5)))
 
-    def test_unid_tier_module_matches_poe2_grid(self):
-        # same keys / order / tier + rarity conditions / styles as the PoE2 FilterBlade [0800] section
-        poe2 = [b for b in bf.load_module("id_mods", bf.ROOT / "rules" / "modules_poe2") if b["section"] == "0800"]
-        ours = bf.load_module("unid_tier")
-        self.assertEqual([b["key"] for b in ours], [b["key"] for b in poe2])
-        for a, b in zip(ours, poe2):
-            same = lambda blk: [c for c in blk["conds"] if c.startswith(("UnidentifiedItemTier", "Rarity"))]
-            self.assertEqual(same(a), same(b), a["key"])
-            self.assertEqual(a["style"], b["style"], a["key"])
-            self.assertEqual(a["tags"], b["tags"], a["key"])
-
-    def test_league_start_turns_fated_and_unid_cells_on(self):
+    def test_league_start_turns_fated_and_unid_tier_on(self):
         conf = load_base_cfg()
         conf["league_mechanic"]["fated"] = False
-        conf["modules"]["unid_tier"]["blocks"]["ut->magic.gear2c"] = False
+        conf["unid_tier"]["armour"] = ["t1"]
+        conf["unid_tier"]["min_tier"]["magic"] = 0
         c, m = bf.league_start_values(conf, conf["modules"])
         self.assertIs(c[("league_mechanic", "fated")], True)
         self.assertIs(c[("unid_tier", "enabled")], True)
-        self.assertIs(m[("unid_tier", "blocks", "ut->magic.gear2c")], True)
+        self.assertEqual(c[("unid_tier", "armour")], ["all"])
+        self.assertEqual(c[("unid_tier", "min_tier", "magic")], 2)
 
     def test_unpriced_cheap_currency_hidden(self):
         # league.filter hides these (no poe.ninja price): [exchange.unpriced_tiers] "hide"
@@ -2307,6 +2631,11 @@ class Synthetic(unittest.TestCase):
             self.assertFalse(fs.visible(blocks, unique))  # uniques.hide_maps: uncorrupted hidden
             self.assertTrue(fs.visible(blocks, dict(unique, corrupted=True)))
             self.assertEqual((fs.visible(blocks, t1(68)), fs.visible(blocks, t1(72))), shown, mode)
+            if mode != "none":  # shown normal tier (campaign map too): grey beam + grey icon + sound
+                _, style = fs.evaluate(blocks, t1(45))
+                self.assertIn("PlayEffect Grey", style)
+                self.assertTrue(any(l.startswith("MinimapIcon") and "Grey" in l for l in style), style)
+                self.assertTrue(any(l.startswith("PlayAlertSound") for l in style), style)
         self.cfg["maps"] = {"progression": "all", "corrupted_min_tier": 16}
         blocks, _ = self.build()
         mod8 = {"class": "Maps", "rarity": "Rare", "corrupted": True, "identified": True, "mods": ["a"] * 8}
@@ -2323,7 +2652,8 @@ class Synthetic(unittest.TestCase):
         self.assertTrue(fs.visible(blocks, t1(83)))
 
     def test_league_start_hides_whites_build_never_uses(self):
-        for name, chaos, item_type in [("Imbued Wand", 2, "Wand"), ("Glorious Plate", 2, "Body Armour"),
+        # Glorious Plate 10c: above [bases] dump_floor (5c), so priced and shown (rf uses armour)
+        for name, chaos, item_type in [("Imbued Wand", 2, "Wand"), ("Glorious Plate", 10, "Body Armour"),
                                        ("Profane Wand", 500, "Wand")]:
             self.data["stash"]["BaseType"]["lines"].append({"name": name, "levelRequired": 82, "chaosValue": chaos,
                                                             "listingCount": 50, "count": 10, "itemType": item_type})
@@ -2520,7 +2850,7 @@ class Synthetic(unittest.TestCase):
         b, _ = fs.evaluate(blocks, dict(abyss, ilvl=70))
         self.assertEqual((b.action, b.comment), ("Hide", "jewel jewels->abyss.anyrare (module jewels)"))
         b, _ = fs.evaluate(blocks, {**cobalt, "corrupted": False, "corrupted_mods": 0})
-        self.assertEqual((b.action, b.comment), ("Hide", "jewel jewels->generic.anyrare (module jewels)"))
+        self.assertEqual(b.action, "Hide")  # [2804] show_rare off: bottom.filter hides
         self.cfg["modules"]["jewels"]["blocks"]["jewels->special.1modcorrupted"] = False  # per-block toggle
         blocks, _ = self.build()
         self.assertFalse(fs.visible(blocks, cobalt))
@@ -2704,29 +3034,69 @@ class Synthetic(unittest.TestCase):
         blocks, _ = self.build()
         self.assertFalse(fs.visible(blocks, flask(quality=21)))
 
-    def test_exotics_memory_strands_fractured(self):
+    def test_exotics_fractured(self):
         blocks, _ = self.build()
-        gear = lambda **kw: {"class": "Helmets", "basetype": "Haunted Bascinet", "rarity": "Rare",
+        gear = lambda **kw: {"class": "Helmets", "basetype": "Iron Hat", "rarity": "Rare",
                              "ilvl": 84, "width": 2, "height": 2, **kw}
-        self.assertTrue(fs.visible(blocks, gear(memory_strands=44)))                # [0902] t1 base 15+
-        b, style = fs.evaluate(blocks, gear(memory_strands=44))
-        self.assertIn("exotic", b.comment)
-        self.assertTrue(any(s.startswith("PlayEffect Blue") for s in style))      # league.filter style
-        self.assertTrue(fs.visible(blocks, gear(basetype="Iron Hat", memory_strands=1, fractured=True)))
-        self.assertFalse(fs.visible(blocks, gear(basetype="Iron Hat", memory_strands=30)))  # t3: off
-        self.assertTrue(fs.visible(blocks, gear(basetype="Iron Hat", fractured=True, identified=True,
+        self.assertTrue(fs.visible(blocks, gear(fractured=True, identified=True,
                                                 mods=["Subterranean"])))          # [1105] delve fractured
         jewel = {"class": "Jewels", "basetype": "Cobalt Jewel", "rarity": "Magic", "fractured": True}
         self.assertTrue(fs.visible(blocks, jewel))                                  # [1303] fractspecial
-        self.assertFalse(fs.visible(blocks, gear(basetype="Iron Hat", fractured=True)))     # fractt*: off
+        self.assertFalse(fs.visible(blocks, gear(fractured=True)))                  # fractt*: off
         self.cfg["league_start"] = True
         blocks, _ = self.build()
-        self.assertTrue(fs.visible(blocks, gear(basetype="Iron Hat", memory_strands=30)))   # off -> on
-        self.assertTrue(fs.visible(blocks, gear(basetype="Iron Hat", fractured=True)))
-        self.cfg["league_start"] = False
-        self.cfg["exotics"]["enabled"] = False
+        self.assertTrue(fs.visible(blocks, gear(fractured=True)))
+
+    def test_memory_strands_by_rare_base_tier(self):
+        # [memory_strands] works like [unid_tier]: rr base tier lists + strand thresholds
+        it = lambda cls, base, n, rarity="Rare", **kw: dict(
+            {"class": cls, "basetype": base, "rarity": rarity, "ilvl": 84, "memory_strands": n}, **kw)
+        key = lambda b, item: (fs.evaluate(b, item)[0] or fs.Block("", "", 0)).comment
+        ms = self.cfg["memory_strands"]
+        ms.update(enabled=True, weapons=[], armour=["t1"], jewellery=["all"], min_strands=15,
+                  any_base_min_strands=70, fractured=True, veiled=False)
         blocks, _ = self.build()
-        self.assertFalse(fs.visible(blocks, gear(memory_strands=44)))
+        for item in (it("Helmets", "Divine Crown", 15),                   # armour t1
+                     it("Rings", "Iron Ring", 20, "Magic"),               # jewellery all, magic too
+                     it("Boots", "Iron Greaves", 70, "Normal"),           # any base 70+
+                     it("Boots", "Iron Greaves", 1, fractured=True)):     # fractured, any base
+            self.assertIn("memory strands", key(blocks, item), item)
+            self.assertTrue(fs.visible(blocks, item), item)
+        for item in (it("Helmets", "Divine Crown", 14),                   # below min_strands
+                     it("Helmets", "Divine Crown", 0),                    # no strands
+                     it("Helmets", "Divine Crown", 30, corrupted=True),   # corrupted
+                     it("Boots", "Iron Greaves", 69),                     # not t1, below any-base
+                     it("Wands", "Convoking Wand", 30),                   # weapons: []
+                     it("Boots", "Iron Greaves", 1, identified=True, mods=["Veil"])):  # veiled off
+            self.assertNotIn("memory strands", key(blocks, item), item)
+        ms.update(min_strands=0, any_base_min_strands=0)
+        blocks, _ = self.build()
+        self.assertNotIn("memory strands", key(blocks, it("Rings", "Iron Ring", 99)))
+        ms.update(min_strands=15)
+        for bad in ({"armour": ["t9"]}, {"min_strands": -1}, {"any_base_min_strands": True}):
+            saved = {k: ms[k] for k in bad}
+            ms.update(bad)
+            with self.assertRaises(ValueError):
+                self.build()
+            ms.update(saved)
+        del ms["fractured"]
+        with self.assertRaises(KeyError):  # no hidden settings
+            self.build()
+        ms["fractured"] = True
+        ms["enabled"] = False
+        blocks, _ = self.build()
+        self.assertNotIn("memory strands", key(blocks, it("Boots", "Iron Greaves", 1, fractured=True)))
+
+    def test_league_start_loosens_memory_strands(self):
+        conf = load_base_cfg()
+        conf["memory_strands"].update(enabled=False, armour=["t1"], min_strands=15, any_base_min_strands=0,
+                                      veiled=False)
+        c, _ = bf.league_start_values(conf, conf["modules"])
+        self.assertIs(c[("memory_strands", "enabled")], True)
+        self.assertEqual(c[("memory_strands", "armour")], ["all"])
+        self.assertEqual(c[("memory_strands", "min_strands")], 1)
+        self.assertEqual(c[("memory_strands", "any_base_min_strands")], 1)
+        self.assertIs(c[("memory_strands", "veiled")], True)
 
     def test_flasks_module_toggles(self):
         flask = {"class": "Utility Flasks", "basetype": "Quicksilver Flask", "rarity": "Magic", "ilvl": 86,
@@ -2927,9 +3297,10 @@ class Synthetic(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.build()
 
-    def test_crafting_module_families(self):
-        """[1401] links, [2301] early crafting, [2302] matrix, [[2400]] chancing via module
-        crafting; RGB / 6-socket blocks stay vendor recipes; toggle, LS, enabled=false."""
+    def test_links_and_chancing_config(self):
+        """[1401] 5-links + [2301] 4-link armour = config.toml [links], [[2400]] chancing =
+        [chancing]; FilterBlade's fixed crafting base lists ([2301] early bases, [2302] matrix) =
+        no block (price: [bases]); RGB / 6-socket blocks stay vendor recipes; LS."""
         blocks, _ = self.build()
         mod = lambda it: (fs.evaluate(blocks, it)[0] or fs.Block("Show", "", 0)).comment
         ring = {"class": "Rings", "basetype": "Amethyst Ring", "rarity": "Normal", "ilvl": 75, "area_level": 70,
@@ -2938,41 +3309,37 @@ class Synthetic(unittest.TestCase):
                 "sockets": 5, "width": 2, "height": 3}
         plate = {"class": "Body Armours", "basetype": "Royal Plate", "rarity": "Normal", "ilvl": 86,
                  "width": 2, "height": 3}
-        self.assertIn("crafting normalcraft->extra.earlycraftoptional (module crafting)", mod(ring))
-        self.assertNotIn("module crafting", mod(dict(ring, area_level=83)))           # area 68-75 only
-        self.assertNotIn("module crafting", mod(five))                               # 5-links off
-        self.assertNotIn("module crafting", mod(plate))                              # matrix off
-        self.assertFalse(any(k in b.comment for b in blocks
-                             for k in ("socketslinks.rgb", "socketslinks.6sockets", "endgamergb")))
-        self.cfg["modules"]["crafting"]["blocks"]["socketslinks.5links"] = True      # per-block toggle
-        self.cfg["modules"]["crafting"]["blocks"]["crafting->generalgear.t1_86"] = True
-        self.cfg["modules"]["crafting"]["blocks"]["chancing.hh"] = True
+        belt = {"class": "Belts", "basetype": "Heavy Belt", "rarity": "Normal", "ilvl": 60, "width": 2, "height": 1}
+        self.assertFalse(any(k in b.comment for b in blocks for k in (
+            "socketslinks.rgb", "socketslinks.6sockets", "endgamergb", "generalgear", "earlycraftoptional")))
+        self.assertNotIn("module crafting", mod(five))                               # [links] off (tight)
+        self.assertNotIn("chancing.hh", mod(belt))                                   # [chancing] off
+        self.cfg["links"]["endgame_5l"] = True
+        self.cfg["chancing"]["belts"] = True
         blocks, _ = self.build()
         self.assertIn("links socketslinks.5links (module crafting)", mod(five))
-        self.assertIn("crafting crafting->generalgear.t1_86 (module crafting)", mod(plate))
-        self.assertIn("crafting chancing.hh", mod({"class": "Belts", "basetype": "Heavy Belt", "rarity": "Normal",
-                                                  "ilvl": 60, "width": 2, "height": 1}))
-        self.cfg["modules"]["crafting"]["blocks"]["normalcraft->extra.earlycraftoptional"] = False
-        blocks, _ = self.build()
-        self.assertNotIn("module crafting", mod(ring))
-        # RGB = [vendor_recipes.chromatic], not a module block (also with every Show on)
-        self.cfg["modules"]["crafting"]["blocks"]["crafting->generalgear.t1_86"] = False
+        self.assertIn("crafting chancing.hh", mod(belt))
+        self.assertNotIn("generalgear", mod(plate))
+        self.assertNotIn("earlycraftoptional", mod(ring))
+        # every module crafting key: [links] / [chancing] key, price or vendor recipe (one place)
+        for key, v in self.cfg["modules"]["crafting"]["blocks"].items():
+            self.assertIn(v, ("config.toml [links]", "config.toml [chancing]", "price (bases)",
+                              "config.toml [vendor_recipes.chromatic]", "config.toml [vendor_recipes.jeweller]"), key)
+            if v == "config.toml [links]":
+                self.assertIn(bf.LINK_TOGGLES[key], self.cfg["links"])
+            if v == "config.toml [chancing]":
+                self.assertIn(bf.CHANCING_TOGGLES[key], self.cfg["chancing"])
+        # league_start: [links] on, [chancing] as set, RGB = [vendor_recipes.chromatic]
+        self.cfg["chancing"]["belts"] = False
         self.cfg["vendor_recipes"]["chromatic"]["enabled"] = True
         self.cfg["league_start"] = True
         blocks, _ = self.build()
         rgb = {"class": "Gloves", "basetype": "Iron Gauntlets", "rarity": "Normal", "ilvl": 70, "width": 2,
                "height": 2, "socket_group": "RGB", "area_level": 75}
         self.assertEqual(fs.evaluate(blocks, rgb)[0].comment, "vendor recipe: chromatic")
-        self.assertFalse(any(k in b.comment for b in blocks
-                             for k in ("socketslinks.rgb", "socketslinks.6sockets", "endgamergb")))
-        self.assertTrue(any("socketslinks.5linksleveling" in b.comment for b in blocks))  # LS: Shows on
-        self.assertTrue(fs.visible(blocks, dict(five, area_level=40)))  # LS show_5_links: top.filter tink first
-        self.assertNotIn("generalgear", mod(plate))                                 # [2302] not LS
-        self.cfg["league_start"] = False
-        self.cfg["modules"]["crafting"]["blocks"]["normalcraft->extra.earlycraftoptional"] = True
-        self.cfg["crafting"]["enabled"] = False
-        blocks, _ = self.build()
-        self.assertFalse(any("module crafting" in b.comment for b in blocks))
+        self.assertTrue(any("socketslinks.5linksleveling" in b.comment for b in blocks))
+        self.assertTrue(fs.visible(blocks, dict(five, area_level=40)))  # LS show_5_links: top.filter 5L Show first
+        self.assertNotIn("chancing.hh", mod(belt))
 
     def test_mirrored_item_rule_config_toggle(self):
         item = {"class": "Rings", "basetype": "Iron Ring", "rarity": "Rare", "mirrored": True}
@@ -2997,9 +3364,11 @@ class Synthetic(unittest.TestCase):
 # ------------------------------------------------------------------ live cache
 
 def latest_cache():
-    """Newest challenge-league cache (Standard skipped: its build is config_standard.toml)."""
+    """Newest challenge-league cache (Standard skipped: its build is config_standard.toml) with
+    prices: a league's day-1 cache (poe.ninja feeds still empty) is skipped."""
+    priced = lambda d: json.loads((d / "st_BaseType.json").read_text(encoding="utf-8")).get("lines")
     dirs = [d for d in (ROOT / "cache").glob("*") if (d / "st_BaseType.json").exists()
-            and "standard" not in d.name.lower()]
+            and "standard" not in d.name.lower() and priced(d)]
     return max(dirs, key=lambda d: (d / "st_BaseType.json").stat().st_mtime) if dirs else None
 
 
@@ -3173,12 +3542,24 @@ class LiveCache(unittest.TestCase):
         self.assertGreater(len(items), 20)
         self.assert_all_visible(items, "jackpot items")
 
+    def test_removed_basetypes_not_traded_now(self):
+        # a name the current league's poe.ninja trades still drops (NeverSink only dropped it from its
+        # lists, e.g. Melee Splash Support): stripping it sent cheap gems to the blue "not on poe.ninja" rule
+        gone = set(self.cfg.get("removed_basetypes", []))
+        traded = {l.get(k) for feed in self.data["stash"].values() for l in feed.get("lines", [])
+                  for k in ("name", "baseType")}
+        self.assertFalse(sorted(gone & traded), "removed_basetypes names poe.ninja still trades")
+        b, _ = fs.evaluate(self.blocks, {"class": "Support Gems", "basetype": "Melee Splash Support", "gem_level": 1})
+        self.assertEqual(b.action, "Hide", f"lvl 1 Melee Splash Support shown by {b}")
+
     def test_top_priced_items_tink(self):
         # every confident price in the top tier, as it drops, gets the tink look (not just shown)
         top = max(self.cfg["tiers"], key=self.cfg["tiers"].get)
         tiers, overrides = self.r["tiers"], self.cfg.get("overrides", {})
+        gone = set(self.cfg.get("removed_basetypes", []))  # not in the game any more: stripped from the filter
         items = [(f"{n} ({v:.0f}c)", {"class": STACK_CLASS.get(t, "Stackable Currency"), "basetype": n, "stack": 1})
-                 for n, (v, t) in self.r["prices"].items() if tiers.of(v) == top and n not in overrides]
+                 for n, (v, t) in self.r["prices"].items()
+                 if tiers.of(v) == top and n not in overrides and n not in gone]
         base_class = {l["name"]: NINJA_CLASS.get(l.get("itemType")) for l in self.data["stash"]["BaseType"]["lines"]}
         items += [(f"base {name} ilvl{lo} {infl or ''} ({chaos:.0f}c)",
                    {"class": base_class.get(name), "basetype": name, "rarity": "Rare", "ilvl": lo,
@@ -3222,7 +3603,7 @@ class LiveCache(unittest.TestCase):
         self.assert_all_visible(items, "valuable crafting bases")
 
     def ninja_drop(self, t, line):
-        """poe.ninja line of a BASE_TYPES / CHECK_TYPES feed -> the item as it drops in a map,
+        """poe.ninja line of a BASE_TYPES / VISCERA_TYPES / CHECK_TYPES feed -> the item as it drops in a map,
         None when it can't drop like that. Unknown feed -> fails: add it here."""
         name, base = line["name"], line.get("baseType")
         if t in bf.BASE_TYPES:
@@ -3231,6 +3612,8 @@ class LiveCache(unittest.TestCase):
                 return None  # dual influence: Awakener's Orb crafts only; thin sample: not a price
             return {"class": NINJA_CLASS.get(line.get("itemType")), "basetype": name, "rarity": "Rare",
                     "ilvl": line.get("levelRequired", 0), "influence": infl.split("/") if infl else []}
+        if t in bf.VISCERA_TYPES:  # Greater / Lesser prefix not in the BaseType
+            return {"class": "Viscera", "basetype": bf.viscera_base(name)}
         if t == "ClusterJewel":
             self.assertIn(name, bf.CLUSTER_NODES, f"new cluster enchant {name!r}: add it to CLUSTER_NODES")
             self.assertIn(bf.CLUSTER_NODES[name], self.cluster_nodes | VERIFIED_CLUSTER_NODES,
@@ -3267,11 +3650,11 @@ class LiveCache(unittest.TestCase):
 
     def test_valuable_ninja_items_visible(self):
         # every confident poe.ninja value >= SAFETY_DIVINE of the feeds not priced into the
-        # filter (NeverSink / hand rules decide), as it drops, must be visible. Maps too.
+        # filter (NeverSink / hand rules decide), as it drops, must be visible. Maps, Viscera too.
         floor = SAFETY_DIVINE * self.r["divine"]
         items = []
         min_listings = self.cfg["uniques"]["min_listings"]
-        for t in bf.BASE_TYPES + bf.CHECK_TYPES:
+        for t in bf.BASE_TYPES + bf.VISCERA_TYPES + bf.CHECK_TYPES:
             lines = self.data["stash"][t]["lines"]
             if t == "SkillGem":  # price capped by a confident better variant
                 alts = bf.alt_gem_bases(self.data)

@@ -7,6 +7,7 @@ Items are dropped unidentified (uniques) or as single stacks (stackables).
 import base64
 import html
 import json
+import re
 import shlex
 from datetime import datetime
 from pathlib import Path
@@ -26,7 +27,7 @@ NINJA_CLASS = {
 }
 STACK_CLASS = {"DivinationCard": "Divination Cards", "Fragment": "Map Fragments",
                "Scarab": "Map Fragments", "Invitation": "Misc Map Items", "Wombgift": "Wombgifts",
-               "Corpse": "Corpses", "Incubator": "Incubators", "Memory": "Memories"}
+               "Corpse": "Corpses", "Incubator": "Incubators", "Memory": "Memories", "Thread": "Map Fragments"}
 BASE_FEEDS = ("BaseType", "Flask")  # = build_filter.BASE_TYPES (no import: build_filter imports us)
 ASSETS = Path(__file__).parent / "assets"
 # in-game default text colours when no rule sets one
@@ -117,6 +118,17 @@ def collect(cfg, data, blocks, r):
             add(cat, label, base, line["chaosValue"], line.get("listingCount"),
                 {"rarity": "Unique", "basetype": base, "class": unique_class(line, t), "ilvl": 84,
                  "foulborn": foul, "links": line.get("links") or 0}, note)
+
+    # Viscera: every listed poe.ninja line, judged as it drops (BaseType only: prefixes = build_filter.VISCERA_PREFIXES)
+    for line in data["stash"].get("Viscera", {}).get("lines", []):
+        if line.get("listingCount", 0) < 1:
+            continue
+        base = next((line["name"][len(p):] for p in ("Greater ", "Lesser ") if line["name"].startswith(p)), line["name"])
+        tier, cheapest, best, best_name = r.get("vbases", {}).get(base, ("unpriced", None, 0, ""))
+        note = f"base tier {tier}" + (f": cheapest {cheapest:.0f}c, best {best:.0f}c {best_name}" if cheapest is not None else "")
+        label = line["name"] + (f" [{line['variant']}]" if line.get("variant") else "")
+        add("Viscera", label, base, line["chaosValue"], line.get("listingCount"),
+            {"class": "Viscera", "basetype": base}, note)
 
     # every confident poe.ninja base entry worth >= top tier, as it drops (its ilvl + influence),
     # so hidden ones (dual influence, outlier-floored) show up too
@@ -272,6 +284,82 @@ def unique_vendor_recipe(key, rec, blocks, data):
             "rarity": ["unique"], "items": items}
 
 
+# = build_filter.RARE_GROUPS (no import: build_filter imports us); tests check they match
+RARE_GROUPS = {
+    "weapons": ["Bows", "Claws", "Daggers", "One Hand Axes", "One Hand Maces", "One Hand Swords",
+                "Quivers", "Rune Daggers", "Sceptres", "Staves", "Thrusting One Hand Swords",
+                "Two Hand Axes", "Two Hand Maces", "Two Hand Swords", "Wands", "Warstaves"],
+    "armour": ["Body Armours", "Boots", "Gloves", "Helmets", "Shields"],
+    "jewellery": ["Amulets", "Belts", "Rings"],
+}
+RARES_MODULE = Path(__file__).parent / "rules" / "modules" / "rares.filter"
+
+
+def rare_base_tiers(cfg, data, blocks):
+    """NeverSink rare base tiers (rules/modules/rares.filter "rr...tN" blocks) per RARE_GROUPS group:
+    [{group, rares, fated, tiers: [{tier, rares_on, fated_on, bases: [{base, class, rare, fated}]}]}].
+    Class from poe.ninja's BaseType feed (missing = guessed from the block's Class line, else "?").
+    Each base dropped as an ilvl 84 rare in a T16 map, plain and Fated, replayed through the filter."""
+    if not RARES_MODULE.exists():
+        return []
+    cls = {}
+    for line in data.get("stash", {}).get("BaseType", {}).get("lines", []):
+        if line.get("itemType") in NINJA_CLASS:
+            cls.setdefault(line["name"], NINJA_CLASS[line["itemType"]])
+    tiers = {}  # tier key -> {block classes or None, bases}
+    key = None
+    for line in RARES_MODULE.read_text(encoding="utf-8").splitlines():
+        if line.startswith(("Show", "Hide")):
+            m = re.match(r"Show\s+#\s*(rr(->\w+)?\.t\d)\b", line)
+            key = m.group(1) if m else None
+            if key:
+                tiers[key] = {"classes": None, "bases": []}
+        elif key and line.strip().startswith("Class"):
+            tiers[key]["classes"] = shlex.split(line.strip())[2:] if " == " in line else shlex.split(line.strip())[1:]
+        elif key and line.strip().startswith("BaseType"):
+            tiers[key]["bases"] = [v for v in shlex.split(line.strip())[1:] if v not in ("==", "=")]
+        elif not line.strip():
+            key = None
+    rc, fated = cfg.get("rares", {}), cfg.get("league_mechanic", {})
+    fated_on = fated.get("enabled") and fated.get("fated")
+
+    def drop(base, c, **kw):
+        item = dict({"rarity": "Rare", "basetype": base, "class": c, "ilvl": 84, "area_level": 83}, **kw)
+        b, style = fs.evaluate(blocks, item)
+        return {"shown": b is None or b.action != "Hide", "look": look(style, item),
+                "rule": f"{b.action} # {b.comment}" if b else "(no rule matched: shown)", "line": b.line_no if b else 0}
+    out = []
+    for group, classes in RARE_GROUPS.items():
+        want_r = rc.get(group, []) if rc.get("enabled", True) and rc.get("base_tiers", True) else []
+        want_f = fated.get("fated_tiers", {}).get(group, []) if fated_on else []
+        rows = []
+        for k, t in tiers.items():
+            if t["classes"] is None and group == "jewellery":
+                continue  # generic gear tiers (no Class line) never hold jewellery
+            if t["classes"] is not None and not set(t["classes"]) & set(classes):
+                continue
+            tier = k.rsplit(".", 1)[1]
+            bases = []
+            for base in t["bases"] or [None]:
+                c = cls.get(base) if base else None
+                if c is None and t["classes"] and len(t["classes"]) == 1:
+                    c = t["classes"][0]
+                if base and c is not None and c not in classes:
+                    continue
+                if base is None:  # catch-all tier (rr.t5): every base of these classes
+                    bases.append({"base": f"any other {group} base", "class": "", "rare": None, "fated": None})
+                    continue
+                if c is None and group != "weapons" and t["classes"] is None:
+                    continue  # unknown class on a generic tier: listed once, under weapons
+                bases.append({"base": base, "class": c or "?", "rare": drop(base, c),
+                              "fated": drop(base, c, fated=True)})
+            if bases:
+                rows.append({"tier": tier, "key": k, "rares_on": "all" in want_r or tier in want_r,
+                             "fated_on": "all" in want_f or tier in want_f, "bases": bases})
+        out.append({"group": group, "rares": want_r, "fated": want_f if fated_on else None, "tiers": rows})
+    return out
+
+
 def browser_rules(blocks):
     """Serialize parsed filter rules for the offline item checker in report.html."""
     return [{
@@ -327,7 +415,8 @@ def write(cfg, data, text, r, league, path):
     payload = json.dumps({"meta": meta, "rows": rows, "rules": browser_rules(blocks),
                           "content": content_modules(cfg, data, blocks),
                           "uev": unique_ev(data, blocks, r),
-                          "vendor": vendor_recipes(cfg, blocks, data)},
+                          "vendor": vendor_recipes(cfg, blocks, data),
+                          "rbt": rare_base_tiers(cfg, data, blocks)},
                          separators=(",", ":")).replace("</", "<\\/")
     path.parent.mkdir(exist_ok=True)
     path.write_text(PAGE.replace("__DATA__", payload).replace("__LEAGUE__", html.escape(league))
@@ -454,6 +543,10 @@ Off: ignored on shared bases; a base with only that content's uniques stays blue
 <h2>Vendor recipes <small>· [vendor_recipes.*] in config.toml; tier = floor, a better price tier wins</small></h2>
 <p class="note">Each recipe ingredient dropped as a rare with the recipe's flag (corrupted / mirrored). Label and rule = what the filter really does now; another rule may win before the recipe rule.</p>
 <div id="vr"></div>
+<h2>Rare base tiers <small>· NeverSink base tiers (rules/modules/rares.filter): config.toml [rares] &lt;group&gt; and [league_mechanic] fated_tiers</small></h2>
+<p class="note">Rares on / Fated on = tier listed in config. Each base dropped as an ilvl 84 rare in a T16 map, plain and Fated; label and verdict = what the filter really does
+(a crafting-base price, id mod or hide rule may decide first). Class from poe.ninja; "?" = not listed there.</p>
+<div id="rbt"></div>
 <h2>Hidden, worth a look <small id="revsub"></small></h2>
 <p class="note">Items the filter hides even though poe.ninja prices them at or above the review line. Each one is either intended
 (e.g. a base tiered by its cheapest unique) or something to fix in config.toml.</p>
@@ -692,6 +785,14 @@ $("vr").innerHTML=(D.vendor||[]).map(v=>{const n=v.items.filter(i=>i.shown).leng
 <td class="v ${i.shown?"s":"h"}">${i.shown?"Shown":"Hidden"}</td>
 <td><div class="rule">${esc(i.rule)} <span>:${i.line}</span></div></td></tr>`).join("")+`</tbody></table></details>`}).join("")
  ||`<p class="empty">No [vendor_recipes.*] in config.toml.</p>`;
+{const on=v=>`<span class="v ${v?"s":"h"}">${v?"on":"off"}</span>`,lst=v=>v==null?"fated off":v.length?esc(v.join(", ")):"none",
+ verdict=(b,x)=>x?`<td>${label({name:b.base,look:x.look})} <span class="v ${x.shown?"s":"h"}">${x.shown?"Shown":"Hidden"}</span><div class="rule">${esc(x.rule)} <span>:${x.line}</span></div></td>`:"";
+ $("rbt").innerHTML=(D.rbt||[]).map(g=>{const nb=g.tiers.reduce((n,t)=>n+t.bases.length,0);
+  return `<details class="cm"><summary>${esc(g.group[0].toUpperCase()+g.group.slice(1))} <span class="note">· rares: ${lst(g.rares)} · fated: ${lst(g.fated)} · ${g.tiers.length} tiers · ${nb} bases</span></summary>
+<table><thead><tr><th>Tier</th><th>Rares</th><th>Fated</th><th>Class</th><th>Rare drop</th><th>Fated drop</th></tr></thead><tbody>`+
+  g.tiers.map(t=>t.bases.map((b,i)=>`<tr class="${b.rare&&!b.rare.shown?"hid":""}">${i?"":`<td rowspan="${t.bases.length}"><b>${esc(t.tier)}</b><div class="rule">${esc(t.key)}</div></td><td rowspan="${t.bases.length}">${on(t.rares_on)}</td><td rowspan="${t.bases.length}">${on(t.fated_on)}</td>`}
+<td class="note">${esc(b.class)}</td>${b.rare?verdict(b,b.rare)+verdict(b,b.fated):`<td colspan="2" class="note">${esc(b.base)}</td>`}</tr>`).join("")).join("")+`</tbody></table></details>`}).join("")
+  ||`<p class="empty">No rare base tiers (rules/modules/rares.filter missing).</p>`}
 {const U=D.uev||[],pct=p=>p>=0.01?(p*100).toFixed(0)+"%":p>=0.001?(p*100).toFixed(1)+"%":"<0.1%";
  $("uevs").innerHTML=`${U.length} bases · ${U.filter(u=>u.tier==="variable").length} variable · ${U.filter(u=>!u.shown).length} hidden`;
  const draw=()=>{const q=$("uq").value.toLowerCase();

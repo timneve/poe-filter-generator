@@ -20,7 +20,7 @@ quick one-line switch):
 
 - `hide_tiers` -> `[]` (brown + dust shown), `[small_loot] enabled` -> false
 - `[uniques] show.*` all true, `variable_jackpot_only` / `hide_maps` -> false
-- `[foulborn]` / `[bases]` / `[gems] min_tier` -> `"dust"`, `[gems] show_all` -> true
+- `[foulborn]` / `[bases]` / `[gems] min_tier` -> `"dust"`, `[gems] show_all` -> true, `[gems] hide_level1` -> false
 - "hide" in `[overrides]`, `[exchange.reference_card_tiers]`, `[exchange.unpriced_tiers]`,
   `unpriced` settings -> `"dust"`
 - `show_5_links`, `show_6_links`, `show_mirrored`, `show_contracts` -> true,
@@ -41,7 +41,7 @@ quick one-line switch):
   Kept as they are:
   - rares [[2600]] animated weapons (Show, off): would show every normal / magic weapon
   - jewels [2805] cluster eco tiers (Show, off): empty tiers, would highlight every enchant
-  - crafting [2302] matrix (Show, off): every ilvl 83+ base
+  - config.toml `[chancing]` (chancing bases, no loot value); `[links]` keys go `true`
   - maps [3302] tier Hides (on): `progression = "all"` already shows each tier in its own
     style; off would give every map the generic look
   - leveling Hides (on: outdated campaign flasks): campaign preset, like `strictness`
@@ -61,7 +61,6 @@ the whole table). Rebuild after each step. Typical order (`ls` = `python tools/l
 | day 1 | junk rares | `ls restore rares.min_ilvl rares.weapons rares.armour rares.jewellery rares.base_tiers` (or step `["t1","t2","t3"]` -> `["t1"]`) |
 | day 1 | rare hide layer, junk jewels / heist gear | `ls restore rares.blocks jewels.blocks heist.blocks` |
 | day 1-2 | dust tier | edit `hide_tiers = ["dust"]` |
-| day 2-3 | low unID item tier cells | edit cells in `modules.toml [unid_tier.blocks]`, e.g. `"ut->magic.gear2c" = false` (FilterBlade default = all on) |
 | day 2 | small gold piles | `ls restore show_small_gold` (later `show_gold`) |
 | day 2 | generic 5L / mirrored / overquality | `ls restore show_5_links show_mirrored overquality` |
 | day 2 | ilvl 82+ junk bases | `ls restore bases.min_tier leveling.unused_whites_min_tier` |
@@ -73,6 +72,7 @@ the whole table). Rebuild after each step. Typical order (`ls` = `python tools/l
 | day 4 | normal maps, low corrupted maps | `ls restore maps.progression maps.corrupted_min_tier` (or `"auto"` in between) |
 | day 4 | vendor recipes you don't do | `ls restore vendor_recipes.chromatic vendor_recipes.jeweller` |
 | day 4-5 | brown tier | `ls restore hide_tiers` |
+| day 4-5 | cheap plain flasks (priced like crafting bases) | `ls restore flasks.show_plain` |
 | day 5 | module extras | `ls restore flasks.blocks exotics.blocks crafting.blocks gear_special.blocks` ... (one block: `ls restore "flasks.blocks.endgameflasks.anyutility"`) |
 | day 5-7 | the rest | `ls status`, then `ls restore` single keys you don't want loose any more |
 

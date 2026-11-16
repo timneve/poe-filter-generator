@@ -107,7 +107,7 @@ Show # minion 4-link armour
 	PlayEffect Grey
 	MinimapIcon 2 Grey Diamond
 
-# Never looted: tinctures (jewels: [leveling] show_jewels; chromatic: [vendor_recipes.chromatic_campaign])
+# Never looted: tinctures (jewels: [leveling] show_jewels; chromatic: [vendor_recipes.chromatic])
 Hide # minion no tinctures
 	Rarity Normal Magic
 	Class == "Tinctures"

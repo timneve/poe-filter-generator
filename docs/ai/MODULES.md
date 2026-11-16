@@ -49,10 +49,10 @@ Price-driven systems (poe.ninja tiers) stay; a module only covers what price can
 |---|---|---|
 | [[0600]] [[0700]] [0801] [0802] [[1000]] ID mods | `id_mods` | done |
 | [0803] [1303] [[2500]] flasks | `flasks` | done |
-| [0902] memory strands, [[1100]] exotic mods (all, not only fractured), [[1200]] exotic classes + relics, [[1300]] variations (double corrupt, abyss-jeweled, fractured, enchanted, crucible) | `exotics` | done (after `id_mods`; uniques stay priced: `EXOTIC_NOT_UNIQUE`) |
+| [[1100]] exotic mods (all, not only fractured), [[1200]] exotic classes + relics, [[1300]] variations (double corrupt, abyss-jeweled, fractured, enchanted, crucible) | `exotics` | done (after `id_mods`; uniques stay priced: `EXOTIC_NOT_UNIQUE`) |
 | [0302] influenced gear, [[0400]] eldritch, [[0500]] exotic bases, [0901] perfection / overquality | `gear_special` | done (`emit_perfection` after id_mods; `emit_priced_bases_first` + `emit_gear_special` after exotics (id-mod / exotic look beats base price, price beats gear_special); `[overquality]` drives its 3 overquality keys, independent of `[gear_special]` (`emit_overquality` gone); [[0500]] conditional entries `s0500_*` -> price / grasping_mail recipe) |
 | [[1700]]-[[2200]] endgame rare decorators / veiled / corrupted / conditional hides / ARB / droplevel, [2602] remaining rares, [[2700]] hide layer | `rares` | done (`emit_rares` + `emit_rare_hide_layer`; rr base tiers config-driven; [[2600]] animated-weapon `#Show`s imported off, excluded from LS) |
-| [[1400]] links, [[2300]] crafting, [[2400]] chancing, [2601] RGB | `crafting` | done (`emit_links` after exotics, `emit_endgame_crafting` before `emit_rare_hide_layer`; RGB / 6-socket keys -> `[vendor_recipes.chromatic/jeweller]`, no block; top.filter show_5_links/6_links kept (tink, any rarity: not a duplicate); [[2600]] animated weapons in `rares`; [2302] not LS-unlocked) |
+| [[1400]] links, [[2300]] crafting, [[2400]] chancing, [2601] RGB | `crafting` | done (`emit_links` after exotics, `emit_endgame_crafting` before `emit_rare_hide_layer`; RGB / 6-socket keys -> `[vendor_recipes.chromatic/jeweller]`, no block; top.filter show_5_links/6_links kept (tink, any rarity: not a duplicate); [[2600]] animated weapons in `rares`; links = config.toml `[links]`, chancing = `[chancing]`; [2301] early bases + [2302] matrix = `"price (bases)"`, no block) |
 | [2801] [2803] [2804] jewels, [2805] [2806] clusters | `jewels` | done (`emit_jewels`; cluster node names: `module_cluster_nodes`; [2805] off blocks = empty eco tiers, not LS-unlocked) |
 | [[2900]] heist gear | `heist` | done (`emit_heist`, after jewels) |
 | [0301] [3201]-[3204] special maps, [3302] progression, [[3400]] pseudo-map items, [[3500]] misc map items | `maps` | done (`emit_special_maps` incl. [3400]-[3500] after stackables, `emit_map_progression`) |
@@ -61,7 +61,8 @@ Price-driven systems (poe.ninja tiers) stay; a module only covers what price can
 | `reference_currency_tiers` / `reference_card_tiers` fallbacks, [[3000]] gems, [[3600]]-[[4400]] currency specials, [[4800]] uniques | price fallbacks + `unique_exceptions` | done: `fallback_tiers.toml` (`tools/import_fallback_tiers.py`), coverage below; [4801] / [4803] / [4804] overqual -> module `unique_exceptions` |
 | Parity test: items league.filter shows (filtersim on reference) are shown by ours unless price-hidden | `tests/test_parity.py` | done (summary below) |
 | Build reads no `reference/` (only importer) | cleanup | done (`neversink_blocks` + unused read removed, parser moved to `tools/import_neversink.py`, test `NoReference`) |
-| [0800] unidentified item tier (3.28; PoE1 NeverSink has no export yet) | `unid_tier` | done: generated from the PoE2 [0800] grid by `tools/make_unid_tier.py` (PoE1 rr ranks), test `test_unid_tier_module_matches_poe2_grid`; switch to `import_neversink.py` once NeverSink PoE1 has the section |
+| [0800] unidentified item tier (3.28) | none | not a module: `emit_unid_tiers` from config.toml `[unid_tier]` (rr base tiers like `[rares]` / Fated) |
+| [0902] memory strands | none | not a module: `emit_memory_strands` from config.toml `[memory_strands]` (rr base tiers like `[unid_tier]`) |
 | PoE2: FilterBlade export appended whole | `rules/modules_poe2/` | step 1 done (see PoE2 below) |
 
 ## Price-fallback coverage (league.filter [[3000]], [[3600]]-[[4400]], [[4800]])

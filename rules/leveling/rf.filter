@@ -114,7 +114,7 @@ Hide # rf no mana flasks after RF swap
 	SetFontSize 18
 	DisableDropSound True
 
-# Never looted: tinctures (jewels: [leveling] show_jewels; chromatic: [vendor_recipes.chromatic_campaign])
+# Never looted: tinctures (jewels: [leveling] show_jewels; chromatic: [vendor_recipes.chromatic])
 Hide # rf no tinctures
 	Rarity Normal Magic
 	Class == "Tinctures"
