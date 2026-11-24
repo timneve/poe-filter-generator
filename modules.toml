@@ -309,7 +309,8 @@
 "exotic->fractured.fractspecial" = true  # [1303] Show
 "exotic->fractured.fractothers" = true  # [1303] Show (off in FilterBlade)
 "exotic->enchanted.exotic" = true  # [1304] Show
-"exotic->enchanted.anointedamulets" = true  # [1304] Show
+"exotic->enchanted.anointedamulets" = true  # [1304] Show (ours: every amulet base incl. talismans; beats rares talisman.* tiers)
+"exotic->enchanted.anointedamuletscorrupted" = true  # [1304] Show (ours: corrupted / mirrored anointed amulets; false = hidden unless price shows them)
 "exotic->enchanted.anointedrings" = true  # [1304] Show
 "exotic->crucible.crucibleany" = true  # [1305] Show
 
@@ -367,34 +368,34 @@
 "hidelayer.raresendgame" = false  # [2700] Hide
 
 [gear_special.blocks]
-"influenced->all.t1exotic" = true  # [0302] Show
-"influenced->all.t1top" = true  # [0302] Show (off in FilterBlade)
-"influenced->all.t1basescrusader" = true  # [0302] Show
-"influenced->all.t1baseswarlord" = true  # [0302] Show
-"influenced->all.t1basesredeemer" = true  # [0302] Show
-"influenced->all.t1baseshunter" = true  # [0302] Show
-"influenced->all.t1basesshaper" = true  # [0302] Show
-"influenced->all.t1baseselder" = true  # [0302] Show
-"influenced->all.t2classescrusader" = true  # [0302] Show (off in FilterBlade)
-"influenced->all.t2classeswarlord" = true  # [0302] Show (off in FilterBlade)
-"influenced->all.t2classesredeemer" = true  # [0302] Show (off in FilterBlade)
-"influenced->all.t2classeshunter" = true  # [0302] Show (off in FilterBlade)
-"influenced->all.t2classesshaper" = true  # [0302] Show (off in FilterBlade)
-"influenced->all.t2classeselder" = true  # [0302] Show (off in FilterBlade)
-"influenced->all.t2classesinfluencedshared" = true  # [0302] Show (off in FilterBlade)
-"influenced->all.t2high" = true  # [0302] Show (off in FilterBlade)
-"influenced->all.any86" = true  # [0302] Show (off in FilterBlade)
-"influenced->all.any" = true  # [0302] Show (off in FilterBlade)
-"rare->exarch.anyhigh" = true  # [0400] Show (off in FilterBlade)
-"rare->exarch.any" = true  # [0400] Show (off in FilterBlade)
-"rare->eater.anyhigh" = true  # [0400] Show (off in FilterBlade)
-"rare->eater.any" = true  # [0400] Show (off in FilterBlade)
+"influenced->all.t1exotic" = "config.toml [influenced]"  # [0302] Show
+"influenced->all.t1top" = "config.toml [influenced]"  # [0302] Show
+"influenced->all.t1basescrusader" = "config.toml [influenced]"  # [0302] Show
+"influenced->all.t1baseswarlord" = "config.toml [influenced]"  # [0302] Show
+"influenced->all.t1basesredeemer" = "config.toml [influenced]"  # [0302] Show
+"influenced->all.t1baseshunter" = "config.toml [influenced]"  # [0302] Show
+"influenced->all.t1basesshaper" = "config.toml [influenced]"  # [0302] Show
+"influenced->all.t1baseselder" = "config.toml [influenced]"  # [0302] Show
+"influenced->all.t2classescrusader" = "config.toml [influenced]"  # [0302] Show
+"influenced->all.t2classeswarlord" = "config.toml [influenced]"  # [0302] Show
+"influenced->all.t2classesredeemer" = "config.toml [influenced]"  # [0302] Show
+"influenced->all.t2classeshunter" = "config.toml [influenced]"  # [0302] Show
+"influenced->all.t2classesshaper" = "config.toml [influenced]"  # [0302] Show
+"influenced->all.t2classeselder" = "config.toml [influenced]"  # [0302] Show
+"influenced->all.t2classesinfluencedshared" = "config.toml [influenced]"  # [0302] Show
+"influenced->all.t2high" = "config.toml [influenced]"  # [0302] Show
+"influenced->all.any86" = "config.toml [influenced]"  # [0302] Show
+"influenced->all.any" = "config.toml [influenced]"  # [0302] Show
+"rare->exarch.anyhigh" = false  # [0400] Show (off in FilterBlade)
+"rare->exarch.any" = false  # [0400] Show (off in FilterBlade)
+"rare->eater.anyhigh" = false  # [0400] Show (off in FilterBlade)
+"rare->eater.any" = false  # [0400] Show (off in FilterBlade)
 "exoticbases.ecotinkbases84" = true  # [0500] Show
 "exoticbases.ecotinkbases" = true  # [0500] Show
 "exoticbases.exoticheistbases" = true  # [0500] Show
 "exoticbases.exoticritualbases" = true  # [0500] Show
 "exoticbases.exoticlakekala" = true  # [0500] Show
-"exoticbases.exoticexpeditionbases" = true  # [0500] Show (off in FilterBlade)
+"exoticbases.exoticexpeditionbases" = false  # [0500] Show (off in FilterBlade)
 "exoticbases.exotictalismanbases" = true  # [0500] Show
 "exoticbases.exoticbasesmisc" = true  # [0500] Show
 "exoticbases.exoticuniquebases" = true  # [0500] Show
@@ -640,7 +641,7 @@
 [unique_exceptions.blocks]
 "uniques.exuberimpresence" = true  # [4801] Show
 "uniques.exkaom" = true  # [4801] Show
-"uniques.extabula" = true  # [4801] Show
+"uniques.extabula" = false  # [4801] Show
 "uniques.exforgesword" = true  # [4801] Show
 "uniques.exrationaljewel" = true  # [4801] Show
 "uniques.exsynth" = true  # [4801] Show
@@ -660,5 +661,5 @@
 "uniques.multispecial" = "config.toml [uniques] (price)"  # [4804] Hide
 "uniques.overqual" = "config.toml [overquality]"  # [4804] Show
 "uniques.5link" = true  # [4804] Show (off in FilterBlade)
-"uniques.6s" = true  # [4804] Show (off in FilterBlade)
+"uniques.6s" = false  # [4804] Show (off in FilterBlade): any 6-socket unique blue; false = price decides
 

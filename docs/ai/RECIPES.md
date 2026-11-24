@@ -36,8 +36,8 @@ class Synthetic(unittest.TestCase):    # setUp: cfg copy, fixed chaos tiers, EV 
 - Assert visibility through `fs.visible` / `fs.evaluate`, not just `r[...]` tiers.
 - `LiveCache` replays the newest league cache WITH prices (`latest_cache`): a new league's day-1 cache (empty poe.ninja feeds) is skipped, the previous league is used until prices appear.
 - Tink check: `not_tink(blocks, cfg, [(label, item)])` -> items whose deciding block lacks the top tier's background + alert sound (`tink_lines`). Guards: `Synthetic.test_very_expensive_items_tink` (one top-priced item per kind + always-tink items), `LiveCache.test_top_priced_items_tink` (every top-priced stackable / crafting base / cluster). New tink-worthy kind -> add it there.
-- Synthetic `setUp` disables `tiers_follow_divine`, `uniques.ev`, `variable_jackpot_only`, `always_show_bases`, content drops; re-enable in the test if needed (`ev_setup()` for EV).
-- `LiveCache` uses real `cache/`; skips some checks when `variable_jackpot_only` is on.
+- Synthetic `setUp` disables `tiers_follow_divine`, `uniques.ev`, `always_show_bases`, content drops; re-enable in the test if needed (`ev_setup()` for EV).
+- `LiveCache` uses real `cache/`.
 - Synthetic + league-start tests assume the tight (late-league) settings: they load `test_filter.BASE`
   (= `league_start/backup/` while a league start is running, else the repo files) via `load_base_cfg()`,
   never `bf.load_cfg()`, so `tools/league_start.py start` on the real config doesn't break them.
@@ -52,12 +52,12 @@ class Synthetic(unittest.TestCase):    # setUp: cfg copy, fixed chaos tiers, EV 
 - `apply_divine_tiers` mutates `cfg["tiers"]` in place. Tests use `copy.deepcopy(cfg)`; `Synthetic.setUp` sets `tiers_follow_divine = False` + `FIXED_TIERS` chaos so numbers stay stable.
 - Block order = priority. First non-`Continue` match decides. Defaults are `Continue` blocks. Earlier module blocks with their own style can steal a tink item (e.g. [0901] perfection beat 30% overquality): visible is not enough, check tink.
 - `hidden_game_colours` + `maximize_item_sizes` post-process the whole text; font size 45 everywhere except content always-show style (block comment must start `content override show:` to keep its small size).
-- Divination card exchange quotes are NOT trusted (no buy/sell direction). Cards priced only via `[exchange.card_rewards]`, else NeverSink fallback (`fallback_tiers.toml`) when volume < `card_fallback_min_volume`, else `unknown`.
+- Card price order: `[exchange.card_rewards]` reward value > poe.ninja card quote (volume >= `card_fallback_min_volume`) > NeverSink group (`fallback_tiers.toml`) > `unknown`. Quote-priced cards stack up to `max_stack`, reward cards up to set size.
 - New league currency / cards without a fallback tier: refresh the NeverSink exports in `reference/`, run `python tools/import_fallback_tiers.py` (rewrites `fallback_tiers.toml`), commit it. `test_fallback_tiers_file_matches_reference_import` fails while the file is stale. The build never reads `reference/` for fallbacks. Unique rewards skip 5/6-link lines (`links` field): a troll 5L Whispering Ice once tinked The Incantation.
 - Shards/splinters priced from finished item, never own quotes; skipped if finished item unpriced.
 - Low-volume prices may SHOW an item, never hide it (exchange volume, stash-stackable / gem listings; thin gems show blue).
 - Unique base tier = cheapest unique (not best) by default; `base_price = "highest"` = priciest confident one (non-EV path only). Linked (5L/6L) lines excluded from unlinked pricing; handled by `price_linked_jackpots`.
-- Boss-only uniques (`data["nomap"]`) excluded unless content module enabled (not for "cheapest" either: Lab-only Winds of Change must not hide Hateforge's base); Foulborn names stripped of `"Foulborn "` prefix for that check.
+- Boss-only uniques (`data["nomap"]`) excluded unless content module enabled (not for "cheapest" either: Lab-only Winds of Change must not hide Hateforge's base); Foulborn names stripped of `"Foulborn "` prefix for that check; Foulborn of any content-module unique is priced whether the module is on or off.
 - PoE filters can't see unique names or drop source before ID: every unique rule is base-wide.
 - `reference/*.filter` are huge; grep, don't read. Parsed by tag (`%D<n>`, `%H<n>`, `$tier->...`).
 - `wiki_uniques.json` fetch failure -> old cache or no boss skipping (warning on stderr).
@@ -79,6 +79,7 @@ class Synthetic(unittest.TestCase):    # setUp: cfg copy, fixed chaos tiers, EV 
   owns (vendor recipes, price: RGB, 6 sockets, FilterBlade "Conditional Entry" untagged `sNNNN_k`
   keys) the same way with `driven=module_elsewhere` (no block) and a NOTE naming the owner. Untagged
   keys number per section in file order: re-check them after a reference refresh.
+- Leveling module goes before stackables (NeverSink: after currency): a block with only `Rarity Normal` matches currency too. `leveling_module_blocks` adds `Class == GEAR_CLASSES` to non-[[3800]] blocks without Class / BaseType.
 - Strictness-tagged NeverSink blocks (leveling): the importer keeps `%D<n>` / `%H<n>` / `!utility_layer` after the key in the block header (`load_module` -> `tags`); import them `--config-key ...=config.toml [leveling] strictness` and decide in a `driven` from the tag (`leveling_strictness_block`). FilterBlade exports leveling as Hide / `#Show` (leveling off): never take the export's action as-is for them.
 - New item section: grep BOTH reference filters first; league.filter decides shown / hidden + style, its `#Show` / Hide rules = league-start toggles (`off=`, `unhide=`). Never hand-write a blanket class Hide.
 
@@ -106,6 +107,8 @@ Expected: PoE1 gear gets PoE2-style item tiers (unid "Tier N"). When the patch l
 - Colours: only in config `[colors]`. Styles, `rules/*.filter`, code write names (`SetTextColor red`); unknown name -> ValueError. New colour = new `[colors]` entry. Report reads config style lines: resolve names (`report.tier_strip`).
 - `reference/league.filter` = user's FilterBlade customization (Very Strict); `regular-neversink.filter` = stock. The build never reads `reference/` (test `NoReference.test_build_without_reference` guards `Path.read_text/read_bytes/open`): NeverSink blocks become our modules via `tools/import_neversink.py` (owns `parse_ref_blocks`; `apply_palette` snaps their colours to `[colors]`), fallback tiers via `tools/import_fallback_tiers.py`. Commented-out `#Show` blocks = off keys LS turns on.
 - Parity test (`tests/test_parity.py`, needs `cache/<league>/` + `reference/league.filter`): `python -m unittest discover tests -p test_parity.py`; `python tests/test_parity.py` prints gaps grouped, explained-reason counts and the reverse direction (ours shows, league.filter hides) per class. A gap = fix the filter, or add a specific reason: our deciding block comment -> `EXPLAINED` regex, item-level price -> `price_reason`, user decision -> `reason_for`. Corpus items come from block conditions (`items_for_block`): a new league.filter condition needs `filtersim._match` and `items_for_block` support. ~20 s.
+- Parity reasons must follow config, not hard-code tiers: "hidden" = `bf.hidden(cfg, tier)` (`hide_tiers`, `reference_tier_reason`), price floors via `tc.r["tiers"]` (live divine scale) + `bf.min_shown_rank`, never raw `cfg["tiers"]` (150c-divine scale). Else changing `hide_tiers` / the divine price opens fake gaps.
+- Crafting base "confident" in tests = build's rule: `[bases] min_listings` AND `min_samples` (`LiveCache.ninja_drop`, parity `price_reason`), not `[uniques] min_listings`. Raising them makes thinner bases unpriced (hidden by gear rules); tests follow automatically.
 - Quality-threshold module block (overquality / perfection / flask / unique quality): modules.toml value `"config.toml [overquality]"` + entry in `OVERQUALITY_TOGGLES` + key in config.toml `[overquality]`. Parity explains league.filter shows by an off key (`overquality_reason`).
 - `LiveCache` uses `latest_cache()` = newest `cache/<league>/`, Standard skipped (a `--config config_standard.toml` build would otherwise make tests replay Standard prices).
 - After `tools/league_start.py start`, tests read `league_start/backup/config.toml` / `modules.toml` (`load_base_cfg` BASE): a new config section / removed module key must go into the backup too, else KeyError in Synthetic.

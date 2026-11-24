@@ -19,7 +19,7 @@ What `start` loosens (same list as the `league_start = true` flag, which still w
 quick one-line switch):
 
 - `hide_tiers` -> `[]` (brown + dust shown), `[small_loot] enabled` -> false
-- `[uniques] show.*` all true, `variable_jackpot_only` / `hide_maps` -> false
+- `[uniques] show.*` all true, `hide_maps` -> false
 - `[foulborn]` / `[bases]` / `[gems] min_tier` -> `"dust"`, `[gems] show_all` -> true, `[gems] hide_level1` -> false
 - "hide" in `[overrides]`, `[exchange.reference_card_tiers]`, `[exchange.unpriced_tiers]`,
   `unpriced` settings -> `"dust"`
@@ -29,7 +29,7 @@ quick one-line switch):
   the small look
 - every `[overquality]` key, every `[vendor_recipes.*]`, `[content.*]` and rule module
   `enabled` -> true (a content drop set to `false` -> `"price"`)
-- `[maps] progression` -> `"all"`, `corrupted_min_tier` -> 0
+- `[maps] progression` -> `"all"`, `min_tier` -> 0, `corrupted_min_tier` -> 0, `blighted_hide_tiers` -> []
 - `[rares] base_tiers` -> true, `weapons` / `armour` / `jewellery` -> `["all"]`,
   `min_ilvl.*` -> 68: every endgame rare shown
 - `[leveling] unused_whites_min_tier` -> your `bases.min_tier`: white bases your build never
@@ -69,10 +69,11 @@ the whole table). Rebuild after each step. Typical order (`ls` = `python tools/l
 | day 3 | cheap gems | `ls restore gems` |
 | day 3 | cheap stackables NeverSink hides | `ls restore exchange.unpriced_tiers overrides exchange.reference_card_tiers` |
 | day 3 | contracts, Forbidden Tome | `ls restore show_contracts hide_forbidden_tome maps.blocks` |
-| day 4 | normal maps, low corrupted maps | `ls restore maps.progression maps.corrupted_min_tier` (or `"auto"` in between) |
+| day 4 | normal maps, low corrupted maps | `ls restore maps.progression maps.min_tier maps.corrupted_min_tier` (or `"auto"` in between) |
 | day 4 | vendor recipes you don't do | `ls restore vendor_recipes.chromatic vendor_recipes.jeweller` |
 | day 4-5 | brown tier | `ls restore hide_tiers` |
 | day 4-5 | cheap plain flasks (priced like crafting bases) | `ls restore flasks.show_plain` |
+| day 3-4 | influenced rares (rank B / C, classes, any) | `ls restore influenced` (or trim `influenced.remaining` / `classes` first; `influenced.hide_cheap = true` hides influenced bases poe.ninja prices at the dump floor) |
 | day 5 | module extras | `ls restore flasks.blocks exotics.blocks crafting.blocks gear_special.blocks` ... (one block: `ls restore "flasks.blocks.endgameflasks.anyutility"`) |
 | day 5-7 | the rest | `ls status`, then `ls restore` single keys you don't want loose any more |
 

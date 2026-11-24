@@ -87,12 +87,8 @@ def collect(cfg, data, blocks, r):
     for name, tier in r["ref_cards"].items():
         if name not in r["prices"]:
             volume = r.get("card_volumes", {}).get(name, 0)
-            if volume >= cfg["exchange"]["card_fallback_min_volume"]:
-                note = (f"no reliable buy-order price; exchange activity {volume:.1f}c meets "
-                        "threshold, so kept unknown instead of using NeverSink fallback")
-            else:
-                note = (f"no reliable buy-order or currency-recipe price; low activity "
-                        f"({volume:.1f}c), regular NeverSink fallback tier {tier}")
+            note = (f"no reward price, low exchange activity ({volume:.1f}c), "
+                    f"NeverSink fallback tier {tier}")
             add("Card", name, "", None, None, {"class": "Divination Cards", "basetype": name},
                 note)
 
@@ -810,7 +806,7 @@ const checks=[
  {t:"Linked uniques hidden",rows:R.filter(r=>r.risk&&unq(r)&&lnk(r)),
   why:`The price comes from the links, but the linked rule only fires at ≥ ${M.jackpot} div. Lower jackpot_divine to catch them, or accept.`},
  {t:"Chase uniques on hidden bases",rows:R.filter(r=>r.risk&&unq(r)&&!lnk(r)),
-  why:"Unidentified, the filter only sees the base, and the cheapest unique on it is junk. Worth farming? Add the base to [unique_overrides] as \"variable\", or set uniques.variable_jackpot_only = false."},
+  why:"Unidentified, the filter only sees the base, and the cheapest unique on it is junk. Worth farming? Add the base to [unique_overrides] as \"variable\", or lower jackpot_divine."},
  {t:"Crafting bases hidden with real volume",rows:R.filter(r=>r.risk&&r.cat==="Crafting base"&&(r.n||0)>=50),
   why:"This high-volume price meets the safety threshold but the item is hidden. Check the matching ilvl/influence rule."},
 ];

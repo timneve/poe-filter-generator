@@ -11,23 +11,25 @@ Show
 
 # Gold: emit_gold (config.toml show_gold + modules.toml [misc.blocks] gold.*), not here
 
-# Linked items (configured in config.toml)
+# Linked items (configured in config.toml). Normal / magic / rare only, like NeverSink [0100]:
+# 6L / 5L uniques go to the unique rules (price, uniques.extabula, uniques.ex6link, uniques.5link)
 # BEGIN show_6_links
+# high style (red, not tink)
 Show
 	LinkedSockets 6
+	Rarity Normal Magic Rare
 	SetFontSize 45
 	SetTextColor red
-	SetBorderColor red
-	SetBackgroundColor tink_bg
-	PlayAlertSound 6 300
+	PlayAlertSound 1 300
 	PlayEffect Red
-	MinimapIcon 0 Red Star
+	MinimapIcon 1 Red Circle
 # END show_6_links
 
 # BEGIN show_5_links
-# high style (not tink: only 6L tinks)
+# high style (red, not tink)
 Show
 	LinkedSockets 5
+	Rarity Normal Magic Rare
 	SetFontSize 45
 	SetTextColor red
 	PlayAlertSound 1 300

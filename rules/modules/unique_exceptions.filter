@@ -67,6 +67,8 @@ Show # uniques.ex6link
 	PlayEffect Red
 	MinimapIcon 0 Yellow Star
 	SetTextColor 255 0 0 255
+	SetBorderColor 255 0 0 255
+	SetBackgroundColor 255 255 255 255
 
 Show # uniques.4xabysshelmet
 	Sockets >= AAAA

@@ -31,10 +31,14 @@ is a full copy of `config.toml` (only `league` / `output_name` differ), so tune 
   `show_gold` (default off: all gold hidden; on: in maps stacks of at least `gold_min_stack` (10000) shown,
   smaller ones hidden; every stack in the campaign), `always_top_classes` (default Reliquary keys:
   always top tier / tink, priced or not, never hidden)
+- `quiet_tiers` (default `["low"]`) use the calm `[style.quiet]` look (brown text, grey beam, grey
+  icon, no sound); `quiet_icon = false` drops their minimap icon too (beam stays; recipe floors keep it).
 - Text brightness follows value: minor white > unpriced shown items (gear, normal maps) faded grey >
   low brown > brown tier darker > dust darkest; brown / dust labels also get a see-through
   background (`brown_bg` 210, `dust_bg` 155 opacity); brown tier also gets a grey beam (no minimap icon). Every shown blue-beam item (variable / unknown tier
-  and rule-module blue beams) gets pale blue text (`variable_text_color`), uniques included.
+  and rule-module blue beams) gets pale blue text (`variable_text_color`), except uniques.
+- Uniques keep the game's unique text colour in every tier (`[uniques] keep_text_color`); only
+  top tier (tink) gets red text on white. Beam, icon and sound still show the tier.
 - Visible item labels use maximum font size 45; explicit content-module always-show overrides
   retain their deliberately smaller size.
 - `hide_forbidden_tome` in `config.toml` hides Forbidden Tome regardless of price; `false` shows it
@@ -42,7 +46,7 @@ is a full copy of `config.toml` (only `league` / `output_name` differ), so tune 
 - `show_contracts = false` (default) hides every Heist contract, any rarity; `true` shows them all
   (beats the map module's plain-contract Hide). Quest contracts always show.
 - `show_5_links` and `show_6_links` in `config.toml` independently control generic 5-link and
-  6-link item alerts.
+  6-link item alerts (normal / magic / rare, both high tier style: red, not tink; 6L uniques like Tabula Rasa use the unique rules).
 - `show_mirrored` in `config.toml` controls the optional blue, non-tink mirrored-item rule
   (disabled by default).
 - Vendor recipes (`[vendor_recipes.<name>]`): show a recipe's ingredients (any rarity) with a
@@ -74,16 +78,24 @@ is a full copy of `config.toml` (only `league` / `output_name` differ), so tune 
   shard price (Fracturing Orb / 20). Off = poe.ninja price only. Recipes with `uniques` +
   `reward` + `reward_count` work the same way.
 - `[overquality]` - every quality-threshold rule in one place: any gear 30% / 27% / 21% (30% tink look,
-  on by default), top armour / weapon / chancing bases, flasks / tinctures, uniques 21%+. `false` = no rule,
+  on by default), top armour / weapon / chancing bases (FilterBlade's Rank A / B grids as editable lists
+  `rank_a_armour` / `rank_a_weapons` / `rank_b_weapons`, current FilterBlade defaults), flasks / tinctures, uniques 21%+. `false` = no rule,
   the item falls to the normal rules (e.g. hidden in maps). Works even with `[gear_special]` off.
 - `[gear_special]` - your FilterBlade filter's influenced / eldritch / exotic-base / perfection
   rules (our module `rules/modules/gear_special.filter`, per-rule on / off in
-  `modules.toml [gear_special.blocks]`, FilterBlade defaults): t1 influenced rare bases (ilvl 82+
-  per influence, plus exclusive bases), heist / ritual / Kalandra / talisman / unique-only bases,
+  `modules.toml [gear_special.blocks]`, FilterBlade defaults): influenced rares (see `[influenced]`), perfection (ilvl 84+, top 1% base defence roll; `perfection_armour` = which rare base tiers, default `["t1"]`), heist / ritual / Kalandra / talisman / unique-only bases,
   Iron Flask, Grasping Mail, Cord Belt, Stygian Vise (abyssal or ilvl 86), Sacrificial Garb,
   Pearlescent Amulet, 28% / 21%+ quality top armour bases, 28% / 24%+ ilvl 83+ top weapon bases.
-  Off by default: lower influenced tiers, Exarch / Eater implicit items, runic bases. A base with
+  Off by default: Exarch / Eater implicit items, runic bases. A base with
   a poe.ninja price keeps its price look. On by default.
+- `[influenced]` - influenced rares, like FilterBlade's "Influenced Items" (NeverSink 8.21 lists,
+  every list editable in config.toml): `ranks` A (atlas-exclusive bases) / B (best bases) / C
+  (second grade, ilvl 84+) for any influence, `bases` per influence (e.g. Hunter Cord Belt, ilvl
+  82+), `classes` per influence (e.g. Hunter boots, ilvl 80+), `remaining` ("high" = any
+  influenced rare ilvl 86+, "all"). FilterBlade default: rank A + all six influences' bases.
+  `hide_cheap` (default on): an influenced base poe.ninja confidently prices at or below
+  `[bases] dump_floor` (e.g. Elder Studded Belt ilvl 85, 2c with ~400 listings) is hidden instead
+  of shown blue. League start: everything on, `hide_cheap` off.
 - `[links]` - 5-links (campaign, maps, 5L with 6 sockets) and 4-link armour in area 68-75, one
   key each (FilterBlade's rules, `rules/modules/crafting.filter`). Crafting bases are price only:
   `[bases] min_tier`.
@@ -101,8 +113,12 @@ is a full copy of `config.toml` (only `league` / `output_name` differ), so tune 
   defaults): veiled / incursion / necropolis / bestiary / delve / mercenary /
   warband / essence mods, synthesised / imbued items, voidstones, trinkets, fishing rods, unique
   pieces, quest items, rare relics, double-corrupted rares, abyss-socketed gear, fractured jewels /
-  heist gear, enchanted / anointed gear, crucible items. Uniques (fishing rods, relics) keep their
+  heist gear, enchanted / anointed gear (anointed amulets: every amulet base; talismans by their poe.ninja base price first,
+  `[content.bestiary] talismans`, cheaper than `talisman_min_tier` hidden, blue only when unpriced; corrupted /
+  mirrored ones on / off via `exotic->enchanted.anointedamuletscorrupted`), crucible items. Uniques (fishing rods, relics) keep their
   price. On by default.
+- `[content.bestiary] quiet_beasts` - itemised beasts (menagerie, right-click to add to bestiary) show
+  quiet: brown text, grey beam, no sound. `false` = blue like other unpriced currency. Unique spirit beasts stay blue.
 - `[id_mods]` - identified gear with good mods, shown the way `reference/league.filter` shows
   them: mod combinations per slot (weapons, armour, jewellery, quivers, jewels), dual mods,
   top-value / uncorrupted single mods, veiled exceptions, corrupted items with good mods.
@@ -159,10 +175,10 @@ Set it back to `false` after a few days.
 
 ## New league content (3.28 Covens of Umbra)
 Viscera are priced per base from poe.ninja (`[viscera]`: cheapest confident variant = tier, a jackpot
-variant = blue, Moon icon; the filter can't see Greater / Lesser or the implicit). Threads are priced from
-the poe.ninja exchange like fragments. Items we can't price yet show blue with a Moon minimap icon, never
+variant = blue, Moon icon; the filter can't see Greater / Lesser or the implicit). Threads (core game) are
+priced from the poe.ninja exchange like any fragment: price alone decides, cheap ones hide. Items we can't price yet show blue with a Moon minimap icon, never
 hidden: unpriced Viscera, new / renamed currency, Cursed Poppet, Mycelium Core (`[league_mechanic] classes`
-/ `names`), unpriced Threads (blue with the fragment Hexagon icon instead: `[league_mechanic] fragments`), and
+/ `names`; `fragments` = same with the fragment Hexagon icon, empty by default), and
 `Fated` items (`[league_mechanic] fated`). Fated rare gear goes by base tier, like NeverSink's
 t1f / t2f: `fated_tiers.weapons` / `armour` / `jewellery` list the rare base tiers to show (default
 weapons + armour t1-t2, every jewellery tier); a Fated rare outside them is a normal rare.
@@ -184,6 +200,9 @@ tier that shows the item, or its stack, still wins). FilterBlade-off options: qu
 utility flask alerts on (as before), rare / magic size decorators and spirit shields `false`
 (league_start turns them on). Every block is gated `AreaLevel <= 67`
 (and `Rarity <= Rare`), so it does nothing in maps and never hides a unique.
+Higher price tier wins: any other rule that gives an item a price tier of `[leveling]
+price_over_tier` or better (crafting base, currency incl. unpriced reference tiers, override,
+viscera, ...) beats every campaign Show / Hide; cheaper tiers keep the campaign look.
 
 Build module: `[leveling] build = "rf"` puts `rules/leveling/rf.filter` first (Pohx RF:
 armour/evasion only, never pure ES, 2H axes until the RF swap, guide uniques, Iron/Ruby
@@ -232,24 +251,24 @@ rolled tier 4+ (`UnidentifiedItemTier`) show in the campaign with a blue beam, p
   Verdant Oil hidden; Omen of Refreshment / of the Soul Devourer blue). Clear Oil and Sepia Oil are pinned to dust via `[overrides]`.
 - Currency shards use one twentieth of the finished currency's price rather than sparse shard
   quotes; configured splinters use the finished item price divided by the completion count.
-- Divination-card quotes are not used because the available poe.ninja exchange data does not
-  distinguish buy orders from sell quotes. Configured deterministic rewards use the exact
+- Divination cards: configured deterministic rewards use the exact
   reward item's price (currency-exchange items, including fragments/scarabs, named unique
   items/maps from listings (unlinked lines only; 5/6-link listings ignored), or another configured exact card reward) divided by the set size.
   The exact reward valuation wins even when the aggregate card quote differs by 10× or more.
   Random, selectable, corrupted, variable-
-  outcome, and generic-category rewards are excluded. Other unpriced cards use the regular NeverSink
-  divination-card groups (`fallback_tiers.toml [cards]`) only when exchange activity is below
-  `[exchange].card_fallback_min_volume` (default 5 chaos-equivalent volume). The feed has no
-  buy/sell direction or exact trade count, so cards with activity at/above the threshold but
-  no reliable price stay unknown (blue beam/icon, grey-white text, no drop sound), not treated
-  as priced. Only configured guaranteed rewards are used; random item rewards are not.
+  outcome, and generic-category rewards are excluded. Other cards use their poe.ninja card price
+  when exchange activity is at least `[exchange].card_fallback_min_volume` (default 5
+  chaos-equivalent volume); below that, the regular NeverSink divination-card groups
+  (`fallback_tiers.toml [cards]`). Cards with neither stay unknown (blue beam/icon, no drop sound).
   A stack of 3+ unpriced cards from a hidden group still shows (`card_fallback_stack`).
 - Divine Orb, Mirror of Kalandra, and Hinekora's Lock are pinned to the top/tink style
   regardless of their poe.ninja prices or manual overrides.
 - Uniques: poe.ninja listings. A base is tiered by its CHEAPEST unique (no clicking 1c junk
   for a maybe-20c); `[uniques] base_price = "highest"` tiers by its priciest unique instead
   (only without `[uniques.ev]`). Exception: any unique on the base >= `jackpot_divine` -> variable style.
+  A cheap base is never hidden while any unique on it >= `jackpot_divine`: blue instead
+  (Leather Belt -> Headhunter). A base priced >= `never_hide_tier` (default top = 1 div) is never
+  hidden by `show.*` / `min_tier` / `small_loot`.
   Which price tiers show: `[uniques] show.<tier> = true/false` (default top/high/mid on).
   Unique jewels (`variable_classes`, Jewels + Abyss Jewels) are always blue, unless every unique
   on the base is >= 1 div (tink).
@@ -273,9 +292,9 @@ rolled tier 4+ (`UnidentifiedItemTier`) show in the campaign with a blue beam, p
   instance-only uniques). On: its uniques are priced normally (Breach on: Titan Greaves blue from
   1c Red Trail), and a base the price rules would hide still shows small + faded when one of its
   content uniques is itself in a shown unique tier (Amber Amulet: 2 div Xoph's Blood), so the
-  valuable encounter drop isn't missed (not Foulborn: those come from Wombgifts, never the encounter, so only their own price counts; module on = Foulborn versions priced, off = hidden as boss-only); cheap content uniques stay hidden; normal mapping is otherwise unchanged. Off: those uniques are
+  valuable encounter drop isn't missed (not Foulborn: those come from Wombgifts, never the encounter, so only their own price counts; Foulborn versions are always priced, module on or off); cheap content uniques stay hidden; normal mapping is otherwise unchanged. Off: those uniques are
   ignored on shared bases (Titan Greaves = Kaom's Roots tier); bases with only that content's
-  uniques stay blue. `[content.<name>.drops]`: `"price"` (default), `true` to always show faded,
+  uniques stay blue. `[content.bestiary]`: Spirit Beast uniques, plus `talismans` (talismans priced by poe.ninja base price, independent of `enabled`). `[content.breach.wombgifts]`: per Wombgift `"price"` (default), `"hide"` or a tier (league start: hide -> price). `[content.<name>.drops]`: `"price"` (default), `true` to always show faded,
   or `false` to always hide a specific unique's base. PoE filters cannot
   distinguish drop sources or unique names before identification, so pricing and overrides
   apply globally to the base and can affect other uniques sharing it. Always-show drops use
@@ -314,9 +333,13 @@ rolled tier 4+ (`UnidentifiedItemTier`) show in the campaign with a blue beam, p
   `uniques.hide_maps` = league.filter's rule (corrupted shown, rest hidden). Normal T1-T16:
   `progression` "none" (hidden, late league) / "all" (league start) / "auto" (a tier shows
   while you're in maps of that tier or lower: in a T1 map T1+ show, in a T5 map T5+).
+  `min_tier` (default 16): normal tiers below it stay hidden even with "all" / "auto" (0 = all),
+  except tiers listed in `extra_tiers` (e.g. `[2]` with min_tier 16 = T2 + T16 shown).
   `corrupted_min_tier` (default 16): corrupted non-unique maps below it hidden, whatever rule
   would show them (8-mod, implicit, influenced, blighted, progression); Valdo / Nightmare /
-  Shaper guardian and unique maps keep their rule. 0 = off. Map items: unique / enchanted
+  Shaper guardian and unique maps keep their rule. 0 = off. `blighted_hide_tiers` (list of
+  tiers, e.g. `[1, ..., 12]` = only T13+ blighted shown): blighted maps of those tiers hidden;
+  blight-ravaged always shown; `[]` = all shown. Map items: unique / enchanted
   contracts + blueprints, blueprints, logbooks, charts, reliquary keys shown; plain contracts and
   Sanctum Research hidden (unless `show_contracts` / `hide_forbidden_tome = false`); a poe.ninja price (Voidborn key) or the blue unpriced-fragment rule
   (Chronicle, Inscribed Ultimatum) wins. `enabled = false`: no map rules at all.

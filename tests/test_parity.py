@@ -42,13 +42,8 @@ EXPLAINED = [
     (r"^corrupted map below \[maps\] corrupted_min_tier", "price: corrupted map tier ([maps] corrupted_min_tier)"),
     # --- explicit config decisions (config.toml, documented there)
     (r"^override hide$", "decision: config.toml [overrides] = hide"),
+    (r"^blighted map tier in \[maps\] blighted_hide_tiers", "decision: config.toml [maps] blighted_hide_tiers"),
     (r"config tier hide$", "decision: config.toml [exchange.unpriced_tiers] hide (FilterBlade conditional Hides)"),
-    (r"^unpriced cards, reference tier (hide|dust|brown)", "decision: unpriced low-volume card, regular NeverSink "
-                                                           "group t4 / t4c / t5 / t5c -> hide or a hidden tier "
-                                                           "([exchange.reference_card_tiers]): ranked cheap by "
-                                                           "NeverSink, not 'maybe valuable'"),
-    (r"^unpriced currency, reference tier (dust|brown)", "decision: unpriced currency, NeverSink tier 5+ "
-                                                         "([exchange.reference_currency_tiers]): ranked cheap"),
     (r"show_contracts|hide_forbidden_tome|show_gold", "decision: config.toml toggle"),
 ]
 
@@ -186,6 +181,17 @@ def explain(comment):
     return next((reason for rx, reason in EXPLAINED if re.search(rx, comment)), None)
 
 
+def reference_tier_reason(cfg, comment):
+    """Unpriced currency / card at its NeverSink reference tier ([exchange.reference_currency_tiers]
+    / [exchange.reference_card_tiers]) when that tier is hidden (hide_tiers, or "hide"): NeverSink
+    ranks it cheap, not 'maybe valuable'. Also the hidden-tier stack blocks (stack xN, tier T)."""
+    m = re.match(r"^unpriced (currency|cards), (?:hidden reference tier, stack x\d+, tier |reference tier )(\w+)", comment)
+    if m and bf.hidden(cfg, m.group(2)):
+        return (f"decision: unpriced {m.group(1)} at a hidden NeverSink reference tier ({m.group(2)}, "
+                "config.toml hide_tiers): ranked cheap by NeverSink")
+    return None
+
+
 def overquality_reason(cfg, ref_block):
     """league.filter showed the item by a quality-threshold block that config.toml
     [overquality] turns off (OVERQUALITY_KEYS / OVERQUALITY_TOGGLES)."""
@@ -199,7 +205,7 @@ def overquality_reason(cfg, ref_block):
 
 
 def reason_for(tc, block, it, ref_block=None):
-    reason = (explain(block.comment) or price_reason(tc, it)
+    reason = (explain(block.comment) or reference_tier_reason(tc.cfg, block.comment or "") or price_reason(tc, it)
               or (overquality_reason(tc.cfg, ref_block) if ref_block else None)
               or (module_off_reason(tc.cfg, ref_block) if ref_block else None))
     if reason and reason.startswith("price"):
@@ -211,10 +217,11 @@ def reason_for(tc, block, it, ref_block=None):
 
 
 def module_off_reason(cfg, ref_block):
-    """league.filter's rare section ($type->rare->...) while config.toml rares.enabled = false
-    (whole module off: explicit config decision)."""
-    if "$type->rare->" in (ref_block.comment or "") and not cfg.get("rares", {}).get("enabled", True):
-        return "decision: config.toml rares.enabled = false (whole rares module off)"
+    """league.filter's rare / jewel section ($type->rare->..., $type->jewels->...) while
+    config.toml <module>.enabled = false (whole module off: explicit config decision)."""
+    for mod, tag in (("rares", "$type->rare->"), ("jewels", "$type->jewels->")):
+        if tag in (ref_block.comment or "") and not cfg.get(mod, {}).get("enabled", True):
+            return f"decision: config.toml {mod}.enabled = false (whole {mod} module off)"
     return None
 
 
@@ -225,7 +232,9 @@ def price_reason(tc, it):
     cfg, data = tc.cfg, tc.data
     if it.get("class") in ("Skill Gems", "Support Gems"):
         # the variant at or below the item's level / quality: emit_gems' GemLevel >= / Quality >=
-        floor = tc.cfg["tiers"][cfg.get("gems", {}).get("min_tier", "minor")]
+        tiers = tc.r["tiers"]  # live divine scale, as price_gems: below min_tier or a hide_tiers tier
+        min_rank = bf.min_shown_rank(cfg, tiers, cfg.get("gems", {}).get("min_tier", "minor"))
+        below = lambda v: tiers.rank(tiers.of(v)) > min_rank or bf.hidden(cfg, tiers.of(v))
         for t in ("SkillGem",):
             for l in data["stash"][t]["lines"]:
                 if (l["name"] == it.get("basetype") and not bf.alt_gem(l)
@@ -234,7 +243,7 @@ def price_reason(tc, it):
                     lq, iq = (l.get("gemLevel", 1), l.get("gemQuality") or 0), (it.get("gem_level", 1), it.get("quality", 0))
                     if lq[0] <= iq[0] and lq[1] <= iq[1]:
                         return "price: gem variant confidently priced below [gems] min_tier (bottom.filter hides)"
-                    if lq[0] >= iq[0] and lq[1] >= iq[1] and l["chaosValue"] < floor:
+                    if lq[0] >= iq[0] and lq[1] >= iq[1] and below(l["chaosValue"]):
                         return "price: gem capped by a confident better variant below [gems] min_tier (gem_caps)"
     if it.get("rarity") in ("Normal", "Magic", "Rare") and it.get("basetype"):
         b = cfg["bases"]
@@ -250,6 +259,8 @@ def price_reason(tc, it):
             if (l.get("listingCount", 0) >= b["min_listings"] and l.get("count", 0) >= b["min_samples"]
                     and tc.r["tiers"].rank(tc.r["tiers"].of(l["chaosValue"])) > tc.r["tiers"].rank(b["min_tier"])):
                 return "price: crafting base (base + influence + ilvl) confidently below [bases] min_tier"
+            if l.get("listingCount", 0) < b["min_listings"] or l.get("count", 0) < b["min_samples"]:
+                return "price: crafting base too thin to price ([bases] min_listings / min_samples), gear modules decide"
     return None
 
 
@@ -335,6 +346,22 @@ class NoReference(unittest.TestCase):
         import import_neversink as imp
         blocks = imp.parse_ref_blocks(REF.read_text(encoding="utf-8"), "2900", "3000")
         self.assertEqual([b["key"] for b in blocks], list(bf.load_cfg()["modules"]["heist"]["blocks"]))
+
+    @unittest.skipUnless(REF.exists(), "no reference/league.filter")
+    def test_module_tink_blocks_keep_tink_look(self):
+        # league.filter tink (white background) blocks keep border + background in our modules
+        # (style rule: the one tier allowed them; a 28% T1 armour base tinked with plain red text)
+        sys.path.insert(0, str(ROOT / "tools"))
+        import import_neversink as imp
+        ref = REF.read_text(encoding="utf-8")
+        tink = {b["key"] for b in imp.parse_ref_blocks(ref, *imp.section_span(ref), keep_tink=True)
+                if imp.TINK_BACKGROUND in b["style"]}
+        for f in sorted((ROOT / "rules" / "modules").glob("*.filter")):
+            for b in bf.load_module(f.stem):
+                if b["key"] in tink:
+                    with self.subTest(module=f.stem, key=b["key"]):
+                        self.assertIn(imp.TINK_BACKGROUND, b["style"])
+                        self.assertTrue(any(s.startswith("SetBorderColor") for s in b["style"]))
 
 
 if __name__ == "__main__":

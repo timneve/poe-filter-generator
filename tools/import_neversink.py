@@ -25,8 +25,9 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 import build_filter as bf  # noqa: E402
 
-# --game -> (default reference export, module dir, toggle file, keep tink border / background)
-GAMES = {"poe1": ("reference/league.filter", "rules/modules", "modules.toml", False),
+# --game -> (default reference export, module dir, toggle file, keep tink border / background:
+# the white-background top tier is the one look allowed a border / background, AGENTS.md style rule)
+GAMES = {"poe1": ("reference/league.filter", "rules/modules", "modules.toml", True),
          "poe2": ("reference/league-filterblade-poe2.filter", "rules/modules_poe2", "modules_poe2.toml", True)}
 MODULES_TOML = ROOT / "modules.toml"
 TINK_BACKGROUND = "SetBackgroundColor 255 255 255 255"

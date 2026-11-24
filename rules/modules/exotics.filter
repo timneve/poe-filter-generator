@@ -442,7 +442,16 @@ Show # exotic->enchanted.anointedamulets
 	Corrupted False
 	Rarity Normal Magic Rare
 	Class == "Amulets"
-	BaseType == "Agate Amulet" "Amber Amulet" "Blue Pearl Amulet" "Citrine Amulet" "Coral Amulet" "Gold Amulet" "Jade Amulet" "Lapis Amulet" "Marble Amulet" "Onyx Amulet" "Paua Amulet" "Seaglass Amulet" "Turquoise Amulet"
+	SetFontSize 45
+	PlayAlertSound 3 300
+	PlayEffect Blue
+	MinimapIcon 1 Blue Diamond
+	SetTextColor 255 255 255 255
+
+Show # exotic->enchanted.anointedamuletscorrupted
+	AnyEnchantment True
+	Rarity Normal Magic Rare
+	Class == "Amulets"
 	SetFontSize 45
 	PlayAlertSound 3 300
 	PlayEffect Blue
