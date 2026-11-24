@@ -24,11 +24,24 @@ The user's words "like NeverSink / FilterBlade" mean: the SAME options a FilterB
 
 - https://www.filterblade.xyz/ (PoE1) / https://www.filterblade.xyz/?game=Poe2 : open the
   section the user means, note every option name / group / checkbox, its default and preview.
-- Use a browser tool: load the `anthropic-skills:chrome-browser` skill (Claude in Chrome,
-  `mcp__claude-in-chrome__*`) or `anthropic-skills:built-in-browser` (`mcp__Claude_Browser__*`),
-  then navigate. A plain web fetch can't render FilterBlade (JS app).
-- No browser tool in the session: say so in the FIRST reply, before building, and ask for
-  screenshots of the section. Never silently skip the website.
+- DO IT YOURSELF with `fb.py` (this folder, Playwright + Chromium are installed on this PC). No
+  browser MCP tool needed, never ask the user for screenshots. Each arg = click the element with
+  that exact text (`~text` = substring), in order; writes `OUT/page.txt` (all text) + `page.png`
+  + `step<N>.png`. Cookie banner + "Select a game" modal are dismissed automatically:
+  ```
+  python .claude/skills/filterblade-parity/fb.py <scratchpad>/fb "Customize" "Endgame - Special Bases & Crafting" "Influenced Items" "Specific Influence BaseTypes" "INFLUENCED BASES - CRUSADER"
+  ```
+  Path: Customize -> category (e.g. "Endgame - Rares") -> section -> subsection -> block title
+  (UPPERCASE as shown). Clicking a block title opens its editor: base list, influence /
+  ItemLevel conditions, "Edit visuals and sounds". Read the text dump first (cheap), png only for
+  layout. `--poe2` for PoE2.
+- Raw current filter (exact lists, best source): the site downloads
+  `https://www.filterblade.xyz/datafiles/filters/NeverSink_AutoEcoUpdate_tmpstandard/NeverSink's%20filter%20-%200-SOFT.filter`
+  (+ `datafiles/optionfiles/optionFile*.options`, `datafiles/other/BasetypeStorage.csv`). Capture it
+  with Playwright `page.on("response")` while loading the home page (folder name changes per
+  league; plain fetch of a guessed URL may 404). Grep its `# [NNNN]` section like the reference files.
+- The website = current NeverSink version (newer than `reference/league.filter` when a patch
+  landed): compare its lists with the export and say which differ.
 
 ## 3. Before writing code: show the mapping
 
