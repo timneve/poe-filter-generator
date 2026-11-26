@@ -860,7 +860,7 @@ note = "40% total quality -> 1 Glassblower's Bauble"
 [content.breach]
 # Breach bosses in map breaches, Genesis Tree / Ancient Wombgift, Hive coffers, Esh / Tul.
 # Normal Breach monsters don't drop these.
-enabled = false
+enabled = true
 sources = ["BreachBoss"]
 
 # Every Breach content unique (Foulborn versions: always priced, ignore this). Leave a unique out = "price".
@@ -920,7 +920,7 @@ sources = ["BreachBoss"]
 "Provisioning Wombgift" = "hide"
 
 [content.ultimatum]
-enabled = true
+enabled = false
 sources = ["Ultimatum"]   # Trialmaster boss drops + Ultimatum rewards
 
 [content.blight]
@@ -1106,9 +1106,9 @@ quality_27 = false
 quality_21 = false
 # top bases
 armour_t1_28 = true
-armour_t1_21 = true
+armour_t1_21 = false
 weapon_t1_28 = true
-weapon_t1_24 = true
+weapon_t1_24 = false
 weapon_t2_28 = false
 weapon_t2_24 = false
 chancing_bases_28 = true
@@ -1442,7 +1442,7 @@ enabled = true
 # ---------------------------------------------------------------------------
 [maps]
 enabled = true
-progression = "none"
+progression = "all"
 min_tier = 16
 extra_tiers = []
 text_color = "faded"

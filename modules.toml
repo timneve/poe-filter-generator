@@ -239,10 +239,10 @@
 "magicid.doublemodtincture" = true  # [0803] Show
 "magicid.singlemodtincture" = true  # [0803] Show
 "exotic->fractured.fractt1" = true  # [1303] Show (off in FilterBlade)
-"exotic->fractured.fractt2" = true  # [1303] Show (off in FilterBlade)
-"exotic->fractured.fractt3" = true  # [1303] Show (off in FilterBlade)
+"exotic->fractured.fractt2" = false  # [1303] Show (off in FilterBlade)
+"exotic->fractured.fractt3" = false  # [1303] Show (off in FilterBlade)
 "exotic->fractured.fractspecial" = true  # [1303] Show
-"exotic->fractured.fractothers" = true  # [1303] Show (off in FilterBlade)
+"exotic->fractured.fractothers" = false  # [1303] Show (off in FilterBlade)
 "endgametinctures.overqual1" = "config.toml [overquality]"  # [2500] Show
 "endgametinctures.overqual2" = "config.toml [overquality]"  # [2500] Show
 "endgametinctures.tinc85" = true  # [2500] Show (off in FilterBlade)
@@ -303,11 +303,11 @@
 "exotic->corruptions.singlecorruptedquivers" = true  # [1301] Show (off in FilterBlade)
 "exotic->corruptions.singlecorrupteditems" = true  # [1301] Show
 "exotic->sockets.anynonbelt" = true  # [1302] Show
-"exotic->fractured.fractt1" = true  # [1303] Show (off in FilterBlade)
-"exotic->fractured.fractt2" = true  # [1303] Show (off in FilterBlade)
-"exotic->fractured.fractt3" = true  # [1303] Show (off in FilterBlade)
+"exotic->fractured.fractt1" = false  # [1303] Show (off in FilterBlade)
+"exotic->fractured.fractt2" = false  # [1303] Show (off in FilterBlade)
+"exotic->fractured.fractt3" = false  # [1303] Show (off in FilterBlade)
 "exotic->fractured.fractspecial" = true  # [1303] Show
-"exotic->fractured.fractothers" = true  # [1303] Show (off in FilterBlade)
+"exotic->fractured.fractothers" = false  # [1303] Show (off in FilterBlade)
 "exotic->enchanted.exotic" = true  # [1304] Show
 "exotic->enchanted.anointedamulets" = true  # [1304] Show (ours: every amulet base incl. talismans; beats rares talisman.* tiers)
 "exotic->enchanted.anointedamuletscorrupted" = true  # [1304] Show (ours: corrupted / mirrored anointed amulets; false = hidden unless price shows them)
@@ -660,6 +660,6 @@
 "uniques.foulborn" = "config.toml [uniques] (price)"  # [4804] Show
 "uniques.multispecial" = "config.toml [uniques] (price)"  # [4804] Hide
 "uniques.overqual" = "config.toml [overquality]"  # [4804] Show
-"uniques.5link" = true  # [4804] Show (off in FilterBlade)
+"uniques.5link" = false  # [4804] Show (off in FilterBlade)
 "uniques.6s" = false  # [4804] Show (off in FilterBlade): any 6-socket unique blue; false = price decides
 
