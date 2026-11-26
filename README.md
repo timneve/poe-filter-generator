@@ -335,6 +335,8 @@ rolled tier 4+ (`UnidentifiedItemTier`) show in the campaign with a blue beam, p
   while you're in maps of that tier or lower: in a T1 map T1+ show, in a T5 map T5+).
   `min_tier` (default 16): normal tiers below it stay hidden even with "all" / "auto" (0 = all),
   except tiers listed in `extra_tiers` (e.g. `[2]` with min_tier 16 = T2 + T16 shown).
+  `quiet = true`: those shown normal maps get the `quiet_tiers` look (brown text, grey beam, no
+  sound; minimap icon only with `quiet_icon = true`). League start: false.
   `corrupted_min_tier` (default 16): corrupted non-unique maps below it hidden, whatever rule
   would show them (8-mod, implicit, influenced, blighted, progression); Valdo / Nightmare /
   Shaper guardian and unique maps keep their rule. 0 = off. `blighted_hide_tiers` (list of

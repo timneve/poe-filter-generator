@@ -27,6 +27,7 @@ Tier-name values accept: `top high mid minor low brown dust` + often `variable`,
 | `gear_text_color`, `campaign_white_text_color` | gear text colour (`[colors]` name; `faded` = unpriced, below minor white, above brown; also Fated / unID tier) | `emit_defaults`, `emit_fated`, `emit_unid_tiers` |
 | `variable_text_color` | text of every shown blue-beam block (variable / unknown tier + module blocks), `variable_blue` | `blue_beam_text` (in `build_text`, before `apply_palette`) |
 | `maps.text_color` | shown normal map tier text (`[colors]` name, `faded`) | `map_tier_alert_style` |
+| `maps.quiet` | true: shown normal map tiers get `quiet_tier_lines` (follows `quiet_icon`) instead of text_color + alerts; LS false | `map_tier_alert_style` |
 | `unknown_as_variable` | base with any unpriced wiki unique -> blue | `price_unique_bases` |
 | `removed_basetypes` | names the game no longer has (3.30: NeverSink 8.20 minus 8.21, minus names poe.ninja still trades; LiveCache `test_removed_basetypes_not_traded_now`), stripped from every BaseType line, empty block dropped (game refuses unknown base types) | `strip_removed_basetypes` |
 

@@ -2899,6 +2899,27 @@ class Synthetic(unittest.TestCase):
         blocks, _ = self.build()
         self.assertTrue(fs.visible(blocks, t1(83)))
 
+    def test_maps_quiet(self):
+        # [maps] quiet: shown normal tiers get [style.quiet] (brown, grey beam, no sound), icon per quiet_icon
+        t16 = {"class": "Maps", "basetype": "Map (Tier 16)", "map_tier": 16, "area_level": 83}
+        valdo = {"class": "Maps", "basetype": "Valdo Map", "rarity": "Rare", "map_tier": 17}
+        for quiet_icon in (False, True):
+            self.cfg["quiet_icon"] = quiet_icon
+            self.cfg["maps"] = {"progression": "all", "min_tier": 16, "quiet": True}
+            blocks, text = self.build()
+            shown, style = fs.evaluate(blocks, t16)
+            self.assertTrue(shown)
+            brown = "SetTextColor " + self.cfg["colors"]["brown"]
+            self.assertIn(brown, style)
+            self.assertIn("PlayEffect Grey", style)
+            self.assertFalse(any(l.startswith("PlayAlertSound") for l in style), style)
+            self.assertEqual(any(l.startswith("MinimapIcon") for l in style), quiet_icon, style)
+            _, vstyle = fs.evaluate(blocks, valdo)       # special maps keep their own style
+            self.assertNotIn(brown, vstyle)
+        self.cfg["maps"]["quiet"] = True
+        self.cfg["league_start"] = True
+        self.assertFalse(bf.apply_league_start(copy.deepcopy(self.cfg))["maps"]["quiet"])
+
     def test_league_start_hides_whites_build_never_uses(self):
         # Glorious Plate 10c: above [bases] dump_floor (5c), so priced and shown (rf uses armour)
         for name, chaos, item_type in [("Imbued Wand", 2, "Wand"), ("Glorious Plate", 10, "Body Armour"),

@@ -205,7 +205,7 @@ exists, league.filter's [1500] economy bases only Show too), so the module Show 
 never match (blocks Normal-Rare; [0901] + `Rarity <= Rare`). Recipes stay `[vendor_recipes.*]`:
 [1401] / [2601] RGB = `chromatic` (every area incl. campaign), 6 sockets = `jeweller`, [[0500]] breach-ring entries =
 `grasping_mail` (no module block); Stacked Deck = stackable price.
-Maps `[maps]` (module `maps`: special maps always, `progression` from `min_tier` up + `extra_tiers`, `corrupted_min_tier`, `blighted_hide_tiers` = blighted (not ravaged) tiers hidden before the blighted Shows).
+Maps `[maps]` (module `maps`: special maps always, `progression` from `min_tier` up + `extra_tiers` (`quiet` -> quiet look), `corrupted_min_tier`, `blighted_hide_tiers` = blighted (not ravaged) tiers hidden before the blighted Shows).
 Campaign `[leveling]` (module `leveling`, `AreaLevel <= area_level_max` only, gear `Rarity <= Rare`; gear-section blocks without Class / BaseType get `Class == GEAR_CLASSES` (NeverSink has them after currency; [5402] firstareas caught currency):
 never a unique; after recipes / cluster prices, before stackables / uniques / bases, so campaign
 Shows beat price Hides): build module (`rules/leveling/<build>.filter`: rf, minion = minion

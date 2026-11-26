@@ -2545,16 +2545,20 @@ MAP_TIER_ALERTS = {
 
 def map_tier_alert_style(cfg):
     """module_blocks restyle for unhidden [3302] tiers: [maps] text_color (faded: no price, reads
-    below minor tier white) + stock alerts."""
+    below minor tier white) + stock alerts. [maps] quiet = true: [style.quiet] look instead
+    (quiet_tier_lines: brown text, grey beam, no sound, icon per quiet_icon), font size kept."""
     text = cfg.get("maps", {}).get("text_color", "faded")
+    quiet = cfg.get("maps", {}).get("quiet", False)
 
     def restyle(key, style):
         m = re.search(r"maps_([a-d])_t\d+", key)
         if not m:
             return style
         drop = ("PlayAlertSound", "PlayEffect", "MinimapIcon", "SetTextColor")
-        return ([s for s in style if not s.strip().startswith(drop)] + [f"SetTextColor {text}"]
-                + MAP_TIER_ALERTS[m.group(1)])
+        kept = [s for s in style if not s.strip().startswith(drop)]
+        if quiet:
+            return [s for s in kept if not s.strip().startswith("DisableDropSound")] + quiet_tier_lines(cfg)
+        return kept + [f"SetTextColor {text}"] + MAP_TIER_ALERTS[m.group(1)]
     return restyle
 
 
@@ -3537,6 +3541,7 @@ def league_start_values(conf, modules):
          ("show_contracts",): True, ("hide_forbidden_tome",): False,
          ("show_gold",): True, ("show_small_gold",): True,
          ("maps", "corrupted_min_tier"): 0, ("maps", "min_tier"): 0, ("maps", "blighted_hide_tiers"): [],
+         ("maps", "quiet"): False,
          ("flasks", "show_plain"): True,
          ("jewels", "show_rare"): True, ("jewels", "show_magic"): True,
          }

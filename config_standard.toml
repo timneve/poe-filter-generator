@@ -1372,6 +1372,9 @@ enabled = true
 # extra_tiers: normal map tiers shown anyway although below min_tier (e.g. [2] with min_tier 16
 #   = T2 + T16). [] = none.
 # text_color: shown normal tier text ([colors] name). "faded" = below minor tier white, above brown.
+# quiet: true = shown normal tier maps use the quiet_tiers look ([style.quiet]: brown text, grey
+#   beam, no sound; minimap icon only with quiet_icon = true), font size kept; text_color unused.
+#   false = text_color + stock sound + grey icon. Special maps untouched. league_start -> false.
 # corrupted_min_tier: non-unique corrupted maps below this tier hidden (8-mod, implicit, blighted,
 #   influenced, progression tiers too). Valdo / Nightmare / Shaper guardian and unique maps
 #   untouched. 0 = off.
@@ -1385,6 +1388,7 @@ progression = "none"
 min_tier = 0
 extra_tiers = []
 text_color = "faded"
+quiet = false
 corrupted_min_tier = 16
 blighted_hide_tiers = []
 
