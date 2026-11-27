@@ -188,7 +188,7 @@ remaining ilvl 86+ / any; `influenced_driven`; first `hide_cheap` Hides: influen
 (`[bases]` min_listings + min_samples) <= `[bases] dump_floor` = known junk, hidden, not blue
 (`cheap_influenced_bases` / `cheap_influenced_hides`; guards keep enabled `[links]` / chromatic / jeweller items out)), [[0400]] eldritch,
 [[0500]] exotic bases after exotics; [0901] perfection (bases = `[gear_special] perfection_armour` NeverSink rare base tiers, default t1) + `[overquality]` (own option, also with
-the module off; 30% = top tink style, first in [0901]: beats the ilvl 83+ perfection blocks) after id_mods, before exotics / recipes) and links /
+the module off; 30% = high tier style (max high, no tink), first in [0901]: beats the ilvl 83+ perfection blocks) after id_mods, before exotics / recipes) and links /
 chancing `[links]` / `[chancing]` (module `crafting`: [1401] 5-links after exotics; [2301] 4-link armour,
 [[2400]] chancing after the rare gear tiers, before the hide layer; FilterBlade's crafting base lists = price only): Shows only. Price vs
 module: `emit_priced_bases_first` puts the crafting-base Shows (confident price at a shown

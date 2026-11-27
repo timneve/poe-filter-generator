@@ -77,7 +77,7 @@ is a full copy of `config.toml` (only `league` / `output_name` differ), so tune 
   Mortality, ...) vendor for a Fracturing Shard, so unique pricing / EV counts each at least the
   shard price (Fracturing Orb / 20). Off = poe.ninja price only. Recipes with `uniques` +
   `reward` + `reward_count` work the same way.
-- `[overquality]` - every quality-threshold rule in one place: any gear 30% / 27% / 21% (30% tink look,
+- `[overquality]` - every quality-threshold rule in one place: any gear 30% / 27% / 21% (30% high look, no tink,
   on by default), top armour / weapon / chancing bases (FilterBlade's Rank A / B grids as editable lists
   `rank_a_armour` / `rank_a_weapons` / `rank_b_weapons`, current FilterBlade defaults), flasks / tinctures, uniques 21%+. `false` = no rule,
   the item falls to the normal rules (e.g. hidden in maps). Works even with `[gear_special]` off.

@@ -1030,7 +1030,7 @@ hide_level1 = true
 # e.g. hidden by the endgame hide layer).
 #
 # Any normal / magic / rare gear (module gear_special [0901]; works with [gear_special] off too).
-# 30% = our top-tier tink style, placed before the base rules below so any 30% item tinks.
+# 30% = our high tier style (max high, no tink), placed before the base rules below.
 # After [id_mods], before [exotics] / vendor recipes (a 30% RGB item keeps this alert).
 #
 # Top bases = FilterBlade Overquality Armours / Weapons (module gear_special [0901], normal /

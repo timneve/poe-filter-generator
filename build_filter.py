@@ -1349,10 +1349,9 @@ def influenced_driven(cfg):
 
 def overquality_driven(cfg):
     """[0901] overquality blocks from config.toml [overquality] quality_30 / 27 / 21 (not
-    league_start). 30% = our top-tier (tink) style via style_for, incl. its border / background
-    (the one tier allowed them); 27% / 21% league.filter's style. Uniques left to price."""
+    league_start). 30% = our high tier style via style_for (max high, no tink); 27% / 21%
+    league.filter's style. Uniques left to price."""
     oq = cfg.get("overquality", {})
-    top = max(cfg["tiers"], key=cfg["tiers"].get)
 
     def driven(b):
         quality = OVERQUALITY_KEYS.get(b["key"])
@@ -1360,7 +1359,7 @@ def overquality_driven(cfg):
             return module_elsewhere(b)
         if not oq.get(f"quality_{quality}", False):
             return ""
-        style = style_for(cfg, top) if quality == 30 else b["style"]
+        style = style_for(cfg, "high") if quality == 30 else b["style"]
         return block("Show", b["conds"] + ["Rarity <= Rare"], style,
                      f"overquality {quality}%+ (module gear_special {b['key']}, config.toml [overquality])")
     return driven

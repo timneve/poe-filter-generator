@@ -1282,13 +1282,13 @@ class Synthetic(unittest.TestCase):
         self.assertEqual((oq["quality_30"], oq["quality_27"], oq["quality_21"]), (True, False, False))
         self.assertEqual(decided_at(30).comment, "overquality 30%+")
         self.assertNotEqual(decided_at(30, rarity="Unique").comment, "overquality 30%+")  # unique: price
-        # 30% = our top-tier tink style (style_for), incl. the border / background only tink has
+        # 30% = our high tier style (style_for), max high: no tink border / background
         blocks, _ = self.build()
         _, style = fs.evaluate(blocks, dict(body_armour, quality=30))
-        top_style = [l for l in fs.parse(bf.apply_palette(self.cfg, bf.block(
-            "Show", [], bf.style_for(self.cfg, max(self.cfg["tiers"], key=self.cfg["tiers"].get)))))[0].style]
-        self.assertEqual(style[-len(top_style):], top_style)
-        self.assertTrue(any(l.startswith("SetBackgroundColor") for l in top_style))
+        high_style = [l for l in fs.parse(bf.apply_palette(self.cfg, bf.block(
+            "Show", [], bf.style_for(self.cfg, "high"))))[0].style]
+        self.assertEqual(style[-len(high_style):], high_style)
+        self.assertFalse(any(l.startswith("SetBackgroundColor") for l in style))
         # 30% beats the [0901] perfection blocks (Quality >= 28, ilvl 83+ T1 bases like Spine Bow)
         bow = {"class": "Bows", "basetype": "Spine Bow", "rarity": "Normal", "ilvl": 84}
         self.assertEqual(decided_at(30, **bow).comment, "overquality 30%+")
@@ -3073,7 +3073,6 @@ class Synthetic(unittest.TestCase):
              "listingCount": 100})
         blocks, _ = self.build()
         stack = lambda cls, name: {"class": cls, "basetype": name, "stack": 1}
-        bow = {"class": "Bows", "basetype": "Spine Bow", "rarity": "Normal", "quality": 30}
         items = [
             ("Fake Orb", stack("Stackable Currency", "Fake Orb")),
             ("House of Mirrors (reward chain)", stack("Divination Cards", "House of Mirrors")),
@@ -3092,10 +3091,6 @@ class Synthetic(unittest.TestCase):
             ("Divine Orb", stack("Stackable Currency", "Divine Orb")),
             ("Mirror of Kalandra", stack("Stackable Currency", "Mirror of Kalandra")),
             ("Hinekora's Lock", stack("Stackable Currency", "Hinekora's Lock")),
-            ("30% bow ilvl 70", dict(bow, ilvl=70)),
-            ("30% bow ilvl 84 (perfection base)", dict(bow, ilvl=84)),
-            ("30% rare body armour", {"class": "Body Armours", "basetype": "Vaal Regalia", "rarity": "Rare",
-                                      "ilvl": 86, "quality": 30}),
         ] + [(c, {"class": c, "basetype": "Fake " + c}) for c in self.cfg["always_top_classes"]]
         bad = not_tink(blocks, self.cfg, items)
         self.assertFalse(bad, "not tink:\n" + "\n".join(f"  {lab}  <- {b}" for lab, b in bad))
